@@ -92,7 +92,7 @@ export default function Login() {
       </Text>
 
       <Text className="text-center text-gray-500 mb-8">
-        Wecome back! Please enter your details.
+        Welcome back! Please enter your details.
       </Text>
 
       {/* Email */}
