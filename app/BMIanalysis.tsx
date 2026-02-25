@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 
-import { auth, db } from "../firebaseConfig";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
 
 type PlanKey = "gain" | "maintain" | "lose";
 
