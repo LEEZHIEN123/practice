@@ -1,11 +1,11 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
 
-import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 type PlanKey = "gain" | "maintain" | "lose";
 
@@ -135,13 +135,13 @@ export default function BmiAnalysis() {
       {/* Header */}
       <View className="relative mb-6">
         <Pressable
-                 onPress={() => router.back()}
-                 className="absolute left-0 top-5 h-16 w-24 justify-center pl-2"
-               >
-                 <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
-                   <Ionicons name="chevron-back" size={26} color="#1f2937" />
-                 </View>
-               </Pressable>
+          onPress={() => router.back()}
+          className="absolute left-0 top-2 h-16 w-24 justify-center pl-2"
+        >
+          <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
+            <Ionicons name="chevron-back" size={26} color="#1f2937" />
+          </View>
+        </Pressable>
 
         <Text className="text-center text-2xl font-bold text-gray-900 mt-3">
           BMI Analysis
