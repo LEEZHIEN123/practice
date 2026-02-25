@@ -1,20 +1,20 @@
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 import React, { useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
   Text,
   TextInput,
-  Pressable,
-  Alert,
-  ActivityIndicator,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { auth } from "../firebaseConfig";
-import {
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-} from "firebase/auth";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function Login() {
   const router = useRouter();

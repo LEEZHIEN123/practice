@@ -29,18 +29,34 @@ export default function ProfileDetails() {
 
     // ✅ Fetch user name
     useEffect(() => {
-        const fetchUser = async () => {
-            const user = auth.currentUser;
-            if (!user) return;
+  const loadProfile = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
 
-            const snap = await getDoc(doc(db, "users", user.uid));
-            if (snap.exists()) {
-                setFullName(snap.data().name || "");
-            }
-        };
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) return;
 
-        fetchUser();
-    }, []);
+    const data = snap.data();
+
+    // ✅ Only set if exists, otherwise keep defaults
+    if (data.gender) setGender(data.gender);
+    if (typeof data.age === "number") {
+      setAge(data.age);
+      setAgeText(String(data.age));
+    }
+    if (typeof data.height === "number") {
+      setHeight(data.height);
+      setHeightText(data.height.toFixed(1));
+    }
+    if (typeof data.weight === "number") {
+      setWeight(data.weight);
+      setWeightText(data.weight.toFixed(1));
+    }
+    
+  };
+
+  loadProfile();
+}, []);
 
     const saveProfile = async () => {
         const user = auth.currentUser;
