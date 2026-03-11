@@ -239,7 +239,7 @@ export default function BmiAnalysis() {
             />
           </View>
 
-          <Text className="flex-1 text-xs text-gray-600 leading-5">
+          <Text className="flex-1 text-xs text-gray-1000 leading-5">
             Tip: If you don’t want to follow the recommended goal, you can
             manually adjust your goal anytime in the app.
           </Text>

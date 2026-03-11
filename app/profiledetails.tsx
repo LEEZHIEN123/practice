@@ -1,275 +1,286 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, Image, TextInput } from "react-native";
-import Slider from "@react-native-community/slider";
+import { View, Text, TextInput, Pressable, Image, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { auth, db } from "../firebaseConfig";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
+import * as ImagePicker from "expo-image-picker"; // To pick profile image
+import Slider from "@react-native-community/slider"; // For horizontal scrolling
 
-export default function ProfileDetails() {
-    const router = useRouter();
+export default function EditProfile() {
+  const router = useRouter();
 
-    const [fullName, setFullName] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userBio, setUserBio] = useState("");
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [age, setAge] = useState(28);
+  const [height, setHeight] = useState(175);
+  const [weight, setWeight] = useState(72);
+  const [loading, setLoading] = useState(false);
 
-    const [gender, setGender] = useState<"male" | "female">("male");
-    const [age, setAge] = useState(28);
-    const [height, setHeight] = useState(175.0);
-    const [weight, setWeight] = useState(72.0);
+  // Error states for age, height, and weight
+  const [ageError, setAgeError] = useState("");
+  const [heightError, setHeightError] = useState("");
+  const [weightError, setWeightError] = useState("");
 
-    const [ageText, setAgeText] = useState("28");
-    const [heightText, setHeightText] = useState("175.0");
-    const [weightText, setWeightText] = useState("72.0");
+  // Request permission for accessing photos
+  const requestPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      alert("Sorry, we need permission to access your photo library.");
+    }
+  };
 
-    const clamp = (val: number, min: number, max: number) =>
-        Math.min(Math.max(val, min), max);
+  // Fetch current user data from Firestore
+  useEffect(() => {
+    requestPermission(); // Request permission when component mounts
 
-    const sanitizeDecimal = (t: string) =>
-        t.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+    const loadProfile = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
 
-    // ✅ Fetch user name
-    useEffect(() => {
-  const loadProfile = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          setUserName(data.name);
+          setUserEmail(data.email);
+          setUserBio(data.bio || "");
+          setProfileImage(data.profileImage || null); // Set the profile image from Firestore
+          setAge(data.age || 28); // Set default age if not provided
+          setHeight(data.height || 175); // Set default height if not provided
+          setWeight(data.weight || 72); // Set default weight if not provided
+        }
+      } catch (error) {
+        console.log("Error loading user profile:", error);
+      }
+    };
+
+    loadProfile();
+  }, []);
+
+  // Validate and clamp values for age, height, and weight
+  const validateInput = () => {
+    let validAge = age;
+    let validHeight = height;
+    let validWeight = weight;
+
+    // Validate age
+    if (age < 20 || age > 90) {
+      setAgeError("Age must be between 20 and 90");
+      validAge = Math.min(Math.max(age, 20), 90);
+    } else {
+      setAgeError("");
+    }
+
+    // Validate height
+    if (height < 120 || height > 220) {
+      setHeightError("Height must be between 120cm and 220cm");
+      validHeight = Math.min(Math.max(height, 120), 220);
+    } else {
+      setHeightError("");
+    }
+
+    // Validate weight
+    if (weight < 30 || weight > 200) {
+      setWeightError("Weight must be between 30kg and 200kg");
+      validWeight = Math.min(Math.max(weight, 30), 200);
+    } else {
+      setWeightError("");
+    }
+
+    setAge(validAge);
+    setHeight(validHeight);
+    setWeight(validWeight);
+  };
+
+  // Update the user's profile data
+  const handleSave = async () => {
     const user = auth.currentUser;
     if (!user) return;
 
-    const snap = await getDoc(doc(db, "users", user.uid));
-    if (!snap.exists()) return;
+    try {
+      setLoading(true);
 
-    const data = snap.data();
+      // Validate input before updating
+      validateInput();
 
-    // ✅ Only set if exists, otherwise keep defaults
-    if (data.gender) setGender(data.gender);
-    if (typeof data.age === "number") {
-      setAge(data.age);
-      setAgeText(String(data.age));
+      // Update Firestore with the new profile data
+      await updateDoc(doc(db, "users", user.uid), {
+        name: userName,
+        email: userEmail,
+        bio: userBio,
+        profileImage: profileImage, // Save the updated profile image URI
+        age: age,
+        height: height,
+        weight: weight,
+      });
+
+      Alert.alert("Profile Updated", "Your profile has been updated successfully!");
+      router.push("/profile"); // Redirect back to the profile page
+    } catch (error) {
+      console.log("Error saving profile:", error);
+      Alert.alert("Error", "Failed to update profile.");
+    } finally {
+      setLoading(false);
     }
-    if (typeof data.height === "number") {
-      setHeight(data.height);
-      setHeightText(data.height.toFixed(1));
-    }
-    if (typeof data.weight === "number") {
-      setWeight(data.weight);
-      setWeightText(data.weight.toFixed(1));
-    }
-    
   };
 
-  loadProfile();
-}, []);
+  // Allow the user to pick an image
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
 
-    const saveProfile = async () => {
-        const user = auth.currentUser;
-        if (!user) return;
+    // Check if the user did not cancel and a URI exists
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setProfileImage(result.assets[0].uri); // Set the selected image URI
+    }
+  };
 
-        await updateDoc(doc(db, "users", user.uid), {
-            gender,
-            age,
-            height,
-            weight,
-            profileCompleted: true,
-        });
+  return (
+    <View className="flex-1 bg-[#eef2f1] px-6 pt-14">
+      <Text className="text-2xl font-extrabold text-gray-900 mb-4">Edit Profile</Text>
 
-        router.push("/activitylevel");
-    };
+      {/* Profile Picture Section */}
+      <View className="items-center mb-6">
+        <Pressable onPress={pickImage}>
+          <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
+            <Image
+              source={
+                profileImage
+                  ? { uri: profileImage }
+                  : require("../assets/images/malefitnesspic.avif") // default image
+              }
+              className="w-28 h-28"
+              resizeMode="contain"
+            />
+          </View>
+        </Pressable>
+        <Text className="text-sm text-gray-600 mt-2">Tap to change profile picture</Text>
+      </View>
 
-    return (
-        <View className="flex-1 bg-[#eef2f1] px-6 pt-12">
-            {/* Header */}
-            <View className="relative mb-6">
-                <Text className="text-center text-2xl font-bold text-gray-900 mt-3">
-                    Profile Details
-                </Text>
+      {/* Full Name Input */}
+      <Text className="text-lg text-gray-700 mb-2">Full Name</Text>
+      <TextInput
+        value={userName}
+        onChangeText={setUserName}
+        className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
+        placeholder="Enter your full name"
+      />
 
-                <View className="flex-row justify-center items-center mt-3">
-                    <View className="w-10 h-2 rounded-full bg-green-500 mx-1" />
-                    <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
-                    <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
+      {/* Email Input */}
+      <Text className="text-lg text-gray-700 mb-2">Email Address</Text>
+      <TextInput
+        value={userEmail}
+        onChangeText={setUserEmail}
+        className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
+        placeholder="Enter your email address"
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
 
-                </View>
-            </View>
+      {/* Bio Input as a Text Area */}
+      <Text className="text-lg text-gray-700 mb-2">Bio</Text>
+      <TextInput
+        value={userBio}
+        onChangeText={setUserBio}
+        className="bg-white rounded-xl px-4 py-3 mb-6 text-gray-700"
+        placeholder="Write a short bio"
+        multiline={true} // Enable multiline for the text area
+        numberOfLines={4} // Optional: Set initial visible number of lines
+        textAlignVertical="top" // Align text to the top
+      />
 
-            {/* ✅ Greeting */}
-            <Text className="text-center text-3xl font-extrabold text-gray-900 mt-0">
-                Hello {fullName ? fullName : "👋"} !
-            </Text>
+      {/* Age Section */}
+      <Text className="text-lg text-gray-700 mb-2">Age</Text>
+      <View className="flex-row items-center mb-4">
+        <Slider
+          style={{ width: "80%" }}
+          minimumValue={20}
+          maximumValue={90}
+          step={1}
+          value={age}
+          onValueChange={(v) => setAge(v)}
+          minimumTrackTintColor="#76C893"
+          maximumTrackTintColor="#0c3a23"
+          thumbTintColor="#76C893"
+        />
+        <TextInput
+          value={String(age)}
+          onChangeText={(text) => setAge(Number(text))}
+          keyboardType="numeric"
+          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
+          placeholder="Age"
+          onBlur={() => validateInput()} // Ensure value is valid when losing focus
+        />
+      </View>
+      {ageError ? <Text className="text-red-500 text-sm">{ageError}</Text> : null}
 
-            <Text className="text-center text-3xl font-bold text-gray-900 mt-2">
-                Tell Us About Yourself
-            </Text>
+      {/* Height Section */}
+      <Text className="text-lg text-gray-700 mb-2">Height (cm)</Text>
+      <View className="flex-row items-center mb-4">
+        <Slider
+          style={{ width: "80%" }}
+          minimumValue={120}
+          maximumValue={220}
+          step={0.1}
+          value={height}
+          onValueChange={(v) => setHeight(v)}
+          minimumTrackTintColor="#76C893"
+          maximumTrackTintColor="#0c3a23"
+          thumbTintColor="#76C893"
+        />
+        <TextInput
+          value={String(height)}
+          onChangeText={(text) => setHeight(Number(text))}
+          keyboardType="numeric"
+          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
+          placeholder="Height"
+          onBlur={() => validateInput()} // Ensure value is valid when losing focus
+        />
+      </View>
+      {heightError ? <Text className="text-red-500 text-sm">{heightError}</Text> : null}
 
-            <Text className="text-center text-gray-500 mt-3 mb-1 text-base">
-                This helps us personalize your fitness journey{"\n"}and track progress
-                accurately.
-            </Text>
+      {/* Weight Section */}
+      <Text className="text-lg text-gray-700 mb-2">Weight (kg)</Text>
+      <View className="flex-row items-center mb-6">
+        <Slider
+          style={{ width: "80%" }}
+          minimumValue={30}
+          maximumValue={200}
+          step={0.1}
+          value={weight}
+          onValueChange={(v) => setWeight(v)}
+          minimumTrackTintColor="#76C893"
+          maximumTrackTintColor="#0c3a23"
+          thumbTintColor="#76C893"
+        />
+        <TextInput
+          value={String(weight)}
+          onChangeText={(text) => setWeight(Number(text))}
+          keyboardType="numeric"
+          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
+          placeholder="Weight"
+          onBlur={() => validateInput()} // Ensure value is valid when losing focus
+        />
+      </View>
+      {weightError ? <Text className="text-red-500 text-sm">{weightError}</Text> : null}
 
-            {/* Gender Image */}
-            <View className="items-center mb-1">
-                <Image
-                    source={
-                        gender === "male"
-                            ? require("../assets/images/malefitnesspic.avif")
-                            : require("../assets/images/femalefitnesspic.avif")
-                    }
-                    className="w-48 h-60"
-                    resizeMode="contain"
-                />
-            </View>
-
-            {/* Gender Buttons */}
-            <View className="flex-row justify-center gap-6 mb-6">
-                <Pressable
-                    onPress={() => setGender("male")}
-                    className={`w-16 h-16 rounded-full items-center justify-center ${gender === "male" ? "bg-[#76C893]" : "bg-white"
-                        }`}
-                >
-                    <Ionicons
-                        name="male"
-                        size={24}
-                        color={gender === "male" ? "white" : "#76C893"}
-                    />
-                </Pressable>
-
-                <Pressable
-                    onPress={() => setGender("female")}
-                    className={`w-16 h-16 rounded-full items-center justify-center ${gender === "female" ? "bg-[#76C893]" : "bg-white"
-                        }`}
-                >
-                    <Ionicons
-                        name="female"
-                        size={24}
-                        color={gender === "female" ? "white" : "#76C893"}
-                    />
-                </Pressable>
-            </View>
-
-            {/* AGE */}
-            <View className="mb-6">
-                <View className="flex-row justify-between items-center mb-2">
-                    <Text className="text-gray-600 font-semibold ml-3.5">AGE</Text>
-
-                    <View className="flex-row items-center">
-                        <TextInput
-                            value={ageText}
-                            onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, ""))}
-                            onBlur={() => {
-                                const n = clamp(parseInt(ageText || "0", 10), 5, 90);
-                                setAge(n);
-                                setAgeText(String(n));
-                            }}
-                            keyboardType="numeric"
-                            className="w-16 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-                        />
-                        <Text className="ml-2 text-gray-500 mr-3.5">years</Text>
-                    </View>
-                </View>
-
-                <Slider
-                    style={{ width: "100%" }}
-                    minimumValue={5}
-                    maximumValue={90}
-                    step={1}
-                    value={age}
-                    onValueChange={(v) => {
-                        setAge(v);
-                        setAgeText(String(v));
-                    }}
-                    minimumTrackTintColor="#76C893"
-                    maximumTrackTintColor="#0c3a23"
-                    thumbTintColor="#76C893"
-                />
-            </View>
-
-            {/* HEIGHT (decimal) */}
-            <View className="mb-6">
-                <View className="flex-row justify-between items-center mb-2 ml-3.5">
-                    <Text className="text-gray-600 font-semibold">HEIGHT</Text>
-
-                    <View className="flex-row items-center">
-                        <TextInput
-                            value={heightText}
-                            onChangeText={(t) => setHeightText(sanitizeDecimal(t))}
-                            onBlur={() => {
-                                const n = clamp(parseFloat(heightText || "0"), 50, 250);
-                                const fixed = Number.isFinite(n) ? n : 50;
-                                setHeight(fixed);
-                                setHeightText(fixed.toFixed(1));
-                            }}
-                            keyboardType="decimal-pad"
-                            className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-                        />
-                        <Text className="ml-2 text-gray-500 mr-3.5">cm</Text>
-                    </View>
-                </View>
-
-                <Slider
-                    style={{ width: "100%" }}
-                    minimumValue={50}
-                    maximumValue={250}
-                    step={0.1}
-                    value={height}
-                    onValueChange={(v) => {
-                        setHeight(v);
-                        setHeightText(v.toFixed(1));
-                    }}
-                    minimumTrackTintColor="#76C893"
-                    maximumTrackTintColor="#0c3a23"
-                    thumbTintColor="#76C893"
-                />
-            </View>
-
-            {/* WEIGHT (decimal) */}
-            <View className="mb-6">
-                <View className="flex-row justify-between items-center mb-2">
-                    <Text className="text-gray-600 font-semibold ml-3.5">WEIGHT</Text>
-
-                    <View className="flex-row items-center">
-                        <TextInput
-                            value={weightText}
-                            onChangeText={(t) => setWeightText(sanitizeDecimal(t))}
-                            onBlur={() => {
-                                const n = clamp(parseFloat(weightText || "0"), 25, 250);
-                                const fixed = Number.isFinite(n) ? n : 25;
-                                setWeight(fixed);
-                                setWeightText(fixed.toFixed(1));
-                            }}
-                            keyboardType="decimal-pad"
-                            className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-                        />
-                        <Text className="ml-2 text-gray-500 mr-3.5">kg</Text>
-                    </View>
-                </View>
-
-                <Slider
-                    style={{ width: "100%" }}
-                    minimumValue={25}
-                    maximumValue={250}
-                    step={0.1}
-                    value={weight}
-                    onValueChange={(v) => {
-                        setWeight(v);
-                        setWeightText(v.toFixed(1));
-                    }}
-                    minimumTrackTintColor="#76C893"
-                    maximumTrackTintColor="#0c3a23"
-                    thumbTintColor="#76C893"
-                />
-            </View>
-
-            {/* Continue */}
-            <Pressable onPress={saveProfile} className="mt-1 rounded-2xl overflow-hidden">
-                <LinearGradient
-                    colors={["#76C893", "#52B69A"]}
-                    className="py-4 items-center rounded-2xl"
-                >
-                    <View className="flex-row items-center">
-                        <Text className="text-white text-lg font-semibold mr-2">
-                            Continue
-                        </Text>
-                        <Ionicons name="arrow-forward" size={20} color="white" />
-                    </View>
-                </LinearGradient>
-            </Pressable>
-        </View>
-    );
+      {/* Save Button */}
+      <Pressable
+        onPress={handleSave}
+        disabled={loading}
+        className={`w-full bg-[#76C893] py-4 rounded-xl items-center ${loading ? "opacity-50" : ""}`}
+      >
+        <Text className="text-white text-lg font-semibold">
+          {loading ? "Saving..." : "Save Changes"}
+        </Text>
+      </Pressable>
+    </View>
+  );
 }

@@ -7,6 +7,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
+     "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture."
+      },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
@@ -25,6 +28,7 @@
       "bundler": "metro"
     
     },
+    
     "plugins": [
       "expo-router",
       [
