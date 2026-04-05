@@ -1,10 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, Image } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  Image,
+  Modal,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
+import {
+  deleteAccountAfterReauth,
+  reauthenticateWithPassword,
+} from "@/lib/deleteUserAccount";
 
 type GoalLabel = "Gain Weight" | "Maintain Weight" | "Lose Weight";
 type Gender = "male" | "female";
@@ -16,7 +32,12 @@ export default function ProfileScreen() {
   const [userEmail, setUserEmail] = useState(" ");
   const [goal, setGoal] = useState<GoalLabel>("Lose Weight");
   const [gender, setGender] = useState<Gender>("male");
-  const [profileImage, setProfileImage] = useState<string | null>(null); // State for profile image
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  const [deletePasswordModal, setDeletePasswordModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -39,7 +60,6 @@ export default function ProfileScreen() {
           else if (data.recommendedPlan === "maintain") setGoal("Maintain Weight");
           else if (data.recommendedPlan === "lose") setGoal("Lose Weight");
 
-          // Fetch and set the profile image from Firestore
           setProfileImage(data.profileImage || null);
         }
       } catch (error) {
@@ -48,7 +68,7 @@ export default function ProfileScreen() {
     };
 
     loadProfile();
-  }, []); // Empty dependency array ensures it runs once after the component mounts
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -59,195 +79,304 @@ export default function ProfileScreen() {
     }
   };
 
+  const closeDeleteModal = () => {
+    setDeletePasswordModal(false);
+    setDeletePassword("");
+    setShowDeletePassword(false);
+  };
+
+  const handleDeletePasswordContinue = async () => {
+    const user = auth.currentUser;
+    if (!user?.email) {
+      Alert.alert(
+        "Cannot delete",
+        "This account cannot be deleted from the app. Please contact support."
+      );
+      return;
+    }
+    const pwd = deletePassword.trim();
+    if (!pwd) {
+      Alert.alert("Password required", "Please enter your password.");
+      return;
+    }
+
+    setDeleteBusy(true);
+    try {
+      await reauthenticateWithPassword(user, pwd);
+      closeDeleteModal();
+      Alert.alert(
+        "Delete account permanently?",
+        "All your data will be removed permanently. This cannot be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Yes, delete",
+            style: "destructive",
+            onPress: async () => {
+              const u = auth.currentUser;
+              if (!u) {
+                router.replace("/login");
+                return;
+              }
+              try {
+                setDeleteBusy(true);
+                await deleteAccountAfterReauth(u);
+                router.replace("/login");
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : "Something went wrong.";
+                Alert.alert("Deletion failed", msg);
+              } finally {
+                setDeleteBusy(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch {
+      Alert.alert("Incorrect password", "Please try again.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const rowClass =
+    "bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-3.5 shadow-sm";
+
   return (
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         <View className="px-6 pt-14">
-          {/* Header */}
-          <View className="relative items-center justify-center mb-8">
-         
-
-            <Text className="text-2xl font-extrabold text-gray-900">
-              Profile
-            </Text>
+          <View className="relative items-center justify-center mb-7">
+            <Text className="text-2xl font-extrabold text-gray-900">Profile</Text>
           </View>
 
-          {/* Avatar */}
           <View className="items-center mb-6">
             <View className="relative">
               <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
                 <Image
                   source={
-                    profileImage // If profile image exists, show it; otherwise, use default
+                    profileImage
                       ? { uri: profileImage }
                       : gender === "male"
-                      ? require("../assets/images/malefitnesspic.avif") // default male profile image
-                      : require("../assets/images/femalefitnesspic.avif") // default female profile image
+                        ? require("../assets/images/malefitnesspic.avif")
+                        : require("../assets/images/femalefitnesspic.avif")
                   }
-                  className="w-28 h-28"
-                  resizeMode="contain"
+                  className="w-full h-full"
+                  resizeMode="cover"
                 />
               </View>
             </View>
 
-            <Text className="text-3xl font-extrabold text-gray-900 mt-5">
-              {userName}
-            </Text>
-            <Text className="text-gray-500 text-lg mt-1">{userEmail}</Text>
+            <Text className="text-3xl font-extrabold text-gray-900 mt-4">{userName}</Text>
+            <Text className="text-gray-500 text-lg mt-1.5">{userEmail}</Text>
           </View>
 
-          {/* Edit Profile Button */}
           <Pressable
             onPress={() => router.push("/EditProfile")}
-            className="bg-[#f7f7f7] rounded-3xl px-5 py-6 flex-row items-center justify-between mb-4 shadow-sm"
+            className={rowClass}
           >
-            <View className="flex-row items-center">
+            <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
                 <Ionicons name="person" size={22} color="#76C893" />
               </View>
-              <Text className="text-2xl font-bold text-gray-900 ml-4">
-                Edit Profile
-              </Text>
+              <Text className="text-lg font-bold text-gray-900 ml-4">Edit Profile</Text>
             </View>
-
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
-          {/* My Goals */}
-          <Pressable className="bg-[#f7f7f7] rounded-3xl px-5 py-6 flex-row items-center justify-between mb-4 shadow-sm">
-            <View className="flex-row items-center">
+          <Pressable className={rowClass}>
+            <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Ionicons
-                  name="radio-button-on-outline"
-                  size={22}
-                  color="#76C893"
-                />
+                <Ionicons name="radio-button-on-outline" size={22} color="#76C893" />
               </View>
-
-              <View className="ml-4">
-                <Text className="text-2xl font-bold text-gray-900">
-                  My Goals
-                </Text>
+              <View className="ml-4 flex-1">
+                <Text className="text-lg font-bold text-gray-900">My Goals</Text>
                 <Text className="text-[#76C893] text-base font-semibold mt-1">
                   Goal: {goal}
                 </Text>
               </View>
             </View>
-
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
-          {/* Reminders */}
-      <Pressable
-  onPress={() => router.push("/reminder")}
-  className="bg-[#f7f7f7] rounded-3xl px-5 py-6 mb-4 shadow-sm"
->
-  <View className="flex-row items-center justify-between mb-4">
-    <View className="flex-row items-center">
-      <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-        <Ionicons name="alarm-outline" size={22} color="#76C893" />
-      </View>
-      <Text className="text-2xl font-bold text-gray-900 ml-4">
-        Reminders
-      </Text>
-    </View>
+          <Pressable
+            onPress={() => router.push("/reminder")}
+            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 mb-3.5 shadow-sm"
+          >
+            <View className="flex-row items-center justify-between mb-1">
+              <View className="flex-row items-center flex-1 min-w-0 pr-2">
+                <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center shrink-0">
+                  <Ionicons name="alarm-outline" size={22} color="#76C893" />
+                </View>
+                <Text className="text-lg font-bold text-gray-900 ml-4 shrink-0">
+                  Reminders
+                </Text>
+              </View>
+              <View className="shrink-0">
+                <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+              </View>
+            </View>
 
-    <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-  </View>
+            <View className="ml-16 -mt-0.5 pr-1">
+              <Text
+                className="text-[#76C893] text-lg font-semibold"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+              >
+                Set Workout Time, Meal Time, and Water Intake.
+              </Text>
+            </View>
+          </Pressable>
 
-  <View className="ml-16">
-    <View className="flex-row justify-between items-center mb-3">
-      <Text className="text-gray-700 text-lg">Workout Time</Text>
-      <Text className="text-[#76C893] text-lg font-bold">Tap to manage</Text>
-    </View>
-
-    <View className="flex-row justify-between items-center mb-3">
-      <Text className="text-gray-700 text-lg">Meal Time</Text>
-      <Text className="text-[#76C893] text-lg font-bold">Tap to manage</Text>
-    </View>
-
-    <View className="flex-row justify-between items-center">
-      <Text className="text-gray-700 text-lg">Water Intake</Text>
-      <Text className="text-[#76C893] text-lg font-bold">Tap to manage</Text>
-    </View>
-  </View>
-</Pressable>
-
-          {/* Terms of Service */}
-          <Pressable className="bg-[#f7f7f7] rounded-3xl px-5 py-6 flex-row items-center justify-between mb-4 shadow-sm">
-            <View className="flex-row items-center">
+          <Pressable
+            onPress={() => router.push("/terms-of-service")}
+            className={rowClass}
+          >
+            <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
                 <Feather name="file-text" size={20} color="#76C893" />
               </View>
-              <Text className="text-2xl font-bold text-gray-900 ml-4">
-                Terms of Service
-              </Text>
+              <Text className="text-lg font-bold text-gray-900 ml-4">Terms of Service</Text>
             </View>
-
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
-          {/* Contact Us */}
-          <Pressable className="bg-[#f7f7f7] rounded-3xl px-5 py-6 flex-row items-center justify-between mb-10 shadow-sm">
-            <View className="flex-row items-center">
+          <Pressable
+            onPress={() => router.push("/contact-us")}
+            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-3.5 shadow-sm"
+          >
+            <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
                 <Feather name="mail" size={20} color="#76C893" />
               </View>
-              <Text className="text-2xl font-bold text-gray-900 ml-4">
-                Contact Us
-              </Text>
+              <Text className="text-lg font-bold text-gray-900 ml-4">Contact Us</Text>
             </View>
-
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
-          {/* Logout */}
+          <Pressable
+            onPress={() => setDeletePasswordModal(true)}
+            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-8 shadow-sm"
+          >
+            <View className="flex-row items-center flex-1">
+              <View className="w-12 h-12 rounded-full bg-[#fef2f2] items-center justify-center">
+                <Ionicons name="trash-outline" size={22} color="#dc2626" />
+              </View>
+              <Text className="text-lg font-bold text-gray-900 ml-4">Delete account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+          </Pressable>
+
           <Pressable
             onPress={handleLogout}
-            className="bg-[#f7f7f7] rounded-3xl py-6 items-center justify-center"
+            className="bg-[#f7f7f7] rounded-3xl py-5 items-center justify-center"
           >
             <View className="flex-row items-center">
               <MaterialCommunityIcons name="logout" size={22} color="#ef4444" />
-              <Text className="text-red-500 text-2xl font-bold ml-2">
-                Logout
-              </Text>
+              <Text className="text-red-500 text-lg font-bold ml-2">Logout</Text>
             </View>
           </Pressable>
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
-        <Pressable
-          onPress={() => router.replace("/home")}
-          className="items-center"
+      <Modal
+        visible={deletePasswordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeleteModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1"
         >
+          <Pressable
+            className="flex-1 bg-black/50 justify-center px-5"
+            onPress={() => !deleteBusy && closeDeleteModal()}
+          >
+            <Pressable
+              className="bg-white rounded-3xl p-6"
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text className="text-lg font-extrabold text-gray-900">
+                Enter your password
+              </Text>
+              <Text className="text-gray-500 text-sm mt-2 leading-5">
+                For your security, confirm your password before we can continue with account
+                deletion.
+              </Text>
+              <View className="border border-gray-200 rounded-2xl pl-4 pr-2 py-1 mt-4 flex-row items-center bg-[#fafafa]">
+                <TextInput
+                  value={deletePassword}
+                  onChangeText={setDeletePassword}
+                  secureTextEntry={!showDeletePassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Password"
+                  placeholderTextColor="#9ca3af"
+                  editable={!deleteBusy}
+                  className="flex-1 py-3 pr-2 text-base text-gray-900"
+                />
+                <Pressable
+                  onPress={() => setShowDeletePassword((v) => !v)}
+                  disabled={deleteBusy}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  className="p-2 rounded-xl active:bg-gray-200/60"
+                  accessibilityLabel={
+                    showDeletePassword ? "Hide password" : "Show password"
+                  }
+                >
+                  <Ionicons
+                    name={showDeletePassword ? "eye-off-outline" : "eye-outline"}
+                    size={22}
+                    color="#6b7280"
+                  />
+                </Pressable>
+              </View>
+              <View className="flex-row gap-3 mt-5">
+                <Pressable
+                  onPress={closeDeleteModal}
+                  disabled={deleteBusy}
+                  className="flex-1 py-3.5 rounded-2xl bg-gray-100 items-center active:bg-gray-200"
+                >
+                  <Text className="font-bold text-gray-700">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleDeletePasswordContinue()}
+                  disabled={deleteBusy}
+                  className="flex-1 py-3.5 rounded-2xl bg-red-600 items-center justify-center active:opacity-90"
+                >
+                  {deleteBusy ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="font-bold text-white">Continue</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
+        <Pressable onPress={() => router.replace("/home")} className="items-center">
           <Ionicons name="home-outline" size={20} color="#9ca3af" />
           <Text className="text-[10px] text-gray-400 font-bold mt-1">HOME</Text>
         </Pressable>
 
-        <Pressable
-          onPress={() => router.replace("/discover")}
-          className="items-center"
-        >
+        <Pressable onPress={() => router.replace("/discover")} className="items-center">
           <Ionicons name="compass-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">
-            DISCOVER
-          </Text>
+          <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
         </Pressable>
 
-        <Pressable className="items-center">
+        <Pressable onPress={() => router.replace("/progress")} className="items-center">
           <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">
-            PROGRESS
-          </Text>
+          <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
         </Pressable>
 
         <Pressable className="items-center">
           <Ionicons name="person" size={20} color="#76C893" />
-          <Text className="text-[10px] text-[#76C893] font-bold mt-1">
-            PROFILE
-          </Text>
+          <Text className="text-[10px] text-[#76C893] font-bold mt-1">PROFILE</Text>
         </Pressable>
       </View>
     </View>

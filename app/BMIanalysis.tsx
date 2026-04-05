@@ -58,7 +58,6 @@ function getPlan(bmi: number): {
 export default function BmiAnalysis() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [heightCm, setHeightCm] = useState<number>(0);
@@ -69,15 +68,18 @@ export default function BmiAnalysis() {
       const user = auth.currentUser;
       if (!user) return;
 
-      const snap = await getDoc(doc(db, "users", user.uid));
-      const data = snap.exists() ? snap.data() : {};
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = snap.exists() ? snap.data() : {};
 
-      const h = typeof data.height === "number" ? data.height : 0;
-      const w = typeof data.weight === "number" ? data.weight : 0;
+        const h = typeof data.height === "number" ? data.height : 0;
+        const w = typeof data.weight === "number" ? data.weight : 0;
 
-      setHeightCm(h);
-      setWeightKg(w);
-      setLoading(false);
+        setHeightCm(h);
+        setWeightKg(w);
+      } catch (e) {
+        console.log("Failed to load BMI analysis:", e);
+      }
     };
 
     load();
@@ -122,27 +124,10 @@ export default function BmiAnalysis() {
     }
   };
 
-  if (loading) {
-    return (
-      <View className="flex-1 bg-[#eef2f1] items-center justify-center">
-        <Text className="text-gray-600">Loading...</Text>
-      </View>
-    );
-  }
-
   return (
     <View className="flex-1 bg-[#eef2f1] px-6 pt-12">
       {/* Header */}
       <View className="relative mb-6">
-        <Pressable
-          onPress={() => router.back()}
-          className="absolute left-0 top-2 h-16 w-24 justify-center pl-2"
-        >
-          <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={26} color="#1f2937" />
-          </View>
-        </Pressable>
-
         <Text className="text-center text-2xl font-bold text-gray-900 mt-3">
           BMI Analysis
         </Text>

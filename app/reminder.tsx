@@ -1,19 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  Alert,
-  Platform,
-  Modal,
-} from "react-native";
-import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import * as Notifications from "expo-notifications";
-import { auth, db } from "../firebaseConfig";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
+import * as Notifications from "expo-notifications";
+import { useRouter } from "expo-router";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from "react-native";
+import { auth, db } from "../firebaseConfig";
 type ReminderKey = "workout" | "meal" | "water";
 
 type ReminderTime = {
@@ -77,9 +77,35 @@ const sectionMeta = {
   },
 };
 
+/** Main icon + circle colors per section (+ button stays app green for all). */
+const sectionAccent: Record<ReminderKey, { circleClass: string; icon: string }> = {
+  workout: {
+    circleClass: "bg-[#edf5f1]",
+    icon: "#76C893",
+  },
+  meal: {
+    circleClass: "bg-[#fff4e6]",
+    icon: "#c2410c",
+  },
+  water: {
+    circleClass: "bg-[#e0f2fe]",
+    icon: "#0284c7",
+  },
+};
+
 const DEFAULT_REPEAT = [true, false, true, false, true, false, false];
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const DAY_NAMES_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const UI_TO_EXPO_WEEKDAY = [2, 3, 4, 5, 6, 7, 1];
+
+function formatRepeatDaysLine(days: boolean[]): string {
+  const picked = days
+    .map((on, i) => (on ? DAY_NAMES_SHORT[i] : null))
+    .filter((x): x is string => x != null);
+  if (picked.length === 0) return "No days selected";
+  if (picked.length === 7) return "Every day";
+  return picked.join(", ");
+}
 
 type EditingState = {
   section: ReminderKey;
@@ -180,6 +206,7 @@ export default function RemindersScreen() {
   const [repeatDays, setRepeatDays] = useState<boolean[]>(DEFAULT_REPEAT);
   const [loading, setLoading] = useState(false);
   const [editor, setEditor] = useState<EditingState>(null);
+  const persistTailRef = useRef(Promise.resolve());
 
   useEffect(() => {
     const init = async () => {
@@ -281,26 +308,116 @@ export default function RemindersScreen() {
     });
   };
 
+  const cancelScheduledFor = async (data: ReminderData) => {
+    const allIds = [
+      ...(data.workout.scheduledIds || []),
+      ...(data.meal.scheduledIds || []),
+      ...(data.water.scheduledIds || []),
+    ];
+
+    for (const id of allIds) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(id);
+      } catch (error) {
+        console.log("Cancel notification failed:", error);
+      }
+    }
+  };
+
+  const runPersistReminders = async (
+    next: ReminderData,
+    days: boolean[],
+    prev: ReminderData
+  ) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      await cancelScheduledFor(prev);
+
+      const workoutIds = await scheduleSectionNotifications(
+        "workout",
+        next.workout,
+        days
+      );
+      const mealIds = await scheduleSectionNotifications("meal", next.meal, days);
+      const waterIds = await scheduleSectionNotifications("water", next.water, days);
+
+      const payload: ReminderData = {
+        workout: { ...next.workout, scheduledIds: workoutIds },
+        meal: { ...next.meal, scheduledIds: mealIds },
+        water: { ...next.water, scheduledIds: waterIds },
+      };
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          reminders: payload,
+          reminderRepeatDays: days,
+        },
+        { merge: true }
+      );
+
+      setReminders(payload);
+      setRepeatDays(days);
+    } catch (error) {
+      console.log("Persist reminders failed:", error);
+      Alert.alert("Error", "Could not update reminders. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const enqueuePersist = (next: ReminderData, days: boolean[], prev: ReminderData) => {
+    persistTailRef.current = persistTailRef.current
+      .then(() => runPersistReminders(next, days, prev))
+      .catch(() => {});
+  };
+
   const toggleEnabled = (section: ReminderKey, id: string) => {
-    setReminders((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        times: prev[section].times.map((t) =>
-          t.id === id ? { ...t, enabled: !t.enabled } : t
-        ),
-      },
-    }));
+    setReminders((prev) => {
+      const next: ReminderData = {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          times: prev[section].times.map((t) =>
+            t.id === id ? { ...t, enabled: !t.enabled } : t
+          ),
+        },
+      };
+      enqueuePersist(next, repeatDays, prev);
+      return next;
+    });
   };
 
   const removeTime = (section: ReminderKey, id: string) => {
-    setReminders((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        times: prev[section].times.filter((t) => t.id !== id),
-      },
-    }));
+    setReminders((prev) => {
+      const next: ReminderData = {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          times: prev[section].times.filter((t) => t.id !== id),
+        },
+      };
+      enqueuePersist(next, repeatDays, prev);
+      return next;
+    });
+  };
+
+  const confirmRemoveTime = (section: ReminderKey, id: string) => {
+    Alert.alert(
+      "Remove this reminder?",
+      "This time will be deleted and notifications for it will stop.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => removeTime(section, id),
+        },
+      ]
+    );
   };
 
   const saveModalReminder = () => {
@@ -314,7 +431,8 @@ export default function RemindersScreen() {
       enabled: true,
     };
 
-    setRepeatDays([...editor.repeatDays]);
+    const nextRepeat = [...editor.repeatDays];
+    setRepeatDays(nextRepeat);
 
     setReminders((prev) => {
       const section = prev[editor.section];
@@ -323,32 +441,18 @@ export default function RemindersScreen() {
         ? section.times.map((t) => (t.id === editor.timeId ? newTime : t))
         : [...section.times, newTime];
 
-      return {
+      const next: ReminderData = {
         ...prev,
         [editor.section]: {
           ...section,
           times: updatedTimes,
         },
       };
+      enqueuePersist(next, nextRepeat, prev);
+      return next;
     });
 
     setEditor(null);
-  };
-
-  const cancelExistingNotifications = async () => {
-    const allIds = [
-      ...(reminders.workout.scheduledIds || []),
-      ...(reminders.meal.scheduledIds || []),
-      ...(reminders.water.scheduledIds || []),
-    ];
-
-    for (const id of allIds) {
-      try {
-        await Notifications.cancelScheduledNotificationAsync(id);
-      } catch (error) {
-        console.log("Cancel notification failed:", error);
-      }
-    }
   };
 
   const scheduleSectionNotifications = async (
@@ -391,58 +495,6 @@ export default function RemindersScreen() {
     return scheduledIds;
   };
 
-  const handleSaveAll = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      setLoading(true);
-
-      await cancelExistingNotifications();
-
-      const workoutIds = await scheduleSectionNotifications(
-        "workout",
-        reminders.workout,
-        repeatDays
-      );
-      const mealIds = await scheduleSectionNotifications(
-        "meal",
-        reminders.meal,
-        repeatDays
-      );
-      const waterIds = await scheduleSectionNotifications(
-        "water",
-        reminders.water,
-        repeatDays
-      );
-
-      const payload: ReminderData = {
-        workout: { ...reminders.workout, scheduledIds: workoutIds },
-        meal: { ...reminders.meal, scheduledIds: mealIds },
-        water: { ...reminders.water, scheduledIds: waterIds },
-      };
-
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          reminders: payload,
-          reminderRepeatDays: repeatDays,
-        },
-        { merge: true }
-      );
-
-      setReminders(payload);
-
-      Alert.alert("Saved", "Reminder banner notifications have been updated.");
-      router.push("/profile");
-    } catch (error) {
-      console.log("Save reminders failed:", error);
-      Alert.alert("Error", "Failed to save reminders.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const cards = useMemo(
     () => [
       { key: "workout" as ReminderKey },
@@ -456,7 +508,7 @@ export default function RemindersScreen() {
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="px-5 pt-14">
@@ -469,7 +521,7 @@ export default function RemindersScreen() {
               <Ionicons name="chevron-back" size={34} color="#76C893" />
             </Pressable>
 
-            <Text className="text-center text-[28px] font-extrabold text-[#0f172a]">
+            <Text className="text-center text-2xl font-extrabold text-[#0f172a]">
               Reminders
             </Text>
           </View>
@@ -477,66 +529,82 @@ export default function RemindersScreen() {
           {cards.map(({ key }) => {
             const section = reminders[key];
             const meta = sectionMeta[key];
+            const accent = sectionAccent[key];
 
             return (
               <View
                 key={key}
-                className="bg-[#f7f7f7] rounded-[30px] px-4 py-5 mb-7 shadow-sm"
+                className="bg-[#f7f7f7] rounded-[30px] px-4 py-4 mb-5 shadow-sm"
               >
-                <View className="flex-row items-center justify-between mb-6">
-                  <View className="flex-row items-center">
-                    <View className="w-[68px] h-[68px] rounded-full bg-[#edf5f1] items-center justify-center">
+                <View className="flex-row items-center justify-between mb-4">
+                  <View className="flex-row items-center flex-1 min-w-0">
+                    <View
+                      className={`w-14 h-14 rounded-full items-center justify-center shrink-0 ${accent.circleClass}`}
+                    >
                       {key === "workout" ? (
                         <MaterialCommunityIcons
                           name="dumbbell"
-                          size={28}
-                          color="#76C893"
+                          size={24}
+                          color={accent.icon}
                         />
                       ) : key === "meal" ? (
                         <MaterialCommunityIcons
                           name="silverware-fork-knife"
-                          size={28}
-                          color="#76C893"
+                          size={24}
+                          color={accent.icon}
                         />
                       ) : (
                         <Ionicons
                           name="water-outline"
-                          size={28}
-                          color="#76C893"
+                          size={24}
+                          color={accent.icon}
                         />
                       )}
                     </View>
 
-                    <Text className="text-[24px] font-extrabold text-[#0f172a] ml-5">
-                      {meta.title}
-                    </Text>
+                    <View className="ml-3 flex-1 min-w-0">
+                      <Text className="text-lg font-extrabold text-[#0f172a]">
+                        {meta.title}
+                      </Text>
+                      <Text className="text-xs text-[#667085] mt-0.5" numberOfLines={2}>
+                        {meta.subtitle}
+                      </Text>
+                    </View>
                   </View>
 
                   <Pressable
                     onPress={() => openAddModal(key)}
-                    className="w-[56px] h-[56px] rounded-full bg-[#edf5f1] items-center justify-center"
+                    className="w-12 h-12 rounded-full bg-[#edf5f1] items-center justify-center shrink-0 ml-2"
                   >
-                    <Ionicons name="add" size={28} color="#76C893" />
+                    <Ionicons name="add" size={24} color="#76C893" />
                   </Pressable>
                 </View>
 
-                <View className="gap-4">
+                <View className="gap-3">
                   {section.times.map((item) => (
                     <View
                       key={item.id}
-                      className="bg-[#eef2f1] rounded-[28px] px-5 py-6 flex-row items-center justify-between"
+                      className="bg-[#eef2f1] rounded-[24px] px-4 py-4 flex-row items-center justify-between"
                     >
-                      <Text className="text-[#0f172a] text-[23px] font-extrabold">
-                        {formatTime(item)}
-                      </Text>
+                      <View className="flex-1 min-w-0 mr-3">
+                        <Text className="text-[#0f172a] text-lg font-extrabold">
+                          {formatTime(item)}
+                        </Text>
+                        <Text
+                          className="text-xs text-[#52B69A] font-semibold mt-1"
+                          numberOfLines={2}
+                        >
+                          {formatRepeatDaysLine(repeatDays)}
+                        </Text>
+                      </View>
 
-                      <View className="flex-row items-center">
+                      <View className="flex-row items-center shrink-0">
                         <Pressable
                           onPress={() => toggleEnabled(key, item.id)}
-                          className="mr-5"
+                          className="mr-3"
                         >
                           <View
-                            className={`w-[52px] h-[28px] rounded-full px-[3px] justify-center ${
+                            className={`w-11 h-[26px] rounded-full px-[2px] justify-center ${
                               item.enabled ? "bg-[#9adcb6]" : "bg-gray-300"
                             }`}
                           >
@@ -548,7 +616,7 @@ export default function RemindersScreen() {
                               }`}
                             >
                               {item.enabled && (
-                                <Ionicons name="checkmark" size={14} color="white" />
+                                <Ionicons name="checkmark" size={12} color="white" />
                               )}
                             </View>
                           </View>
@@ -556,13 +624,13 @@ export default function RemindersScreen() {
 
                         <Pressable
                           onPress={() => openEditModal(key, item)}
-                          className="mr-5"
+                          className="mr-3"
                         >
-                          <Feather name="edit-2" size={22} color="#9ca3af" />
+                          <Feather name="edit-2" size={20} color="#374151" />
                         </Pressable>
 
-                        <Pressable onPress={() => removeTime(key, item.id)}>
-                          <Ionicons name="trash-outline" size={24} color="#9ca3af" />
+                        <Pressable onPress={() => confirmRemoveTime(key, item.id)}>
+                          <Ionicons name="trash-outline" size={21} color="#dc2626" />
                         </Pressable>
                       </View>
                     </View>
@@ -572,7 +640,7 @@ export default function RemindersScreen() {
             );
           })}
 
-          <Text className="text-center text-[13px] font-bold text-[#98a2b3] tracking-[2px] px-6 mt-2 leading-7">
+          <Text className="text-center text-[11px] font-bold text-[#98a2b3] tracking-[1.5px] px-6 mt-2 leading-5">
             CONFIGURE INDIVIDUAL REMINDERS TO KEEP YOUR ROUTINE BALANCED. TAP THE + ICON TO ADD NEW ALERT TIMES.
           </Text>
         </View>
@@ -718,19 +786,6 @@ export default function RemindersScreen() {
         </View>
       </Modal>
 
-      <View className="absolute bottom-24 right-5">
-        <Pressable
-          onPress={handleSaveAll}
-          disabled={loading}
-          className={`bg-[#76C893] px-5 py-3 rounded-full shadow-sm ${
-            loading ? "opacity-60" : "opacity-100"
-          }`}
-        >
-          <Text className="text-white font-bold text-base">
-            {loading ? "Saving..." : "Save All"}
-          </Text>
-        </Pressable>
-      </View>
     </View>
   );
 }

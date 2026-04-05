@@ -4,7 +4,40 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { auth, db } from "../firebaseConfig";
+import { bumpWorkoutPlanDay } from "@/lib/achievements";
 import { doc, getDoc } from "firebase/firestore";
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
+function HomeSectionHeading({
+  label,
+  icon,
+  tintClass,
+  iconColor,
+}: {
+  label: string;
+  icon: IoniconName;
+  tintClass: string;
+  iconColor: string;
+}) {
+  return (
+    <View className="mt-5 flex-row items-center">
+      <View
+        className={`w-11 h-11 rounded-2xl items-center justify-center border border-white shadow-sm shadow-black/10 ${tintClass}`}
+      >
+        <Ionicons name={icon} size={21} color={iconColor} />
+      </View>
+      <Text className="flex-1 ml-3 text-lg font-extrabold text-gray-900 tracking-[0.06em]">
+        {label}
+      </Text>
+      <View className="flex-row items-end gap-0.5 h-5 pl-1">
+        <View className="w-[3px] h-2 rounded-full bg-[#76C893] opacity-35" />
+        <View className="w-[3px] h-3 rounded-full bg-[#76C893] opacity-55" />
+        <View className="w-[3px] h-5 rounded-full bg-[#52B69A] opacity-90" />
+      </View>
+    </View>
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -34,7 +67,7 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
-        <View className="px-6 pt-14">
+        <View className="px-6 pt-12">
           {/* Header */}
           <View className="flex-row justify-between items-center">
             <View>
@@ -50,7 +83,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Remaining Calories Card */}
-          <View className="mt-6 bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200">
+          <View className="mt-4 bg-[#f3f4f3] rounded-3xl p-4 border border-gray-200">
             <View className="flex-row items-center justify-between">
               <View className="w-28 h-28 rounded-full border-[8px] border-[#76C893] items-center justify-center bg-white">
                 <Text className="text-3xl font-extrabold text-gray-900">1,240</Text>
@@ -64,8 +97,8 @@ export default function HomeScreen() {
                   Remaining{"\n"}Calories
                 </Text>
 
-                <View className="mt-3">
-                  <View className="flex-row items-center mb-2">
+                <View className="mt-2">
+                  <View className="flex-row items-center mb-1.5">
                     <View className="w-2 h-2 rounded-full bg-[#76C893] mr-2" />
                     <Text className="text-gray-500 text-sm">Consumed: 860</Text>
                   </View>
@@ -80,11 +113,14 @@ export default function HomeScreen() {
           </View>
 
           {/* Recommended Plan */}
-          <Text className="mt-8 text-xs tracking-[2px] text-gray-400 font-bold">
-            YOUR RECOMMENDED PLAN
-          </Text>
+          <HomeSectionHeading
+            label="YOUR RECOMMENDED PLAN"
+            icon="flash-outline"
+            tintClass="bg-[#eaf7f0]"
+            iconColor="#52B69A"
+          />
 
-          <View className="mt-4 bg-[#f3f4f3] rounded-3xl p-4 border border-gray-200">
+          <View className="mt-2 bg-[#f3f4f3] rounded-3xl p-4 border border-gray-200">
             <View className="flex-row justify-between items-start">
               <View className="flex-row items-center">
                 <View className="w-12 h-12 rounded-2xl bg-[#dff5e8] items-center justify-center">
@@ -110,10 +146,16 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <Pressable className="mt-5 rounded-full overflow-hidden">
+            <Pressable
+              className="mt-3 rounded-full overflow-hidden"
+              onPress={() => {
+                const u = auth.currentUser;
+                if (u) void bumpWorkoutPlanDay(u.uid);
+              }}
+            >
               <LinearGradient
                 colors={["#76C893", "#69c58c"]}
-                className="py-4 rounded-full items-center"
+                className="py-3.5 rounded-full items-center"
               >
                 <Text className="text-white font-bold text-base">
                   View Full Plan
@@ -123,12 +165,15 @@ export default function HomeScreen() {
           </View>
 
           {/* Meal Suggestions */}
-          <Text className="mt-8 text-xs tracking-[2px] text-gray-400 font-bold">
-            MEAL SUGGESTIONS
-          </Text>
+          <HomeSectionHeading
+            label="MEAL SUGGESTIONS"
+            icon="nutrition-outline"
+            tintClass="bg-[#fff4e6]"
+            iconColor="#c2410c"
+          />
 
-          <View className="flex-row justify-between mt-4">
-            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-5 items-center border border-gray-200">
+          <View className="flex-row justify-between mt-2">
+            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200">
               <View className="w-10 h-10 rounded-full bg-[#fde8db] items-center justify-center">
                 <MaterialCommunityIcons
                   name="food-croissant"
@@ -136,30 +181,54 @@ export default function HomeScreen() {
                   color="#c78a5a"
                 />
               </View>
-              <Text className="mt-3 text-sm font-bold text-gray-900">
+              <Text className="mt-2 text-sm font-bold text-gray-900">
                 Breakfast
               </Text>
               <Text className="text-xs text-gray-400 mt-1">320 kcal</Text>
             </View>
 
-            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-5 items-center border border-gray-200">
+            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200">
               <View className="w-10 h-10 rounded-full bg-[#e7f0fb] items-center justify-center">
                 <Ionicons name="restaurant" size={18} color="#6b8db3" />
               </View>
-              <Text className="mt-3 text-sm font-bold text-gray-900">Lunch</Text>
+              <Text className="mt-2 text-sm font-bold text-gray-900">Lunch</Text>
               <Text className="text-xs text-gray-400 mt-1">580 kcal</Text>
             </View>
 
-            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-5 items-center border border-gray-200">
+            <View className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200">
               <View className="w-10 h-10 rounded-full bg-[#efe4fa] items-center justify-center">
                 <Ionicons name="fast-food" size={18} color="#8f6ab3" />
               </View>
-              <Text className="mt-3 text-sm font-bold text-gray-900">
+              <Text className="mt-2 text-sm font-bold text-gray-900">
                 Dinner
               </Text>
               <Text className="text-xs text-gray-400 mt-1">450 kcal</Text>
             </View>
           </View>
+
+          {/* Achievements — single entry to full screen */}
+          <HomeSectionHeading
+            label="ACHIEVEMENTS"
+            icon="trophy-outline"
+            tintClass="bg-[#fef9c3]"
+            iconColor="#ca8a04"
+          />
+
+          <Pressable
+            onPress={() => router.push("/achievements")}
+            className="mt-2 bg-white rounded-3xl border border-gray-200 px-5 py-4 flex-row items-center active:bg-gray-50 mb-1"
+          >
+            <View className="w-14 h-14 rounded-2xl bg-[#eaf7f0] items-center justify-center">
+              <Ionicons name="trophy-outline" size={30} color="#76C893" />
+            </View>
+            <View className="ml-4 flex-1">
+              <Text className="text-xl font-extrabold text-gray-900">Achievements</Text>
+              <Text className="text-sm text-gray-500 mt-1 leading-5">
+                Workout, meal, community & streak badges
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -181,7 +250,7 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
 
-        <Pressable className="items-center">
+        <Pressable onPress={() => router.replace("/progress")} className="items-center">
           <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
           <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
         </Pressable>

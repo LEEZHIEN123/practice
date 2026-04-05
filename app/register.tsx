@@ -11,14 +11,13 @@ import {
 } from "react-native";
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { auth, db } from "../firebaseConfig";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { useRegistration } from "../context/registrationContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function Register() {
   const router = useRouter();
+  const { setAccount, reset } = useRegistration();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,24 +43,18 @@ export default function Register() {
     try {
       setLoading(true);
 
-      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-
-      await setDoc(doc(db, "users", cred.user.uid), {
+      // Start onboarding without registering (no Firebase writes yet)
+      reset();
+      setAccount({
         name: name.trim(),
-        email: cred.user.email,
-        createdAt: Date.now(),
-        // profile fields will be added in /profile-details
+        email: cleanEmail,
+        password,
       });
 
-      // ✅ Go to profile details page after sign up
       router.push("/profiledetails");
       
     } catch (e: any) {
-      if (e?.code === "auth/email-already-in-use") {
-        Alert.alert("Email Exists", "This email is already registered.");
-      } else {
-        Alert.alert("Error", e?.message ?? "Registration failed.");
-      }
+      Alert.alert("Error", e?.message ?? "Registration failed.");
     } finally {
       setLoading(false);
     }

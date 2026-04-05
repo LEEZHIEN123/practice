@@ -40,7 +40,7 @@ export default function DiscoverScreen() {
                 All Workouts
               </Text>
             </View>
- 
+
             <Ionicons name="chevron-forward" size={28} color="#76C893" />
           </Pressable>
 
@@ -118,7 +118,7 @@ export default function DiscoverScreen() {
           </Text>
         </Pressable>
 
-          <Pressable className="items-center">
+          <Pressable onPress={() => router.replace("/progress")} className="items-center">
                   <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
                   <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
                 </Pressable>

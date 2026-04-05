@@ -1,11 +1,13 @@
-import React, { useMemo, useState, useEffect } from "react";
-import { View, Text, Pressable } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Alert, View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { auth, db } from "../firebaseConfig";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
+import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { useRegistration } from "../context/registrationContext";
 
 type ActivityKey =
   | "sedentary"
@@ -18,7 +20,10 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export default function ActivityLevel() {
   const router = useRouter();
-const [selected, setSelected] = useState<ActivityKey | null>(null);  const [saving, setSaving] = useState(false);
+  const { account, profile, reset, setActivity } = useRegistration();
+
+  const [selected, setSelected] = useState<ActivityKey | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const options = useMemo(
     () => [
@@ -61,63 +66,66 @@ const [selected, setSelected] = useState<ActivityKey | null>(null);  const [savi
     []
   );
 
-  // ✅ Load previously saved activity level
-  useEffect(() => {
-    const loadActivity = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      const snap = await getDoc(doc(db, "users", user.uid));
-      if (!snap.exists()) return;
-
-      const data = snap.data();
-
-      if (data.activityLevel) {
-        setSelected(data.activityLevel as ActivityKey);
-      }
-    };
-
-    loadActivity();
-  }, []);
-
-  // ✅ Auto-save when user selects an option (so Back keeps it)
-  const selectAndSave = async (key: ActivityKey, multiplier: number) => {
-    setSelected(key);
-
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      await updateDoc(doc(db, "users", user.uid), {
-        activityLevel: key,
-        activityMultiplier: multiplier,
-      });
-    } catch (e) {
-      console.log("Auto-save activity failed:", e);
-    }
-  };
+  const select = (key: ActivityKey) => setSelected(key);
 
   // Continue goes to Home (final step)
   const continueToHome = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
     const picked = options.find((o) => o.key === selected);
     if (!picked) return;
+    if (!account || !profile) {
+      router.replace("/register");
+      return;
+    }
 
     try {
       setSaving(true);
 
-      // (Optional) save again to be 100% sure
-      await updateDoc(doc(db, "users", user.uid), {
-        activityLevel: picked.key,
-        activityMultiplier: picked.multiplier,
-      });
+      setActivity({ activityLevel: picked.key, activityMultiplier: picked.multiplier });
 
-router.push("/BMIanalysis");    } catch (error) {
+      // Create Auth account ONLY when onboarding is fully completed
+      const cred = await createUserWithEmailAndPassword(auth, account.email, account.password);
+      // Ensure Firestore sees a fresh auth token (avoids rare race with first write after signup)
+      await cred.user.getIdToken(true);
+
+      try {
+        await setDoc(
+          doc(db, "users", cred.user.uid),
+          {
+            name: account.name,
+            email: cred.user.email ?? account.email,
+            createdAt: Date.now(),
+            gender: profile.gender,
+            age: profile.age,
+            height: profile.height,
+            weight: profile.weight,
+            activityLevel: picked.key,
+            activityMultiplier: picked.multiplier,
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        try {
+          await deleteUser(cred.user);
+        } catch {}
+        throw e;
+      }
+
+      router.push("/BMIanalysis");
+    } catch (error: any) {
+      if (error?.code === "auth/email-already-in-use") {
+        Alert.alert("Email Exists", "This email is already registered.");
+      } else if (error?.code === "permission-denied") {
+        Alert.alert(
+          "Firestore: permission denied",
+          "Your Firestore security rules are blocking saving the new profile. In Firebase Console → Firestore Database → Rules, publish the rules from the firestore.rules file in this project (or run: firebase deploy --only firestore:rules after firebase login)."
+        );
+      } else {
+        Alert.alert("Error", error?.message ?? "Failed to complete registration.");
+      }
       console.log("Error saving activity level:", error);
     } finally {
       setSaving(false);
+      reset();
     }
   };
 
@@ -165,7 +173,7 @@ router.push("/BMIanalysis");    } catch (error) {
           return (
             <Pressable
               key={o.key}
-              onPress={() => selectAndSave(o.key, o.multiplier)}
+              onPress={() => select(o.key)}
               className={`rounded-3xl p-5 flex-row items-center justify-between ${
                 isActive
                   ? "bg-[#eaf7f0] border-2 border-[#76C893]"

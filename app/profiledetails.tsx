@@ -1,286 +1,429 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, Pressable, Image, Alert } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { auth, db } from "../firebaseConfig";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
-import * as ImagePicker from "expo-image-picker"; // To pick profile image
-import Slider from "@react-native-community/slider"; // For horizontal scrolling
+import { useRegistration } from "../context/registrationContext";
+import { LinearGradient } from "expo-linear-gradient";
 
-export default function EditProfile() {
+type Gender = "male" | "female";
+
+export default function ProfileDetails() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { account, setProfile } = useRegistration();
 
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userBio, setUserBio] = useState("");
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [gender, setGender] = useState<Gender>("male");
   const [age, setAge] = useState(28);
-  const [height, setHeight] = useState(175);
-  const [weight, setWeight] = useState(72);
-  const [loading, setLoading] = useState(false);
+  const [height, setHeight] = useState(175.0);
+  const [weight, setWeight] = useState(72.0);
+  const [saving, setSaving] = useState(false);
 
-  // Error states for age, height, and weight
+  const [ageText, setAgeText] = useState(String(28));
+  const [heightText, setHeightText] = useState((175).toFixed(1));
+  const [weightText, setWeightText] = useState((72).toFixed(1));
+
   const [ageError, setAgeError] = useState("");
   const [heightError, setHeightError] = useState("");
   const [weightError, setWeightError] = useState("");
 
-  // Request permission for accessing photos
-  const requestPermission = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      alert("Sorry, we need permission to access your photo library.");
-    }
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  const sanitizeInt = (t: string) => t.replace(/[^\d]/g, "");
+  const sanitizeDecimal = (t: string) => {
+    const cleaned = t.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+    const [a, b] = cleaned.split(".");
+    if (b === undefined) return a ?? "";
+    return `${a ?? ""}.${b.slice(0, 1)}`; // one decimal place
   };
 
-  // Fetch current user data from Firestore
+  const ranges = useMemo(
+    () => ({
+      age: { min: 20, max: 90, step: 1 },
+      height: { min: 120, max: 220, step: 0.1 },
+      weight: { min: 30, max: 200, step: 0.1 },
+    }),
+    []
+  );
+
   useEffect(() => {
-    requestPermission(); // Request permission when component mounts
+    // Ensure defaults are within range (no Firestore reads during onboarding)
+    setAge((v) => {
+      const n = clamp(v, ranges.age.min, ranges.age.max);
+      setAgeText(String(n));
+      return n;
+    });
+    setHeight((v) => {
+      const n = clamp(v, ranges.height.min, ranges.height.max);
+      setHeightText(n.toFixed(1));
+      return n;
+    });
+    setWeight((v) => {
+      const n = clamp(v, ranges.weight.min, ranges.weight.max);
+      setWeightText(n.toFixed(1));
+      return n;
+    });
+  }, [ranges.age.max, ranges.age.min, ranges.height.max, ranges.height.min, ranges.weight.max, ranges.weight.min]);
 
-    const loadProfile = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          setUserName(data.name);
-          setUserEmail(data.email);
-          setUserBio(data.bio || "");
-          setProfileImage(data.profileImage || null); // Set the profile image from Firestore
-          setAge(data.age || 28); // Set default age if not provided
-          setHeight(data.height || 175); // Set default height if not provided
-          setWeight(data.weight || 72); // Set default weight if not provided
-        }
-      } catch (error) {
-        console.log("Error loading user profile:", error);
-      }
-    };
-
-    loadProfile();
-  }, []);
-
-  // Validate and clamp values for age, height, and weight
-  const validateInput = () => {
-    let validAge = age;
-    let validHeight = height;
-    let validWeight = weight;
-
-    // Validate age
-    if (age < 20 || age > 90) {
-      setAgeError("Age must be between 20 and 90");
-      validAge = Math.min(Math.max(age, 20), 90);
-    } else {
-      setAgeError("");
-    }
-
-    // Validate height
-    if (height < 120 || height > 220) {
-      setHeightError("Height must be between 120cm and 220cm");
-      validHeight = Math.min(Math.max(height, 120), 220);
-    } else {
-      setHeightError("");
-    }
-
-    // Validate weight
-    if (weight < 30 || weight > 200) {
-      setWeightError("Weight must be between 30kg and 200kg");
-      validWeight = Math.min(Math.max(weight, 30), 200);
-    } else {
-      setWeightError("");
-    }
-
-    setAge(validAge);
-    setHeight(validHeight);
-    setWeight(validWeight);
-  };
-
-  // Update the user's profile data
-  const handleSave = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
+  const handleContinue = async () => {
     try {
-      setLoading(true);
+      setSaving(true);
+      if (!account) {
+        router.replace("/register");
+        return;
+      }
 
-      // Validate input before updating
-      validateInput();
+      // Validate before moving forward (use text values too, in case user didn't blur)
+      let ok = true;
 
-      // Update Firestore with the new profile data
-      await updateDoc(doc(db, "users", user.uid), {
-        name: userName,
-        email: userEmail,
-        bio: userBio,
-        profileImage: profileImage, // Save the updated profile image URI
-        age: age,
-        height: height,
-        weight: weight,
+      const parsedAge = parseInt(ageText || "", 10);
+      if (!Number.isFinite(parsedAge) || parsedAge < ranges.age.min || parsedAge > ranges.age.max) {
+        setAgeError("Age must be between 20 and 90.");
+        ok = false;
+      } else {
+        setAgeError("");
+      }
+
+      const parsedHeight = parseFloat(heightText || "");
+      if (
+        !Number.isFinite(parsedHeight) ||
+        parsedHeight < ranges.height.min ||
+        parsedHeight > ranges.height.max
+      ) {
+        setHeightError("Height must be between 120 cm and 220 cm.");
+        ok = false;
+      } else {
+        setHeightError("");
+      }
+
+      const parsedWeight = parseFloat(weightText || "");
+      if (
+        !Number.isFinite(parsedWeight) ||
+        parsedWeight < ranges.weight.min ||
+        parsedWeight > ranges.weight.max
+      ) {
+        setWeightError("Weight must be between 30 kg and 200 kg.");
+        ok = false;
+      } else {
+        setWeightError("");
+      }
+
+      if (!ok) {
+        Alert.alert("Invalid details", "Please correct the highlighted fields before continuing.");
+        return;
+      }
+
+      const nextAge = clamp(parsedAge, ranges.age.min, ranges.age.max);
+      const nextHeight = clamp(parsedHeight, ranges.height.min, ranges.height.max);
+      const nextWeight = clamp(parsedWeight, ranges.weight.min, ranges.weight.max);
+
+      // Keep UI/state consistent with what we're saving
+      setAge(nextAge);
+      setAgeText(String(nextAge));
+      setHeight(nextHeight);
+      setHeightText(nextHeight.toFixed(1));
+      setWeight(nextWeight);
+      setWeightText(nextWeight.toFixed(1));
+
+      setProfile({
+        gender,
+        age: nextAge,
+        height: nextHeight,
+        weight: nextWeight,
       });
 
-      Alert.alert("Profile Updated", "Your profile has been updated successfully!");
-      router.push("/profile"); // Redirect back to the profile page
+      router.push("/activitylevel");
     } catch (error) {
-      console.log("Error saving profile:", error);
-      Alert.alert("Error", "Failed to update profile.");
+      console.log("Error saving profile details:", error);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  // Allow the user to pick an image
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
+  const GenderButton = ({
+    value,
+    label,
+    icon,
+  }: {
+    value: Gender;
+    label: string;
+    icon: "male" | "female";
+  }) => {
+    const active = gender === value;
 
-    // Check if the user did not cancel and a URI exists
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setProfileImage(result.assets[0].uri); // Set the selected image URI
-    }
+    return (
+      <View className="items-center">
+        <Pressable
+          onPress={() => setGender(value)}
+          className={`w-20 h-20 rounded-full items-center justify-center ${
+            active ? "bg-[#76C893]" : "bg-[#dfeee6]"
+          }`}
+        >
+          <Ionicons name={icon} size={34} color={active ? "white" : "#76C893"} />
+        </Pressable>
+        <Text className={`mt-2 font-semibold ${active ? "text-[#76C893]" : "text-gray-500"}`}>
+          {label}
+        </Text>
+      </View>
+    );
   };
+
+  const bottomPad = Math.max(insets.bottom, 16) + 24;
 
   return (
-    <View className="flex-1 bg-[#eef2f1] px-6 pt-14">
-      <Text className="text-2xl font-extrabold text-gray-900 mb-4">Edit Profile</Text>
-
-      {/* Profile Picture Section */}
-      <View className="items-center mb-6">
-        <Pressable onPress={pickImage}>
-          <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
-            <Image
-              source={
-                profileImage
-                  ? { uri: profileImage }
-                  : require("../assets/images/malefitnesspic.avif") // default image
-              }
-              className="w-28 h-28"
-              resizeMode="contain"
-            />
+    <View className="flex-1 bg-[#eef2f1]">
+      <ScrollView
+        className="flex-1 px-6 pt-12"
+        contentContainerStyle={{ paddingBottom: bottomPad }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+      {/* Header */}
+      <View className="relative mb-8">
+        <Pressable
+          onPress={() => router.back()}
+          className="absolute left-0 top-5 h-16 w-24 justify-center pl-2"
+        >
+          <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
+            <Ionicons name="chevron-back" size={26} color="#1f2937" />
           </View>
         </Pressable>
-        <Text className="text-sm text-gray-600 mt-2">Tap to change profile picture</Text>
+
+        <Text className="text-center text-2xl font-bold text-gray-900 mt-3">Profile Details</Text>
+
+        {/* Progress */}
+        <View className="flex-row justify-center items-center mt-3">
+          <View className="w-10 h-2 rounded-full bg-green-500 mx-1" />
+          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
+          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
+        </View>
       </View>
 
-      {/* Full Name Input */}
-      <Text className="text-lg text-gray-700 mb-2">Full Name</Text>
-      <TextInput
-        value={userName}
-        onChangeText={setUserName}
-        className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
-        placeholder="Enter your full name"
-      />
+      {/* Title */}
+      <Text className="text-center text-3xl font-extrabold text-gray-900 mt-2">
+        Tell us about yourself
+      </Text>
+      <Text className="text-center text-gray-500 mt-3 text-base px-6">
+        This helps us personalize your fitness{"\n"}journey and track progress accurately.
+      </Text>
 
-      {/* Email Input */}
-      <Text className="text-lg text-gray-700 mb-2">Email Address</Text>
-      <TextInput
-        value={userEmail}
-        onChangeText={setUserEmail}
-        className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
-        placeholder="Enter your email address"
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-
-      {/* Bio Input as a Text Area */}
-      <Text className="text-lg text-gray-700 mb-2">Bio</Text>
-      <TextInput
-        value={userBio}
-        onChangeText={setUserBio}
-        className="bg-white rounded-xl px-4 py-3 mb-6 text-gray-700"
-        placeholder="Write a short bio"
-        multiline={true} // Enable multiline for the text area
-        numberOfLines={4} // Optional: Set initial visible number of lines
-        textAlignVertical="top" // Align text to the top
-      />
-
-      {/* Age Section */}
-      <Text className="text-lg text-gray-700 mb-2">Age</Text>
-      <View className="flex-row items-center mb-4">
-        <Slider
-          style={{ width: "80%" }}
-          minimumValue={20}
-          maximumValue={90}
-          step={1}
-          value={age}
-          onValueChange={(v) => setAge(v)}
-          minimumTrackTintColor="#76C893"
-          maximumTrackTintColor="#0c3a23"
-          thumbTintColor="#76C893"
-        />
-        <TextInput
-          value={String(age)}
-          onChangeText={(text) => setAge(Number(text))}
-          keyboardType="numeric"
-          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
-          placeholder="Age"
-          onBlur={() => validateInput()} // Ensure value is valid when losing focus
-        />
+      {/* Illustration card */}
+      <View className="items-center mt-6">
+        <View className="w-52 h-56 rounded-3xl bg-white items-center justify-center shadow-sm">
+          <Image
+            source={
+              gender === "female"
+                ? require("../assets/images/femalefitnesspic.avif")
+                : require("../assets/images/malefitnesspic.avif")
+            }
+            className="w-40 h-48"
+            resizeMode="contain"
+          />
+        </View>
       </View>
-      {ageError ? <Text className="text-red-500 text-sm">{ageError}</Text> : null}
 
-      {/* Height Section */}
-      <Text className="text-lg text-gray-700 mb-2">Height (cm)</Text>
-      <View className="flex-row items-center mb-4">
-        <Slider
-          style={{ width: "80%" }}
-          minimumValue={120}
-          maximumValue={220}
-          step={0.1}
-          value={height}
-          onValueChange={(v) => setHeight(v)}
-          minimumTrackTintColor="#76C893"
-          maximumTrackTintColor="#0c3a23"
-          thumbTintColor="#76C893"
-        />
-        <TextInput
-          value={String(height)}
-          onChangeText={(text) => setHeight(Number(text))}
-          keyboardType="numeric"
-          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
-          placeholder="Height"
-          onBlur={() => validateInput()} // Ensure value is valid when losing focus
-        />
+      {/* Gender */}
+      <View className="flex-row justify-center gap-10 mt-7">
+        <GenderButton value="male" label="Male" icon="male" />
+        <GenderButton value="female" label="Female" icon="female" />
       </View>
-      {heightError ? <Text className="text-red-500 text-sm">{heightError}</Text> : null}
 
-      {/* Weight Section */}
-      <Text className="text-lg text-gray-700 mb-2">Weight (kg)</Text>
-      <View className="flex-row items-center mb-6">
-        <Slider
-          style={{ width: "80%" }}
-          minimumValue={30}
-          maximumValue={200}
-          step={0.1}
-          value={weight}
-          onValueChange={(v) => setWeight(v)}
-          minimumTrackTintColor="#76C893"
-          maximumTrackTintColor="#0c3a23"
-          thumbTintColor="#76C893"
-        />
-        <TextInput
-          value={String(weight)}
-          onChangeText={(text) => setWeight(Number(text))}
-          keyboardType="numeric"
-          className="bg-white rounded-xl px-3 py-2 text-gray-700 ml-4 w-20 text-center"
-          placeholder="Weight"
-          onBlur={() => validateInput()} // Ensure value is valid when losing focus
-        />
+      {/* Sliders */}
+      <View className="mt-6">
+        {/* AGE (EditProfile style) */}
+        <View className="mb-3">
+          <View className="flex-row justify-between items-center mb-2">
+            <Text className="text-gray-600 font-semibold ml-1">AGE</Text>
+
+            <View className="flex-row items-center">
+              <TextInput
+                value={ageText}
+                onChangeText={(t) => {
+                  setAgeText(sanitizeInt(t));
+                  setAgeError("");
+                }}
+                onBlur={() => {
+                  const parsed = parseInt(ageText || "", 10);
+
+                  if (!Number.isFinite(parsed)) {
+                    setAgeError("Age must be between 20 and 90.");
+                    setAgeText(String(age));
+                    return;
+                  }
+
+                  if (parsed < ranges.age.min || parsed > ranges.age.max) {
+                    setAgeError("Age must be between 20 and 90.");
+                  } else {
+                    setAgeError("");
+                  }
+
+                  const n = clamp(parsed, ranges.age.min, ranges.age.max);
+                  setAge(n);
+                  setAgeText(String(n));
+                }}
+                keyboardType="numeric"
+                className="w-16 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+              />
+              <Text className="ml-2 text-gray-500 mr-1">years</Text>
+            </View>
+          </View>
+
+          <Slider
+            style={{ width: "100%" }}
+            minimumValue={ranges.age.min}
+            maximumValue={ranges.age.max}
+            step={1}
+            value={age}
+            onValueChange={(v) => {
+              setAge(v);
+              setAgeText(String(v));
+              setAgeError("");
+            }}
+            minimumTrackTintColor="#76C893"
+            maximumTrackTintColor="#0c3a23"
+            thumbTintColor="#76C893"
+          />
+
+          {!!ageError && <Text className="text-red-500 text-sm mt-1 ml-1">{ageError}</Text>}
+        </View>
+
+        {/* HEIGHT (EditProfile style) */}
+        <View className="mb-3">
+          <View className="flex-row justify-between items-center mb-2">
+            <Text className="text-gray-600 font-semibold ml-1">HEIGHT</Text>
+
+            <View className="flex-row items-center">
+              <TextInput
+                value={heightText}
+                onChangeText={(t) => {
+                  setHeightText(sanitizeDecimal(t));
+                  setHeightError("");
+                }}
+                onBlur={() => {
+                  const parsed = parseFloat(heightText || "");
+
+                  if (!Number.isFinite(parsed)) {
+                    setHeightError("Height must be between 120 cm and 220 cm.");
+                    setHeightText(String(height));
+                    return;
+                  }
+
+                  if (parsed < ranges.height.min || parsed > ranges.height.max) {
+                    setHeightError("Height must be between 120 cm and 220 cm.");
+                  } else {
+                    setHeightError("");
+                  }
+
+                  const fixed = clamp(parsed, ranges.height.min, ranges.height.max);
+                  setHeight(fixed);
+                  setHeightText(fixed.toFixed(1));
+                }}
+                keyboardType="decimal-pad"
+                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+              />
+              <Text className="ml-2 text-gray-500 mr-1">cm</Text>
+            </View>
+          </View>
+
+          <Slider
+            style={{ width: "100%" }}
+            minimumValue={ranges.height.min}
+            maximumValue={ranges.height.max}
+            step={0.1}
+            value={height}
+            onValueChange={(v) => {
+              setHeight(v);
+              setHeightText(v.toFixed(1));
+              setHeightError("");
+            }}
+            minimumTrackTintColor="#76C893"
+            maximumTrackTintColor="#0c3a23"
+            thumbTintColor="#76C893"
+          />
+
+          {!!heightError && <Text className="text-red-500 text-sm mt-1 ml-1">{heightError}</Text>}
+        </View>
+
+        {/* WEIGHT (EditProfile style) */}
+        <View className="mb-2">
+          <View className="flex-row justify-between items-center mb-2">
+            <Text className="text-gray-600 font-semibold ml-1">WEIGHT</Text>
+
+            <View className="flex-row items-center">
+              <TextInput
+                value={weightText}
+                onChangeText={(t) => {
+                  setWeightText(sanitizeDecimal(t));
+                  setWeightError("");
+                }}
+                onBlur={() => {
+                  const parsed = parseFloat(weightText || "");
+
+                  if (!Number.isFinite(parsed)) {
+                    setWeightError("Weight must be between 30 kg and 200 kg.");
+                    setWeightText(String(weight));
+                    return;
+                  }
+
+                  if (parsed < ranges.weight.min || parsed > ranges.weight.max) {
+                    setWeightError("Weight must be between 30 kg and 200 kg.");
+                  } else {
+                    setWeightError("");
+                  }
+
+                  const fixed = clamp(parsed, ranges.weight.min, ranges.weight.max);
+                  setWeight(fixed);
+                  setWeightText(fixed.toFixed(1));
+                }}
+                keyboardType="decimal-pad"
+                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+              />
+              <Text className="ml-2 text-gray-500 mr-1">kg</Text>
+            </View>
+          </View>
+
+          <Slider
+            style={{ width: "100%" }}
+            minimumValue={ranges.weight.min}
+            maximumValue={ranges.weight.max}
+            step={0.1}
+            value={weight}
+            onValueChange={(v) => {
+              setWeight(v);
+              setWeightText(v.toFixed(1));
+              setWeightError("");
+            }}
+            minimumTrackTintColor="#76C893"
+            maximumTrackTintColor="#0c3a23"
+            thumbTintColor="#76C893"
+          />
+
+          {!!weightError && <Text className="text-red-500 text-sm mt-1 ml-1">{weightError}</Text>}
+        </View>
       </View>
-      {weightError ? <Text className="text-red-500 text-sm">{weightError}</Text> : null}
 
-      {/* Save Button */}
-      <Pressable
-        onPress={handleSave}
-        disabled={loading}
-        className={`w-full bg-[#76C893] py-4 rounded-xl items-center ${loading ? "opacity-50" : ""}`}
-      >
-        <Text className="text-white text-lg font-semibold">
-          {loading ? "Saving..." : "Save Changes"}
-        </Text>
-      </Pressable>
+      {/* Continue */}
+      <View className="mt-4">
+        <Pressable
+          onPress={handleContinue}
+          disabled={saving}
+          className={`rounded-full overflow-hidden ${saving ? "opacity-60" : "opacity-100"}`}
+        >
+          <LinearGradient
+            colors={["#76C893", "#52B69A"]}
+            className="py-4 items-center rounded-2xl"
+          >
+            <View className="flex-row items-center">
+              <Text className="text-white text-lg font-semibold mr-2">
+                {saving ? "Saving..." : "Continue"}
+              </Text>
+              <Ionicons name="arrow-forward" size={20} color="white" />
+            </View>
+          </LinearGradient>
+        </Pressable>
+      </View>
+      </ScrollView>
     </View>
   );
 }

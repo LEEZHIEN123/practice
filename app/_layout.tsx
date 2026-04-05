@@ -1,15 +1,20 @@
 import { Stack } from "expo-router";
-import * as Notifications from "expo-notifications";
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+import { Platform } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { RegistrationProvider } from "@/context/registrationContext";
 
 export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <SafeAreaProvider>
+      <RegistrationProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            // Instant screen change on native (no slide animation delay)
+            animation: Platform.OS === "web" ? "default" : "none",
+          }}
+        />
+      </RegistrationProvider>
+    </SafeAreaProvider>
+  );
 }

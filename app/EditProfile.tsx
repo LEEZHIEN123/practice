@@ -630,6 +630,7 @@ export default function EditProfile() {
             {loading ? "Saving..." : "Save Changes"}
           </Text>
         </Pressable>
+        <View className="h-6" />
       </ScrollView>
 
       <Modal visible={editorVisible} animationType="slide" transparent={false}>
