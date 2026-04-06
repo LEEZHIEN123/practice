@@ -1,6 +1,5 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
-import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +12,7 @@ import {
     Text,
     View,
 } from "react-native";
+import Constants from "expo-constants";
 import { auth, db } from "../firebaseConfig";
 type ReminderKey = "workout" | "meal" | "water";
 
@@ -200,6 +200,19 @@ const convertTo24Hour = (hour12: number, period: "AM" | "PM") => {
   return hour24;
 };
 
+const isExpoGo = Constants.appOwnership === "expo";
+
+async function getNotifications() {
+  try {
+    const mod = await import("expo-notifications");
+    return mod;
+  } catch (e) {
+    console.log("expo-notifications import failed:", e);
+    Alert.alert("Notifications", "Notifications are not available on this device.");
+    return null as any;
+  }
+}
+
 export default function RemindersScreen() {
   const router = useRouter();
   const [reminders, setReminders] = useState<ReminderData>(defaultReminderData);
@@ -207,6 +220,7 @@ export default function RemindersScreen() {
   const [loading, setLoading] = useState(false);
   const [editor, setEditor] = useState<EditingState>(null);
   const persistTailRef = useRef(Promise.resolve());
+  const expoGoWarnedRef = useRef(false);
 
   useEffect(() => {
     const init = async () => {
@@ -253,7 +267,21 @@ export default function RemindersScreen() {
   }, []);
 
   const ensureNotificationPermission = async () => {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     try {
+      // Ensure reminders show even when the app is open (foreground).
+      if (!expoGoWarnedRef.current) {
+        expoGoWarnedRef.current = true;
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+          }),
+        });
+      }
+
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("reminders", {
           name: "Reminders",
@@ -309,6 +337,8 @@ export default function RemindersScreen() {
   };
 
   const cancelScheduledFor = async (data: ReminderData) => {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     const allIds = [
       ...(data.workout.scheduledIds || []),
       ...(data.meal.scheduledIds || []),
@@ -460,6 +490,8 @@ export default function RemindersScreen() {
     section: ReminderSection,
     days: boolean[]
   ) => {
+    const Notifications = await getNotifications();
+    if (!Notifications) return [];
     const meta = sectionMeta[key];
     const scheduledIds: string[] = [];
 
@@ -485,7 +517,7 @@ export default function RemindersScreen() {
             hour: hour24,
             minute: item.minute,
             channelId: "reminders",
-          } as Notifications.NotificationTriggerInput,
+          } as any,
         });
 
         scheduledIds.push(id);
@@ -512,13 +544,21 @@ export default function RemindersScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="px-5 pt-14">
-          <View className="relative mb-8 h-12 justify-center">
+          <View className="relative mb-8 h-14 justify-center" pointerEvents="box-none">
             <Pressable
-              onPress={() => router.push("/profile")}
+              onPress={() => {
+                try {
+                  router.back();
+                } catch {
+                  router.replace("/profile");
+                }
+              }}
               hitSlop={12}
-              className="absolute left-0 top-0 h-12 w-16 justify-center"
+              className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
             >
-              <Ionicons name="chevron-back" size={34} color="#76C893" />
+              <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+                <Ionicons name="arrow-back" size={24} color="#111827" />
+              </View>
             </Pressable>
 
             <Text className="text-center text-2xl font-extrabold text-[#0f172a]">

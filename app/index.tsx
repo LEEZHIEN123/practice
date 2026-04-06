@@ -1,15 +1,41 @@
-import React from "react";
-import { View, Text, Image, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import { onAuthStateChanged } from "firebase/auth";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, Text, TouchableOpacity } from "react-native";
+import { auth } from "../firebaseConfig";
 
 export default function Home() {
   const router = useRouter();
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const handleGetStarted = () => {
     router.push("/login");
   };
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace("/home");
+        return;
+      }
+      setCheckingSession(false);
+    });
+    return unsub;
+  }, [router]);
+
+  if (checkingSession) {
+    return (
+      <LinearGradient
+        colors={["#f7fdf9", "#e6f4ee"]}
+        className="flex-1 items-center justify-center px-6"
+      >
+        <ActivityIndicator size="large" color="#76C893" />
+        <Text className="text-gray-500 text-base mt-4">Loading…</Text>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient

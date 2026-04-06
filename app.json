@@ -7,9 +7,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
-     "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture."
-      },
+    "infoPlist": {
+      "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture."
+    },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
@@ -22,13 +22,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.leezhien.practice"
     },
     "web": {
       "bundler": "metro"
-    
     },
-    
     "plugins": [
       "expo-router",
       [
@@ -42,11 +41,18 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "695f9dd0-c126-4d1e-99b5-20567adbebd1"
+      }
     }
   }
 }
