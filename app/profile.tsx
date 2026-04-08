@@ -16,7 +16,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
@@ -33,6 +33,9 @@ export default function ProfileScreen() {
   const [goal, setGoal] = useState<GoalLabel>("Lose Weight");
   const [gender, setGender] = useState<Gender>("male");
   const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  const [goalModalVisible, setGoalModalVisible] = useState(false);
+  const [savingGoal, setSavingGoal] = useState(false);
 
   const [deletePasswordModal, setDeletePasswordModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
@@ -69,6 +72,31 @@ export default function ProfileScreen() {
 
     loadProfile();
   }, []);
+
+  const goalLabelToKey = (g: GoalLabel): "gain" | "maintain" | "lose" => {
+    if (g === "Gain Weight") return "gain";
+    if (g === "Maintain Weight") return "maintain";
+    return "lose";
+  };
+
+  const setGoalAndPersist = async (next: GoalLabel) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      setSavingGoal(true);
+      setGoal(next);
+      await updateDoc(doc(db, "users", user.uid), {
+        recommendedPlan: goalLabelToKey(next),
+      });
+      setGoalModalVisible(false);
+    } catch (e) {
+      console.log("Failed to update goal:", e);
+      Alert.alert("Error", "Failed to update your goal. Please try again.");
+    } finally {
+      setSavingGoal(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -184,7 +212,7 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
-          <Pressable className={rowClass}>
+          <Pressable onPress={() => setGoalModalVisible(true)} className={rowClass}>
             <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
                 <Ionicons name="radio-button-on-outline" size={22} color="#76C893" />
@@ -279,6 +307,74 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={goalModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !savingGoal && setGoalModalVisible(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/50 justify-center px-5"
+          onPress={() => !savingGoal && setGoalModalVisible(false)}
+        >
+          <Pressable
+            className="bg-white rounded-3xl p-6"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text className="text-xl font-extrabold text-gray-900">Choose your goal</Text>
+            <Text className="text-gray-500 mt-2">
+              This will update your daily calorie target on the Home page.
+            </Text>
+
+            <View className="mt-5 gap-3">
+              {(
+                [
+                  { label: "Maintain Weight" as const, desc: "Target = TDEE" },
+                  { label: "Lose Weight" as const, desc: "Target = TDEE - 500" },
+                  { label: "Gain Weight" as const, desc: "Target = TDEE + 300" },
+                ] as const
+              ).map((o) => {
+                const active = goal === o.label;
+                return (
+                  <Pressable
+                    key={o.label}
+                    disabled={savingGoal}
+                    onPress={() => void setGoalAndPersist(o.label)}
+                    className={`rounded-2xl border p-4 ${
+                      active ? "border-[#76C893] bg-[#eaf7f0]" : "border-gray-200 bg-[#fafafa]"
+                    }`}
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <View className="pr-3 flex-1">
+                        <Text className="text-base font-extrabold text-gray-900">{o.label}</Text>
+                        <Text className="text-sm text-gray-500 mt-1">{o.desc}</Text>
+                      </View>
+                      <View
+                        className={`w-6 h-6 rounded-full border-2 items-center justify-center ${
+                          active ? "border-[#76C893]" : "border-gray-300"
+                        }`}
+                      >
+                        {active && <View className="w-3 h-3 rounded-full bg-[#76C893]" />}
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View className="flex-row justify-end mt-6">
+              <Pressable
+                onPress={() => setGoalModalVisible(false)}
+                disabled={savingGoal}
+                className="px-4 py-3"
+              >
+                <Text className="font-extrabold text-gray-500">Close</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={deletePasswordModal}

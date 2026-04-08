@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { Accelerometer, Pedometer } from "expo-sensors";
 import { auth, db } from "../firebaseConfig";
 import {
   addDoc,
@@ -10,6 +11,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -29,6 +31,14 @@ export default function ProgressScreen() {
 
   const [heightCm, setHeightCm] = useState<number>(0);
   const [weightKg, setWeightKg] = useState<number>(0);
+  const [todayLoggedWeight, setTodayLoggedWeight] = useState<number | null>(null);
+  const [consumedToday, setConsumedToday] = useState(0);
+  const [burnedToday, setBurnedToday] = useState(0);
+  const [consumedYesterday, setConsumedYesterday] = useState(0);
+  const [burnedYesterday, setBurnedYesterday] = useState(0);
+  const [waterMlToday, setWaterMlToday] = useState(0);
+  const [stepsToday, setStepsToday] = useState<number>(0);
+  const [stepSource, setStepSource] = useState<"pedometer" | "accelerometer" | "unavailable">("pedometer");
 
   const [logVisible, setLogVisible] = useState(false);
   const [logWeightText, setLogWeightText] = useState("");
@@ -99,6 +109,198 @@ export default function ProgressScreen() {
   }, []);
 
   useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const dateKey = (d: Date) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const now = new Date();
+    const todayKey = dateKey(now);
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    const yesterdayKey = dateKey(y);
+
+    const unsubToday = onSnapshot(
+      doc(db, "users", user.uid, "dailyStats", todayKey),
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : {};
+        setConsumedToday(typeof data?.consumedKcal === "number" ? data.consumedKcal : 0);
+        setBurnedToday(typeof data?.burnedKcal === "number" ? data.burnedKcal : 0);
+        setWaterMlToday(typeof data?.waterMl === "number" ? data.waterMl : 0);
+      },
+      () => {
+        setConsumedToday(0);
+        setBurnedToday(0);
+        setWaterMlToday(0);
+      }
+    );
+
+    const unsubYesterday = onSnapshot(
+      doc(db, "users", user.uid, "dailyStats", yesterdayKey),
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : {};
+        setConsumedYesterday(typeof data?.consumedKcal === "number" ? data.consumedKcal : 0);
+        setBurnedYesterday(typeof data?.burnedKcal === "number" ? data.burnedKcal : 0);
+      },
+      () => {
+        setConsumedYesterday(0);
+        setBurnedYesterday(0);
+      }
+    );
+
+    return () => {
+      unsubToday();
+      unsubYesterday();
+    };
+  }, []);
+
+  useEffect(() => {
+    let timer: any = null;
+    let accelSub: { remove: () => void } | null = null;
+    let mounted = true;
+
+    // Peak -> trough step detector + "walking lock" to avoid counting single pick-up motions.
+    let lastStepAt = 0;
+    let above = false;
+    const peakThreshold = 1.25; // g (higher = fewer false positives)
+    const troughThreshold = 1.10; // g
+    const cooldownMs = 420;
+
+    let walkingMode = false;
+    let lastCandidateAt = 0;
+    let candidateTimes: number[] = [];
+
+    const dateKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    let currentDayKey = dateKey(new Date());
+
+    const resetForNewDayIfNeeded = () => {
+      const k = dateKey(new Date());
+      if (k !== currentDayKey) {
+        currentDayKey = k;
+        setStepsToday(0);
+        lastStepAt = 0;
+        above = false;
+        walkingMode = false;
+        lastCandidateAt = 0;
+        candidateTimes = [];
+      }
+    };
+
+    const startAccelerometerSteps = async () => {
+      try {
+        const available = await Accelerometer.isAvailableAsync();
+        if (!mounted) return false;
+        if (!available) return false;
+
+        setStepSource("accelerometer");
+        Accelerometer.setUpdateInterval(50); // ~20Hz
+
+        accelSub = Accelerometer.addListener(({ x, y, z }) => {
+          resetForNewDayIfNeeded();
+
+          // magnitude of acceleration vector (in g units)
+          const mag = Math.sqrt((x ?? 0) ** 2 + (y ?? 0) ** 2 + (z ?? 0) ** 2);
+          const now = Date.now();
+
+          // Drop out of walking mode if we've been idle.
+          if (walkingMode && now - lastCandidateAt > 2200) {
+            walkingMode = false;
+            candidateTimes = [];
+          }
+
+          if (!above && mag >= peakThreshold) {
+            above = true;
+          } else if (above && mag <= troughThreshold) {
+            above = false;
+            if (now - lastStepAt > cooldownMs) {
+              lastStepAt = now;
+              lastCandidateAt = now;
+
+              if (!walkingMode) {
+                // Require 4 candidates with realistic cadence to start counting (filters pick-up/shake).
+                // Typical walking cadence: ~0.4s to 1.0s per step.
+                candidateTimes = candidateTimes.filter((t) => now - t <= 4000);
+                candidateTimes.push(now);
+                const n = candidateTimes.length;
+                const dt1 = n >= 2 ? candidateTimes[n - 1] - candidateTimes[n - 2] : Infinity;
+                const dt2 = n >= 3 ? candidateTimes[n - 2] - candidateTimes[n - 3] : Infinity;
+                const dt3 = n >= 4 ? candidateTimes[n - 3] - candidateTimes[n - 4] : Infinity;
+                const cadenceOk = (dt: number) => dt >= 400 && dt <= 1000;
+                if (n >= 4 && cadenceOk(dt1) && cadenceOk(dt2) && cadenceOk(dt3)) {
+                  walkingMode = true;
+                  candidateTimes = [];
+                  // Don't retroactively count candidates; start counting only once walking is confirmed.
+                }
+              } else {
+                setStepsToday((s) => s + 1);
+              }
+            }
+          }
+        });
+
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const pollPedometer = async () => {
+      try {
+        const available = await Pedometer.isAvailableAsync();
+        if (!mounted) return;
+        if (!available) return;
+
+        setStepSource("pedometer");
+        const start = startOfDay(new Date());
+        const end = new Date();
+        const res = await Pedometer.getStepCountAsync(start, end);
+        if (!mounted) return;
+        setStepsToday(typeof res?.steps === "number" ? res.steps : 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const run = async () => {
+      try {
+        const pedAvailable = await Pedometer.isAvailableAsync();
+        if (!mounted) return;
+
+        if (pedAvailable) {
+          setStepSource("pedometer");
+          const ok = await pollPedometer();
+          if (ok) {
+            timer = setInterval(() => {
+              void pollPedometer();
+            }, 30_000);
+            return;
+          }
+          // Pedometer exists but cannot read (permissions/Expo Go) -> fallback.
+        }
+
+        const accelOk = await startAccelerometerSteps();
+        if (!accelOk) setStepSource("unavailable");
+      } catch {
+        const accelOk = await startAccelerometerSteps();
+        if (!accelOk) setStepSource("unavailable");
+      }
+    };
+
+    void run();
+    return () => {
+      mounted = false;
+      if (timer) clearInterval(timer);
+      accelSub?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     const loadWeightSeries = async () => {
       if (tab !== "weight") return;
       const user = auth.currentUser;
@@ -128,6 +330,7 @@ export default function ProgressScreen() {
         setHasWeightLogs(any);
 
         if (!any) {
+          setTodayLoggedWeight(null);
           const zeros = period === "week" ? 7 : period === "month" ? 4 : 12;
           setLatestLoggedWeight(0);
           setWeightSeries(Array.from({ length: zeros }, () => 0));
@@ -136,8 +339,10 @@ export default function ProgressScreen() {
 
         // rows are newest-first due to query
         setLatestLoggedWeight(rows[0].weight);
-
         const now = new Date();
+        const todayKey = sameDayKey(now);
+        const todayRow = rows.find((r) => sameDayKey(r.createdAt) === todayKey);
+        setTodayLoggedWeight(todayRow ? todayRow.weight : null);
 
         if (period === "week") {
           // 7 daily points (Mon..Sun) using latest weight logged per day, fallback 0
@@ -187,6 +392,7 @@ export default function ProgressScreen() {
         setWeightSeries(sums.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
       } catch (e) {
         console.log("Failed to load weight series:", e);
+        setTodayLoggedWeight(null);
         const zeros = period === "week" ? 7 : period === "month" ? 4 : 12;
         setHasWeightLogs(false);
         setLatestLoggedWeight(0);
@@ -197,12 +403,18 @@ export default function ProgressScreen() {
     loadWeightSeries();
   }, [period, tab, weightRefreshKey]);
 
+  const effectiveWeightKg = useMemo(() => {
+    if (todayLoggedWeight != null) return todayLoggedWeight;
+    if (hasWeightLogs && latestLoggedWeight) return latestLoggedWeight;
+    return weightKg;
+  }, [hasWeightLogs, latestLoggedWeight, todayLoggedWeight, weightKg]);
+
   const bmi = useMemo(() => {
-    if (!heightCm || !weightKg) return 0;
+    if (!heightCm || !effectiveWeightKg) return 0;
     const m = heightCm / 100;
-    const value = weightKg / (m * m);
+    const value = effectiveWeightKg / (m * m);
     return Number.isFinite(value) ? value : 0;
-  }, [heightCm, weightKg]);
+  }, [effectiveWeightKg, heightCm]);
 
   const bmiStatus = useMemo(() => {
     if (!bmi) return "—";
@@ -239,20 +451,43 @@ export default function ProgressScreen() {
 
     if (tab === "weight")
       return {
-        main: hasWeightLogs ? `${latestLoggedWeight.toFixed(1)} kg` : "0.0 kg",
+        main: effectiveWeightKg ? `${effectiveWeightKg.toFixed(1)} kg` : "0.0 kg",
         delta: hasWeightLogs
           ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`
           : "0.0%",
       };
-    if (tab === "workout") return { main: "3 sessions", delta: "+1" };
-    return { main: "1,720 kcal", delta: "+120" };
-  }, [tab, hasWeightLogs, latestLoggedWeight, weightSeries]);
+    if (tab === "workout")
+      return {
+        main: `${Math.round(burnedToday).toLocaleString()} kcal`,
+        delta: `${burnedToday - burnedYesterday >= 0 ? "+" : ""}${Math.round(burnedToday - burnedYesterday).toLocaleString()}`,
+      };
+    return {
+      main: `${Math.round(consumedToday).toLocaleString()} kcal`,
+      delta: `${consumedToday - consumedYesterday >= 0 ? "+" : ""}${Math.round(consumedToday - consumedYesterday).toLocaleString()}`,
+    };
+  }, [burnedToday, burnedYesterday, consumedToday, consumedYesterday, tab, effectiveWeightKg, hasWeightLogs, weightSeries]);
 
   const chartLabels = useMemo(() => {
-    if (period === "week") return ["M", "T", "W", "T", "F", "S", "S"];
+    if (period === "week") return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     if (period === "month") return ["W1", "W2", "W3", "W4"];
     return ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
   }, [period]);
+
+  const weightBarTooltip = useMemo(() => {
+    if (tab !== "weight") return "";
+    if (hoverIdx == null) return "";
+    const now = new Date();
+    if (period === "week") {
+      const ws = startOfWeekMon(now);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + hoverIdx);
+      const v = weightSeries[hoverIdx] ?? 0;
+      return `${d.toLocaleDateString()}: ${v ? `${v.toFixed(1)} kg` : "—"}`;
+    }
+    const label = chartLabels[hoverIdx] ?? "";
+    const v = weightSeries[hoverIdx] ?? 0;
+    return `${label}: ${v ? `${v.toFixed(1)} kg` : "—"}`;
+  }, [chartLabels, hoverIdx, period, tab, weightSeries]);
 
   const hoverLabel = useMemo(() => {
     if (tab !== "weight") return "";
@@ -263,7 +498,7 @@ export default function ProgressScreen() {
   }, [chartLabels, hoverIdx, tab, weightSeries]);
 
   const openLogWeight = () => {
-    const base = hasWeightLogs ? latestLoggedWeight : weightKg;
+    const base = effectiveWeightKg;
     setLogWeightText(base ? base.toFixed(1) : "");
     setLogDate(new Date());
     setLogVisible(true);
@@ -313,6 +548,11 @@ export default function ProgressScreen() {
     } finally {
       setSavingLog(false);
     }
+  };
+
+  const openDetails = () => {
+    // typed routes may not include this file yet; use string push
+    router.push(`/progress-details?tab=${tab}&period=${period}` as any);
   };
 
   return (
@@ -444,32 +684,34 @@ export default function ProgressScreen() {
               </View>
             </View>
 
-            {tab === "weight" ? (
-              <Pressable
-                onPress={openLogWeight}
-                className="px-4 py-2 rounded-full bg-[#76C893]"
-              >
-                <Text className="text-white font-extrabold">Log weight +</Text>
+            <View className="items-end">
+              {tab === "weight" ? (
+                <Pressable
+                  onPress={openLogWeight}
+                  className="px-4 py-2 rounded-full bg-[#76C893]"
+                >
+                  <Text className="text-white font-extrabold">Log weight +</Text>
+                </Pressable>
+              ) : (
+                <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
+                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates daily</Text>
+                </View>
+              )}
+
+              <Pressable onPress={openDetails} className="mt-2">
+                <Text className="text-sm font-extrabold text-[#52B69A]">SEE ALL &gt;</Text>
               </Pressable>
-            ) : (
-              <Pressable className="w-10 h-10 rounded-full bg-[#76C893] items-center justify-center">
-                <Ionicons name="add" size={22} color="white" />
-              </Pressable>
-            )}
+            </View>
           </View>
 
-          {/* Weight history */}
-          <Pressable
-            className="mt-6"
-            disabled={tab !== "weight"}
-            onPress={() => tab === "weight" && router.push("/weight-history")}
-          >
+          {/* Chart */}
+          <View className="mt-6">
             <View className="h-32 rounded-2xl bg-[#f3f4f3] overflow-hidden">
               <View className="absolute left-0 right-0 bottom-0 h-14 bg-[#76C893] opacity-10" />
               {tab === "weight" && hoverIdx != null && (
                 <View className="absolute top-2 left-0 right-0 items-center">
                   <View className="px-3 py-1 rounded-full bg-white border border-gray-200">
-                    <Text className="text-xs font-bold text-gray-800">{hoverLabel}</Text>
+                    <Text className="text-xs font-bold text-gray-800">{weightBarTooltip}</Text>
                   </View>
                 </View>
               )}
@@ -487,8 +729,7 @@ export default function ProgressScreen() {
                       return (
                         <View key={`bar-${idx}`} className="flex-1 items-center justify-end">
                           <Pressable
-                            onPressIn={() => setHoverIdx(idx)}
-                            onPressOut={() => setHoverIdx(null)}
+                            onPress={() => setHoverIdx((cur) => (cur === idx ? null : idx))}
                             onHoverIn={() => setHoverIdx(idx)}
                             onHoverOut={() => setHoverIdx(null)}
                             className="items-center justify-end w-full"
@@ -518,77 +759,38 @@ export default function ProgressScreen() {
                 </View>
               )}
             </View>
-          </Pressable>
-        </View>
-
-        {/* Recent Workouts */}
-        <View className="mt-8">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-extrabold text-gray-900">Recent Workouts</Text>
-            <Text className="text-xs font-bold text-[#52B69A]">SEE ALL</Text>
-          </View>
-
-          <View className="mt-4 gap-3">
-            <View className="bg-white rounded-3xl p-4 flex-row items-center justify-between border border-gray-100">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-[#eaf7f0] items-center justify-center">
-                  <Ionicons name="flash-outline" size={18} color="#52B69A" />
-                </View>
-                <View className="ml-3">
-                  <Text className="font-extrabold text-gray-900">Morning Yoga</Text>
-                  <Text className="text-xs text-gray-500 mt-1">30 mins • 120 kcal</Text>
-                </View>
-              </View>
-              <Text className="text-[10px] font-bold text-gray-400">TODAY</Text>
-            </View>
-
-            <View className="bg-white rounded-3xl p-4 flex-row items-center justify-between border border-gray-100">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-[#eef7f1] items-center justify-center">
-                  <Ionicons name="walk-outline" size={18} color="#52B69A" />
-                </View>
-                <View className="ml-3">
-                  <Text className="font-extrabold text-gray-900">Evening Run</Text>
-                  <Text className="text-xs text-gray-500 mt-1">45 mins • 450 kcal</Text>
-                </View>
-              </View>
-              <Text className="text-[10px] font-bold text-gray-400">YESTERDAY</Text>
-            </View>
           </View>
         </View>
 
-        {/* Recent Meals */}
+        {/* Water + Steps */}
         <View className="mt-8 mb-2">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-extrabold text-gray-900">Recent Meals</Text>
-            <Text className="text-xs font-bold text-[#52B69A]">SEE ALL</Text>
-          </View>
-
-          <View className="mt-4 gap-3">
-            <View className="bg-white rounded-3xl p-4 flex-row items-center justify-between border border-gray-100">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-[#eaf7f0] items-center justify-center">
-                  <Ionicons name="restaurant-outline" size={18} color="#52B69A" />
-                </View>
-                <View className="ml-3">
-                  <Text className="font-extrabold text-gray-900">Grilled Salmon Salad</Text>
-                  <Text className="text-xs text-gray-500 mt-1">High Protein • 420 kcal</Text>
-                </View>
+          <View className="flex-row justify-between gap-3">
+            <View className="flex-1 bg-white rounded-3xl p-4 border border-gray-100">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-lg font-extrabold text-gray-900">Water Intake</Text>
+                <Ionicons name="water-outline" size={18} color="#76C893" />
               </View>
-              <Text className="text-[10px] font-bold text-gray-400">TODAY</Text>
+              <Text className="text-3xl font-extrabold text-gray-900 mt-3">
+                {(Math.round(waterMlToday) || 0).toLocaleString()} ml
+              </Text>
+              <Text className="text-xs text-gray-500 mt-2">Auto-updates daily</Text>
             </View>
 
-            <View className="bg-white rounded-3xl p-4 flex-row items-center justify-between border border-gray-100">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-[#eef7f1] items-center justify-center">
-                  <Ionicons name="leaf-outline" size={18} color="#52B69A" />
-                </View>
-                <View className="ml-3">
-                  <Text className="font-extrabold text-gray-900">Avocado Toast</Text>
-                  <Text className="text-xs text-gray-500 mt-1">Breakfast • 310 kcal</Text>
-                </View>
+            <View className="flex-1 bg-white rounded-3xl p-4 border border-gray-100">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-lg font-extrabold text-gray-900">Step Count</Text>
+                <Ionicons name="walk-outline" size={18} color="#76C893" />
               </View>
-              <Text className="text-[10px] font-bold text-gray-400">TODAY</Text>
+              <Text className="text-3xl font-extrabold text-gray-900 mt-3">
+                {(Math.round(stepsToday) || 0).toLocaleString()} steps
+              </Text>
+              <Text className="text-xs text-gray-500 mt-2">
+                {stepSource === "pedometer"
+                  ? "From phone pedometer"
+                  : stepSource === "accelerometer"
+                    ? "Tracking when walking"
+                    : "Not available on this device"}
+              </Text>
             </View>
           </View>
         </View>

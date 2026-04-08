@@ -55,9 +55,11 @@ export default function TermsOfServiceScreen() {
           <Pressable
             onPress={() => router.back()}
             hitSlop={12}
-            className="absolute left-0 top-0 h-11 w-12 justify-center z-10"
+            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
           >
-            <Ionicons name="chevron-back" size={28} color="#1f2937" />
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </View>
           </Pressable>
           <Text className="text-center text-xl font-extrabold text-gray-900">
             Terms of Service

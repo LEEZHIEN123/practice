@@ -1,10 +1,14 @@
 import React from "react";
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { Alert, View, Text, Pressable, ScrollView } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 export default function DiscoverScreen() {
   const router = useRouter();
+
+  const comingSoon = (title: string) => {
+    Alert.alert(title, "Coming soon.");
+  };
 
   return (
     <View className="flex-1 bg-[#f3f4f3]">
@@ -49,7 +53,10 @@ export default function DiscoverScreen() {
             Explore Nutrition
           </Text>
 
-          <Pressable className="bg-[#bdeccf] rounded-[28px] p-6 mb-8 flex-row items-center justify-between">
+          <Pressable
+            onPress={() => comingSoon("All Nutrition")}
+            className="bg-[#bdeccf] rounded-[28px] p-6 mb-8 flex-row items-center justify-between"
+          >
             <View className="flex-row items-center">
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
                 <Ionicons name="restaurant" size={22} color="#76C893" />
@@ -69,7 +76,10 @@ export default function DiscoverScreen() {
           </Text>
 
           <View className="flex-row justify-between">
-            <Pressable className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm">
+            <Pressable
+              onPress={() => comingSoon("Community")}
+              className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
+            >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
                 <Ionicons name="people" size={24} color="white" />
               </View>
@@ -82,7 +92,10 @@ export default function DiscoverScreen() {
               </Text>
             </Pressable>
 
-            <Pressable className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm">
+            <Pressable
+              onPress={() => comingSoon("AI Coach")}
+              className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
+            >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
                 <MaterialCommunityIcons
                   name="robot-happy-outline"

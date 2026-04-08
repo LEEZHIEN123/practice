@@ -311,7 +311,13 @@ export default function EditProfile() {
       >
         <View className="relative mb-4 h-14 justify-center">
           <Pressable
-            onPress={() => router.push("/profile")}
+            onPress={() => {
+              try {
+                router.back();
+              } catch {
+                router.push("/profile");
+              }
+            }}
             hitSlop={12}
             className="absolute left-0 top-4 h-14 w-20 justify-center pl-2"
           >

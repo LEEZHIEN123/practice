@@ -8,13 +8,17 @@
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
     "infoPlist": {
-      "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture."
+      "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture.",
+      "NSMotionUsageDescription": "We use motion data to track your steps."
     },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "ACTIVITY_RECOGNITION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

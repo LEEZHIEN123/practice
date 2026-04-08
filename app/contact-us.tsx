@@ -12,7 +12,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 
-const SUPPORT_EMAIL = "support@glowapp.com";
+const SUPPORT_EMAIL = "leezhien@1utar.my";
 
 export default function ContactUsScreen() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function ContactUsScreen() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const sub = subject.trim();
     const msg = message.trim();
     if (!sub || !msg) {
@@ -30,20 +30,32 @@ export default function ContactUsScreen() {
     const body = encodeURIComponent(msg);
     const subj = encodeURIComponent(sub);
     const url = `mailto:${SUPPORT_EMAIL}?subject=${subj}&body=${body}`;
-    Linking.openURL(url).catch(() => {
+
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
+        Alert.alert(
+          "Email not available",
+          `Please email us at: ${SUPPORT_EMAIL}`,
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      await Linking.openURL(url);
+      Alert.alert(
+        "Opening email",
+        `We’ll reply as soon as possible via email (${SUPPORT_EMAIL}).`
+      );
+      setSubject("");
+      setMessage("");
+    } catch {
       Alert.alert(
         "Email",
-        `Copy this address to reach us: ${SUPPORT_EMAIL}`,
+        `Please email us at: ${SUPPORT_EMAIL}`,
         [{ text: "OK" }]
       );
-    });
-  };
-
-  const openHelp = () => {
-    Alert.alert(
-      "Help Center",
-      "The help center is coming soon. For now, email us at support@glowapp.com."
-    );
+    }
   };
 
   return (
@@ -58,11 +70,19 @@ export default function ContactUsScreen() {
       >
         <View className="relative mb-6 h-12 justify-center">
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              try {
+                router.back();
+              } catch {
+                router.replace("/profile");
+              }
+            }}
             hitSlop={12}
-            className="absolute left-0 top-0 h-12 w-14 justify-center"
+            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
           >
-            <Ionicons name="chevron-back" size={28} color="#1f2937" />
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </View>
           </Pressable>
           <Text className="text-center text-xl font-extrabold text-gray-900">
             Contact Us
@@ -104,38 +124,6 @@ export default function ContactUsScreen() {
             className="border border-gray-200 rounded-2xl px-4 py-3 text-base text-gray-900 min-h-[120px] bg-[#fafafa]"
           />
         </View>
-
-        <Text className="text-xs font-bold text-gray-400 tracking-[0.15em] mb-3 ml-1">
-          OTHER WAYS TO REACH US
-        </Text>
-
-        <Pressable
-          onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
-          className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-center mb-3 active:bg-gray-50"
-        >
-          <View className="w-11 h-11 rounded-full bg-[#eaf7f0] items-center justify-center">
-            <Ionicons name="mail-outline" size={22} color="#76C893" />
-          </View>
-          <View className="ml-3 flex-1">
-            <Text className="text-sm text-gray-500">Email Support</Text>
-            <Text className="text-base font-bold text-gray-900">{SUPPORT_EMAIL}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-        </Pressable>
-
-        <Pressable
-          onPress={openHelp}
-          className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-center mb-6 active:bg-gray-50"
-        >
-          <View className="w-11 h-11 rounded-full bg-[#eaf7f0] items-center justify-center">
-            <Ionicons name="help-circle-outline" size={24} color="#76C893" />
-          </View>
-          <View className="ml-3 flex-1">
-            <Text className="text-sm text-gray-500">Knowledge Base</Text>
-            <Text className="text-base font-bold text-gray-900">Visit Help Center</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-        </Pressable>
 
         <Pressable
           onPress={sendMessage}
