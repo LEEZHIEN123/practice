@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from "react";
-import { Alert, View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { Alert, Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { auth, db } from "../firebaseConfig";
-import { doc, setDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import { useRegistration } from "../context/registrationContext";
+import { auth, db } from "../firebaseConfig";
 
 type ActivityKey =
   | "sedentary"
@@ -20,6 +21,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export default function ActivityLevel() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { account, profile, reset, setActivity } = useRegistration();
 
   const [selected, setSelected] = useState<ActivityKey | null>(null);
@@ -95,6 +97,7 @@ export default function ActivityLevel() {
             email: cred.user.email ?? account.email,
             createdAt: Date.now(),
             gender: profile.gender,
+            profileImage: null,
             age: profile.age,
             height: profile.height,
             weight: profile.weight,
@@ -130,29 +133,24 @@ export default function ActivityLevel() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1] px-6 pt-12">
-      {/* Header */}
-      <View className="relative mb-8">
-        {/* Bigger tap area back */}
+    <View
+      className="flex-1 bg-[#eef2f1]"
+      style={{ paddingTop: insets.top + 12, paddingHorizontal: 20 }}
+    >
+      {/* Header (same style as Contact Us) */}
+      <View className="relative mb-6 h-12 justify-center">
         <Pressable
           onPress={() => router.back()}
-          className="absolute left-0 top-5 h-16 w-24 justify-center pl-2"
+          hitSlop={12}
+          className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
         >
-          <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={26} color="#1f2937" />
+          <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+            <Ionicons name="arrow-back" size={24} color="#111827" />
           </View>
         </Pressable>
-
-        <Text className="text-center text-2xl font-bold text-gray-900 mt-3">
+        <Text className="text-center text-xl font-extrabold text-gray-900">
           Profile Details
         </Text>
-
-        {/* Progress Indicator */}
-        <View className="flex-row justify-center items-center mt-3">
-          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
-          <View className="w-10 h-2 rounded-full bg-green-500 mx-1" />
-          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
-        </View>
       </View>
 
       {/* Title */}
@@ -217,7 +215,7 @@ export default function ActivityLevel() {
       </View>
 
       {/* Continue Button */}
-      <View className="flex-1 justify-end pb-10">
+      <View className="flex-1 justify-end pb-10 mt-3">
         <Pressable
           onPress={continueToHome}
           disabled={saving}

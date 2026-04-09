@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -47,11 +46,15 @@ export default function TermsOfServiceScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <View
-        className="bg-[#dff5e8] border-b border-[#b7ead1]/60 px-4"
-        style={{ paddingTop: insets.top + 8, paddingBottom: 14 }}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 100,
+        }}
       >
-        <View className="relative h-11 justify-center">
+        <View className="relative mb-6 h-12 justify-center">
           <Pressable
             onPress={() => router.back()}
             hitSlop={12}
@@ -65,16 +68,8 @@ export default function TermsOfServiceScreen() {
             Terms of Service
           </Text>
         </View>
-      </View>
 
-      <ScrollView
-        className="flex-1 bg-white"
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingTop: 20,
-          paddingBottom: insets.bottom + 100,
-        }}
-      >
+        <View className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm">
         <Text className="text-sm text-gray-500 mb-6">
           Last updated: April 5, 2026
         </Text>
@@ -92,6 +87,7 @@ export default function TermsOfServiceScreen() {
             ))}
           </View>
         ))}
+        </View>
       </ScrollView>
 
       <View

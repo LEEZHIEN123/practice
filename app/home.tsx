@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, ImageBackground, View, Text, Pressable, ScrollView } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { bumpWorkoutPlanDay } from "@/lib/achievements";
+import { calcBmi, generateActiveWorkoutPlan, type PlanDuration } from "@/lib/workoutPlan";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Image, ImageBackground, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
-import { bumpWorkoutPlanDay } from "@/lib/achievements";
-import { doc, onSnapshot } from "firebase/firestore";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -50,6 +51,9 @@ export default function HomeScreen() {
   const [weightKg, setWeightKg] = useState<number>(0);
   const [activityMultiplier, setActivityMultiplier] = useState<number>(1.2);
   const [recommendedPlan, setRecommendedPlan] = useState<"gain" | "maintain" | "lose" | null>(null);
+  const [planDuration, setPlanDuration] = useState<PlanDuration | null>(null);
+  const [planPickerVisible, setPlanPickerVisible] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
   const [dayKey, setDayKey] = useState(() => {
     const d = new Date();
     const yyyy = d.getFullYear();
@@ -59,6 +63,102 @@ export default function HomeScreen() {
   });
   const [consumedToday, setConsumedToday] = useState(0);
   const [burnedToday, setBurnedToday] = useState(0);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  const bmi = useMemo(() => calcBmi(weightKg, heightCm), [heightCm, weightKg]);
+
+  const bmiCategoryIdx = useMemo(() => {
+    if (!bmi) return 1;
+    if (bmi < 18.5) return 0;
+    if (bmi <= 24.9) return 1;
+    if (bmi <= 29.9) return 2;
+    return 3;
+  }, [bmi]);
+
+  const bmiCategoryLabel = useMemo(() => {
+    if (!bmi) return "—";
+    return (["UNDER", "NORMAL", "OVER", "OBESE"] as const)[bmiCategoryIdx];
+  }, [bmi, bmiCategoryIdx]);
+
+  const bmiCategoryPillClass = useMemo(() => {
+    if (bmiCategoryIdx === 0) return "bg-sky-50 border-sky-200";
+    if (bmiCategoryIdx === 1) return "bg-emerald-50 border-emerald-200";
+    if (bmiCategoryIdx === 2) return "bg-amber-50 border-amber-200";
+    return "bg-red-50 border-red-200";
+  }, [bmiCategoryIdx]);
+
+  const bmiCategoryPillTextClass = useMemo(() => {
+    if (bmiCategoryIdx === 0) return "text-sky-700";
+    if (bmiCategoryIdx === 1) return "text-emerald-800";
+    if (bmiCategoryIdx === 2) return "text-amber-800";
+    return "text-red-700";
+  }, [bmiCategoryIdx]);
+
+  const bmiMarkerPct = useMemo(() => {
+    if (!bmi) return 12.5;
+    const b = Math.min(Math.max(bmi, 12), 48);
+    if (b < 18.5) return ((b - 12) / (18.5 - 12)) * 25;
+    if (b <= 24.9) return 25 + ((b - 18.5) / (24.9 - 18.5)) * 25;
+    if (b <= 29.9) return 50 + ((b - 25) / (29.9 - 25)) * 25;
+    return 75 + Math.min((b - 30) / (48 - 30), 1) * 25;
+  }, [bmi]);
+
+  const bmiPlanCaps = useMemo(() => {
+    if (!bmi) return "MAINTAIN WEIGHT";
+    if (bmi < 18.5) return "GAIN WEIGHT";
+    if (bmi > 25) return "LOSE WEIGHT";
+    return "MAINTAIN WEIGHT";
+  }, [bmi]);
+
+  const bmiCaretColor = useMemo(() => {
+    if (!bmi) return "#52B69A";
+    if (bmiCategoryIdx === 0) return "#0284c7";
+    if (bmiCategoryIdx === 1) return "#059669";
+    if (bmiCategoryIdx === 2) return "#fbbf24";
+    return "#dc2626";
+  }, [bmi, bmiCategoryIdx]);
+
+  const generatePlan = useCallback(
+    (duration: PlanDuration) => {
+      if (!bmi || !recommendedPlan) return null;
+      return generateActiveWorkoutPlan({ duration, bmi, goal: recommendedPlan });
+    },
+    [bmi, recommendedPlan]
+  );
+
+  const chooseDurationAndSave = useCallback(
+    async (duration: PlanDuration) => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      if (!recommendedPlan || !bmi) {
+        Alert.alert("Missing info", "Please complete your profile (height/weight/goal) first.");
+        return;
+      }
+
+      try {
+        setSavingPlan(true);
+        // If user already has a saved plan for this goal, keep it stable.
+        const plan = generatePlan(duration);
+        if (!plan) throw new Error("Plan generation failed");
+        await updateDoc(doc(db, "users", user.uid), {
+          planDuration: duration,
+          planDurationChosenAt: serverTimestamp(),
+          activeWorkoutPlan: plan,
+          [`workoutPlansByGoal.${recommendedPlan}.${duration}`]: plan,
+        } as any);
+        setPlanDuration(duration);
+        setPlanPickerVisible(false);
+        router.push("/workout-plan" as any);
+      } catch (e) {
+        console.log("Failed to save plan:", e);
+        Alert.alert("Error", "Failed to generate your plan. Please try again.");
+      } finally {
+        setSavingPlan(false);
+      }
+    },
+    [bmi, generatePlan, recommendedPlan, router]
+  );
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -78,6 +178,10 @@ export default function HomeScreen() {
         if (typeof data?.activityMultiplier === "number") setActivityMultiplier(data.activityMultiplier);
         if (data?.recommendedPlan === "gain" || data?.recommendedPlan === "maintain" || data?.recommendedPlan === "lose")
           setRecommendedPlan(data.recommendedPlan);
+        if (data?.planDuration === "week" || data?.planDuration === "biweekly" || data?.planDuration === "monthly")
+          setPlanDuration(data.planDuration);
+        if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
+        else setProfileImage(null);
       },
       (error) => {
         console.log("Failed to subscribe user profile:", error);
@@ -165,23 +269,95 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
-        <View className="px-6 pt-12">
+        <View className="px-6 pt-8">
           {/* Header */}
           <View className="flex-row justify-between items-center">
             <View>
                 
-              <Text className="text-3xl font-extrabold text-gray-900 mt-1">
+              <Text className="text-4xl font-extrabold text-gray-900">
                 Hello, {userName }
               </Text>
             </View>
 
-            <Pressable className="w-12 h-12 rounded-full border-2 border-[#b7ead1] items-center justify-center bg-white">
-              <Ionicons name="person-outline" size={22} color="#76C893" />
+            <Pressable
+              onPress={() => router.push("/profile")}
+              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+            >
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
+              ) : (
+                <Ionicons name="person-outline" size={22} color="#76C893" />
+              )}
             </Pressable>
           </View>
 
+          {/* BMI Score (moved from Progress) */}
+          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100">
+            <View className="flex-row items-start justify-between">
+              <View className="flex-1 pr-3">
+                <Text className="text-base font-extrabold tracking-wide text-gray-900">BMI SCORE</Text>
+                <View className="flex-row items-end mt-1">
+                  <Text className="text-4xl font-extrabold text-gray-900">{bmi ? bmi.toFixed(1) : "—"}</Text>
+                  <Text className="text-gray-500 ml-2 mb-1 text-sm">kg/m²</Text>
+                </View>
+              </View>
+              <View className={`px-3 py-1.5 rounded-full border ${bmi ? bmiCategoryPillClass : "bg-gray-50 border-gray-200"}`}>
+                <Text className={`text-xs font-extrabold ${bmi ? bmiCategoryPillTextClass : "text-gray-500"}`}>
+                  {bmiCategoryLabel}
+                </Text>
+              </View>
+            </View>
+
+            {/* BMI metric bar */}
+            <View className="mt-4">
+              <View className="h-6 justify-end">
+                <View className="relative w-full h-5">
+                  <View
+                    style={{ position: "absolute", left: `${bmiMarkerPct}%`, marginLeft: -10, bottom: 0 }}
+                    className="items-center w-5"
+                  >
+                    <Ionicons name="caret-down" size={22} color={bmiCaretColor} />
+                  </View>
+                </View>
+              </View>
+
+              <View className="flex-row h-3 rounded-full overflow-hidden mt-1">
+                <View className="flex-1 bg-sky-300" />
+                <View className="flex-1 bg-emerald-400" />
+                <View className="flex-1 bg-amber-400" />
+                <View className="flex-1 bg-red-400" />
+              </View>
+
+              <View className="flex-row justify-between mt-3">
+                {(
+                  [
+                    { key: "under", label: "UNDER", range: "< 18.5", color: "text-sky-600" },
+                    { key: "normal", label: "NORMAL", range: "18.5 – 24.9", color: "text-emerald-700" },
+                    { key: "over", label: "OVER", range: "25.0 – 29.9", color: "text-amber-700" },
+                    { key: "obese", label: "OBESE", range: "> 30.0", color: "text-red-600" },
+                  ] as const
+                ).map((row, idx) => {
+                  const active = bmiCategoryIdx === idx;
+                  return (
+                    <View key={row.key} className="flex-1 items-center px-0.5">
+                      <Text className={`text-[10px] font-extrabold ${active ? row.color : "text-gray-400"}`}>
+                        {row.label}
+                      </Text>
+                      <Text className="text-[9px] text-gray-400 mt-1 text-center leading-tight">{row.range}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            <Text className="text-base text-gray-900 mt-3 leading-6">
+              To improve your health, we recommended a{" "}
+              <Text className="font-extrabold text-red-600 text-lg tracking-wide">{bmiPlanCaps}</Text> plan.
+            </Text>
+          </View>
+
           {/* Remaining Calories Card */}
-          <View className="mt-4 bg-[#f3f4f3] rounded-3xl p-4 border border-gray-200">
+          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100">
             <View className="flex-row items-center justify-between">
               <View className="w-28 h-28 rounded-full border-[8px] border-[#76C893] items-center justify-center bg-white">
                 <Text className="text-3xl font-extrabold text-gray-900">
@@ -220,7 +396,7 @@ export default function HomeScreen() {
             iconColor="#52B69A"
           />
           <ImageBackground
-            source={require("../assets/images/WorkoutPlan.png")}
+            source={require("../assets/images/Workout Plan.png")}
             resizeMode="cover"
             imageStyle={{ borderRadius: 24 }}
             className="mt-2 rounded-3xl overflow-hidden border border-gray-200 shadow-sm shadow-black/5"
@@ -232,6 +408,12 @@ export default function HomeScreen() {
                 onPress={() => {
                   const u = auth.currentUser;
                   if (u) void bumpWorkoutPlanDay(u.uid);
+
+                  if (!planDuration) {
+                    setPlanPickerVisible(true);
+                    return;
+                  }
+                  router.push("/workout-plan" as any);
                 }}
               >
                 <LinearGradient
@@ -253,76 +435,75 @@ export default function HomeScreen() {
             tintClass="bg-[#fff4e6]"
             iconColor="#c2410c"
           />
-          <View className="mt-2 bg-white rounded-3xl p-4 border border-gray-200 shadow-sm shadow-black/5">
-            <View className="flex-row justify-between">
-              <Pressable
-                onPress={() => comingSoon("Meal Suggestions")}
-                className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200 active:opacity-90"
-              >
-                <View className="w-10 h-10 rounded-full bg-[#fde8db] items-center justify-center">
-                  <MaterialCommunityIcons
-                    name="food-croissant"
-                    size={18}
-                    color="#c78a5a"
-                  />
-                </View>
-                <Text className="mt-2 text-sm font-bold text-gray-900">
-                  Breakfast
-                </Text>
-                <Text className="text-xs text-gray-400 mt-1">320 kcal</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => comingSoon("Meal Suggestions")}
-                className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200 active:opacity-90"
-              >
-                <View className="w-10 h-10 rounded-full bg-[#e7f0fb] items-center justify-center">
-                  <Ionicons name="restaurant" size={18} color="#6b8db3" />
-                </View>
-                <Text className="mt-2 text-sm font-bold text-gray-900">Lunch</Text>
-                <Text className="text-xs text-gray-400 mt-1">580 kcal</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => comingSoon("Meal Suggestions")}
-                className="bg-[#f3f4f3] rounded-3xl w-[31%] py-4 items-center border border-gray-200 active:opacity-90"
-              >
-                <View className="w-10 h-10 rounded-full bg-[#efe4fa] items-center justify-center">
-                  <Ionicons name="fast-food" size={18} color="#8f6ab3" />
-                </View>
-                <Text className="mt-2 text-sm font-bold text-gray-900">
-                  Dinner
-                </Text>
-                <Text className="text-xs text-gray-400 mt-1">450 kcal</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Achievements — single entry to full screen */}
-          <HomeSectionHeading
-            label="ACHIEVEMENTS"
-            icon="trophy-outline"
-            tintClass="bg-[#fef9c3]"
-            iconColor="#ca8a04"
-          />
           <Pressable
-            onPress={() => router.push("/achievements")}
-            className="mt-2 bg-white rounded-3xl border border-gray-200 px-5 py-4 active:bg-gray-50 mb-1 shadow-sm shadow-black/5"
+            onPress={() => router.push("/coming-soon?title=Meal%20Suggestions" as any)}
+            className="mt-2 bg-white rounded-3xl p-5 border border-gray-100 active:bg-gray-50 shadow-sm shadow-black/5"
           >
-            <View className="mt-4 flex-row items-center">
-              <View className="w-14 h-14 rounded-2xl bg-[#eaf7f0] items-center justify-center">
-                <Ionicons name="trophy-outline" size={30} color="#76C893" />
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1 pr-3">
+                <View className="w-14 h-14 rounded-2xl bg-[#fff4e6] items-center justify-center">
+                  <Ionicons name="restaurant" size={26} color="#c2410c" />
+                </View>
+                <View className="ml-4 flex-1">
+                  <Text className="text-xl font-extrabold text-gray-900">Meal Suggestions</Text>
+                  <Text className="text-sm text-gray-500 mt-1">Coming soon</Text>
+                </View>
               </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-xl font-extrabold text-gray-900">Achievements</Text>
-                <Text className="text-sm text-gray-500 mt-1 leading-5">
-                  Workout, meal, community & streak badges
-                </Text>
-              </View>
+              <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
             </View>
           </Pressable>
+
         </View>
       </ScrollView>
+
+      {/* Plan duration picker (first time) */}
+      <Modal visible={planPickerVisible} transparent animationType="fade" onRequestClose={() => setPlanPickerVisible(false)}>
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
+            <Text className="text-2xl font-extrabold text-gray-900">Choose your plan</Text>
+            <Text className="text-gray-500 mt-2 leading-6">
+              Select a duration and we&apos;ll generate workouts based on your BMI and goal.
+            </Text>
+
+            <View className="mt-5 gap-3">
+              <Pressable
+                disabled={savingPlan}
+                onPress={() => void chooseDurationAndSave("week")}
+                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+              >
+                <Text className="text-xl font-extrabold text-gray-900">One Week Plan</Text>
+                <Text className="text-sm text-gray-500 mt-1">7 days · auto-suggested workout types</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={savingPlan}
+                onPress={() => void chooseDurationAndSave("biweekly")}
+                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+              >
+                <Text className="text-xl font-extrabold text-gray-900">Biweekly Plan</Text>
+                <Text className="text-sm text-gray-500 mt-1">14 days · balanced rotation</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={savingPlan}
+                onPress={() => void chooseDurationAndSave("monthly")}
+                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+              >
+                <Text className="text-xl font-extrabold text-gray-900">Monthly Plan</Text>
+                <Text className="text-sm text-gray-500 mt-1">30 days · longer schedule</Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              disabled={savingPlan}
+              onPress={() => setPlanPickerVisible(false)}
+              className="mt-5 py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
+            >
+              <Text className="text-gray-800 font-extrabold">Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Bottom Navigation */}
       <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">

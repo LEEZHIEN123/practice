@@ -1,36 +1,31 @@
-import React from "react";
-import { Alert, View, Text, Pressable, ScrollView } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 export default function DiscoverScreen() {
   const router = useRouter();
 
-  const comingSoon = (title: string) => {
-    Alert.alert(title, "Coming soon.");
+  const goSoon = (title: string) => {
+    router.push(`/coming-soon?title=${encodeURIComponent(title)}` as any);
   };
 
   return (
     <View className="flex-1 bg-[#f3f4f3]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
-        <View className="px-6 pt-14">
+        <View className="px-6 pt-10">
           {/* Header */}
           <View className="flex-row justify-between items-center mb-8">
             <Text className="text-4xl font-extrabold text-gray-900">
               Discover
             </Text>
-
-            <Pressable className="w-12 h-12 rounded-full bg-white items-center justify-center border border-gray-200">
-              <Ionicons name="search" size={22} color="#111827" />
-            </Pressable>
           </View>
 
           {/* Explore Workouts */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-4">
+          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
             Explore Workouts
           </Text>
 
-          <Pressable className="bg-[#bdeccf] rounded-[28px] p-6 mb-8 flex-row items-center justify-between">
+          <Pressable className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between">
             <View className="flex-row items-center">
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
                 <MaterialCommunityIcons
@@ -49,13 +44,13 @@ export default function DiscoverScreen() {
           </Pressable>
 
           {/* Explore Nutrition */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-4">
+          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
             Explore Nutrition
           </Text>
 
           <Pressable
-            onPress={() => comingSoon("All Nutrition")}
-            className="bg-[#bdeccf] rounded-[28px] p-6 mb-8 flex-row items-center justify-between"
+            onPress={() => goSoon("All Nutrition")}
+            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
           >
             <View className="flex-row items-center">
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
@@ -70,6 +65,28 @@ export default function DiscoverScreen() {
             <Ionicons name="chevron-forward" size={28} color="#76C893" />
           </Pressable>
 
+          {/* Explore Mind */}
+          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
+            Explore Mind
+          </Text>
+
+          <Pressable
+            onPress={() => router.push("/all-music")}
+            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
+          >
+            <View className="flex-row items-center">
+              <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
+                <Ionicons name="musical-notes" size={22} color="#76C893" />
+              </View>
+
+              <Text className="text-2xl font-extrabold text-gray-900">
+                All Music
+              </Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={28} color="#76C893" />
+          </Pressable>
+
           {/* Connect & Help */}
           <Text className="text-2xl font-extrabold text-gray-900 mb-4">
             Connect & Help
@@ -77,7 +94,7 @@ export default function DiscoverScreen() {
 
           <View className="flex-row justify-between">
             <Pressable
-              onPress={() => comingSoon("Community")}
+              onPress={() => goSoon("Community")}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
@@ -93,7 +110,7 @@ export default function DiscoverScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => comingSoon("AI Coach")}
+              onPress={() => goSoon("AI Coach")}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">

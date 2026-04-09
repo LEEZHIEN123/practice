@@ -174,30 +174,27 @@ export default function ProfileDetails() {
   return (
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView
-        className="flex-1 px-6 pt-12"
-        contentContainerStyle={{ paddingBottom: bottomPad }}
+        className="flex-1"
+        contentContainerStyle={{
+          paddingBottom: bottomPad,
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-      {/* Header */}
-      <View className="relative mb-8">
+      {/* Header (same style as Contact Us) */}
+      <View className="relative mb-6 h-12 justify-center">
         <Pressable
           onPress={() => router.back()}
-          className="absolute left-0 top-5 h-16 w-24 justify-center pl-2"
+          hitSlop={12}
+          className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
         >
-          <View className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={26} color="#1f2937" />
+          <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+            <Ionicons name="arrow-back" size={24} color="#111827" />
           </View>
         </Pressable>
-
-        <Text className="text-center text-2xl font-bold text-gray-900 mt-3">Profile Details</Text>
-
-        {/* Progress */}
-        <View className="flex-row justify-center items-center mt-3">
-          <View className="w-10 h-2 rounded-full bg-green-500 mx-1" />
-          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
-          <View className="w-2 h-2 rounded-full bg-green-300 mx-1" />
-        </View>
+        <Text className="text-center text-xl font-extrabold text-gray-900">Profile Details</Text>
       </View>
 
       {/* Title */}
@@ -404,7 +401,7 @@ export default function ProfileDetails() {
       </View>
 
       {/* Continue */}
-      <View className="mt-4">
+      <View className="mt-2">
         <Pressable
           onPress={handleContinue}
           disabled={saving}

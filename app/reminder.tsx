@@ -1,5 +1,5 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Picker } from "@react-native-picker/picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -10,14 +10,17 @@ import {
     Pressable,
     ScrollView,
     Text,
+    TextInput,
     View,
 } from "react-native";
 import Constants from "expo-constants";
 import { auth, db } from "../firebaseConfig";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 type ReminderKey = "workout" | "meal" | "water";
 
 type ReminderTime = {
   id: string;
+  name?: string;
   hour: number;
   minute: number;
   period: "AM" | "PM";
@@ -40,20 +43,20 @@ type OldReminderTime = {
 const defaultReminderData: ReminderData = {
   workout: {
     times: [
-      { id: "w1", hour: 8, minute: 0, period: "AM", enabled: true },
-      { id: "w2", hour: 5, minute: 0, period: "PM", enabled: true },
+      { id: "w1", hour: 8, minute: 0, period: "AM", enabled: false },
+      { id: "w2", hour: 5, minute: 0, period: "PM", enabled: false },
     ],
     scheduledIds: [],
   },
   meal: {
-    times: [{ id: "m1", hour: 12, minute: 30, period: "PM", enabled: true }],
+    times: [{ id: "m1", hour: 12, minute: 30, period: "PM", enabled: false }],
     scheduledIds: [],
   },
   water: {
     times: [
-      { id: "wa1", hour: 9, minute: 0, period: "AM", enabled: true },
-      { id: "wa2", hour: 11, minute: 0, period: "AM", enabled: true },
-      { id: "wa3", hour: 1, minute: 0, period: "PM", enabled: true },
+      { id: "wa1", hour: 9, minute: 0, period: "AM", enabled: false },
+      { id: "wa2", hour: 11, minute: 0, period: "AM", enabled: false },
+      { id: "wa3", hour: 1, minute: 0, period: "PM", enabled: false },
     ],
     scheduledIds: [],
   },
@@ -110,6 +113,7 @@ function formatRepeatDaysLine(days: boolean[]): string {
 type EditingState = {
   section: ReminderKey;
   timeId: string | null;
+  name: string;
   hour: number;
   minute: number;
   period: "AM" | "PM";
@@ -143,6 +147,7 @@ const normalizeReminderTime = (
   ) {
     return {
       id: maybeNew.id || fallbackId,
+      name: typeof (maybeNew as any).name === "string" ? (maybeNew as any).name : undefined,
       hour: maybeNew.hour,
       minute: maybeNew.minute,
       period: maybeNew.period,
@@ -156,6 +161,7 @@ const normalizeReminderTime = (
   if (parsed) {
     return {
       id: maybeOld.id || fallbackId,
+      name: typeof (maybeOld as any).name === "string" ? (maybeOld as any).name : undefined,
       hour: parsed.hour,
       minute: parsed.minute,
       period: parsed.period,
@@ -165,6 +171,7 @@ const normalizeReminderTime = (
 
   return {
     id: maybeOld.id || fallbackId,
+    name: typeof (maybeOld as any).name === "string" ? (maybeOld as any).name : undefined,
     hour: 9,
     minute: 0,
     period: "AM",
@@ -208,19 +215,21 @@ async function getNotifications() {
     return mod;
   } catch (e) {
     console.log("expo-notifications import failed:", e);
-    Alert.alert("Notifications", "Notifications are not available on this device.");
     return null as any;
   }
 }
 
 export default function RemindersScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [reminders, setReminders] = useState<ReminderData>(defaultReminderData);
   const [repeatDays, setRepeatDays] = useState<boolean[]>(DEFAULT_REPEAT);
   const [loading, setLoading] = useState(false);
   const [editor, setEditor] = useState<EditingState>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const persistTailRef = useRef(Promise.resolve());
   const expoGoWarnedRef = useRef(false);
+  const notifyWarnedRef = useRef(false);
 
   useEffect(() => {
     const init = async () => {
@@ -235,24 +244,52 @@ export default function RemindersScreen() {
 
         const data = snap.data();
 
-        if (data.reminders) {
-          setReminders({
-            workout: normalizeSection(
-              data.reminders.workout,
-              defaultReminderData.workout,
-              "workout"
-            ),
-            meal: normalizeSection(
-              data.reminders.meal,
-              defaultReminderData.meal,
-              "meal"
-            ),
-            water: normalizeSection(
-              data.reminders.water,
-              defaultReminderData.water,
-              "water"
-            ),
+        const initialized = data.remindersInitialized === true;
+
+        const loaded: ReminderData = data.reminders
+          ? {
+              workout: normalizeSection(
+                data.reminders.workout,
+                defaultReminderData.workout,
+                "workout"
+              ),
+              meal: normalizeSection(
+                data.reminders.meal,
+                defaultReminderData.meal,
+                "meal"
+              ),
+              water: normalizeSection(
+                data.reminders.water,
+                defaultReminderData.water,
+                "water"
+              ),
+            }
+          : defaultReminderData;
+
+        // If the user never opened Reminders before, force all toggles OFF once.
+        if (!initialized) {
+          const forceOff = (s: ReminderSection): ReminderSection => ({
+            ...s,
+            times: s.times.map((t) => ({ ...t, enabled: false })),
           });
+          const forced: ReminderData = {
+            workout: forceOff(loaded.workout),
+            meal: forceOff(loaded.meal),
+            water: forceOff(loaded.water),
+          };
+
+          await setDoc(
+            doc(db, "users", user.uid),
+            {
+              remindersInitialized: true,
+              reminders: forced,
+            },
+            { merge: true }
+          );
+
+          setReminders(forced);
+        } else {
+          setReminders(loaded);
         }
 
         if (Array.isArray(data.reminderRepeatDays) && data.reminderRepeatDays.length === 7) {
@@ -266,9 +303,9 @@ export default function RemindersScreen() {
     init();
   }, []);
 
-  const ensureNotificationPermission = async () => {
+  const ensureNotificationPermission = async (): Promise<boolean> => {
     const Notifications = await getNotifications();
-    if (!Notifications) return;
+    if (!Notifications) return false;
     try {
       // Ensure reminders show even when the app is open (foreground).
       if (!expoGoWarnedRef.current) {
@@ -304,20 +341,28 @@ export default function RemindersScreen() {
       }
 
       if (status !== "granted") {
-        Alert.alert(
-          "Notifications disabled",
-          "Please allow notifications so reminder banner notifications can appear."
-        );
+        if (!notifyWarnedRef.current) {
+          notifyWarnedRef.current = true;
+          Alert.alert(
+            "Notifications disabled",
+            "Please allow notifications so reminder banner notifications can appear."
+          );
+        }
+        return false;
       }
+      return true;
     } catch (error) {
       console.log("Notification permission error:", error);
+      return false;
     }
   };
 
   const openAddModal = (section: ReminderKey) => {
+    const nextIdx = (reminders[section]?.times?.length ?? 0) + 1;
     setEditor({
       section,
       timeId: null,
+      name: `Reminder ${nextIdx}`,
       hour: 5,
       minute: 23,
       period: "AM",
@@ -329,6 +374,7 @@ export default function RemindersScreen() {
     setEditor({
       section,
       timeId: item.id,
+      name: typeof item.name === "string" && item.name.trim() ? item.name : "Reminder",
       hour: item.hour,
       minute: item.minute,
       period: item.period,
@@ -364,15 +410,18 @@ export default function RemindersScreen() {
 
     try {
       setLoading(true);
-      await cancelScheduledFor(prev);
+      const canNotify = await ensureNotificationPermission();
 
-      const workoutIds = await scheduleSectionNotifications(
-        "workout",
-        next.workout,
-        days
-      );
-      const mealIds = await scheduleSectionNotifications("meal", next.meal, days);
-      const waterIds = await scheduleSectionNotifications("water", next.water, days);
+      let workoutIds: string[] = [];
+      let mealIds: string[] = [];
+      let waterIds: string[] = [];
+
+      if (canNotify) {
+        await cancelScheduledFor(prev);
+        workoutIds = await scheduleSectionNotifications("workout", next.workout, days);
+        mealIds = await scheduleSectionNotifications("meal", next.meal, days);
+        waterIds = await scheduleSectionNotifications("water", next.water, days);
+      }
 
       const payload: ReminderData = {
         workout: { ...next.workout, scheduledIds: workoutIds },
@@ -380,10 +429,33 @@ export default function RemindersScreen() {
         water: { ...next.water, scheduledIds: waterIds },
       };
 
+      // Firestore doesn't allow `undefined` values (e.g. optional `name`).
+      const sanitizeTime = (t: ReminderTime) => {
+        const base = {
+          id: t.id,
+          hour: t.hour,
+          minute: t.minute,
+          period: t.period,
+          enabled: t.enabled,
+        } as any;
+        if (typeof t.name === "string" && t.name.trim()) base.name = t.name.trim();
+        return base;
+      };
+      const sanitizeSection = (s: ReminderSection) => ({
+        times: s.times.map(sanitizeTime),
+        scheduledIds: Array.isArray(s.scheduledIds) ? s.scheduledIds : [],
+      });
+      const firestorePayload = {
+        workout: sanitizeSection(payload.workout),
+        meal: sanitizeSection(payload.meal),
+        water: sanitizeSection(payload.water),
+      };
+
       await setDoc(
         doc(db, "users", user.uid),
         {
-          reminders: payload,
+          remindersInitialized: true,
+          reminders: firestorePayload,
           reminderRepeatDays: days,
         },
         { merge: true }
@@ -455,6 +527,7 @@ export default function RemindersScreen() {
 
     const newTime: ReminderTime = {
       id: editor.timeId ?? `${editor.section}-${Date.now()}`,
+      name: editor.name?.trim() ? editor.name.trim() : undefined,
       hour: editor.hour,
       minute: editor.minute,
       period: editor.period,
@@ -483,6 +556,7 @@ export default function RemindersScreen() {
     });
 
     setEditor(null);
+    setShowTimePicker(false);
   };
 
   const scheduleSectionNotifications = async (
@@ -505,22 +579,25 @@ export default function RemindersScreen() {
 
         const hour24 = convertTo24Hour(item.hour, item.period);
 
-        const id = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: meta.title,
-            body: meta.body,
-            sound: true,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-            weekday,
-            hour: hour24,
-            minute: item.minute,
-            channelId: "reminders",
-          } as any,
-        });
-
-        scheduledIds.push(id);
+        try {
+          const id = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: meta.title,
+              body: meta.body,
+              sound: "default" as any,
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+              weekday,
+              hour: hour24,
+              minute: item.minute,
+              channelId: "reminders",
+            } as any,
+          });
+          scheduledIds.push(id);
+        } catch (e) {
+          console.log("Schedule notification failed:", e);
+        }
       }
     }
 
@@ -540,11 +617,15 @@ export default function RemindersScreen() {
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{
+          paddingBottom: 32,
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="px-5 pt-14">
-          <View className="relative mb-8 h-14 justify-center" pointerEvents="box-none">
+        <View>
+          <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
             <Pressable
               onPress={() => {
                 try {
@@ -561,7 +642,7 @@ export default function RemindersScreen() {
               </View>
             </Pressable>
 
-            <Text className="text-center text-2xl font-extrabold text-[#0f172a]">
+            <Text className="text-center text-xl font-extrabold text-gray-900">
               Reminders
             </Text>
           </View>
@@ -630,6 +711,11 @@ export default function RemindersScreen() {
                         <Text className="text-[#0f172a] text-lg font-extrabold">
                           {formatTime(item)}
                         </Text>
+                        {typeof item.name === "string" && item.name.trim() ? (
+                          <Text className="text-xs text-[#667085] font-semibold mt-1" numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                        ) : null}
                         <Text
                           className="text-xs text-[#52B69A] font-semibold mt-1"
                           numberOfLines={2}
@@ -691,6 +777,17 @@ export default function RemindersScreen() {
       <Modal visible={!!editor} transparent animationType="fade">
         <View className="flex-1 bg-black/35 justify-end">
           <View className="bg-[#f7f7f7] rounded-t-[38px] px-6 pt-8 pb-10">
+            <Pressable
+              onPress={() => {
+                setEditor(null);
+                setShowTimePicker(false);
+              }}
+              hitSlop={12}
+              className="absolute right-5 top-6 w-12 h-12 rounded-full bg-white items-center justify-center border border-gray-200 z-20"
+            >
+              <Ionicons name="close" size={22} color="#111827" />
+            </Pressable>
+
             <Text className="text-center text-[26px] font-extrabold text-[#0f172a]">
               Set New Reminder
             </Text>
@@ -699,75 +796,93 @@ export default function RemindersScreen() {
               {editor ? sectionMeta[editor.section].subtitle : ""}
             </Text>
 
-           <View className="border border-[#b7ead1] rounded-[26px] px-4 py-6 mb-8">
-  <View className="bg-[#eef2f1] rounded-xl flex-row items-center justify-center py-3">
-    <View className="flex-1">
-      <Picker
-        selectedValue={editor?.hour ?? 5}
-        onValueChange={(value) =>
-          setEditor((prev) => (prev ? { ...prev, hour: value } : prev))
-        }
-        style={{
-          height: 80,
-          fontSize: 40,
-          color: "#0f172a",
-        }}
-        itemStyle={{ fontSize: 40, fontWeight: "800", color: "#0f172a" }}
-      >
-        {Array.from({ length: 12 }, (_, i) => i + 1).map((hour) => (
-          <Picker.Item
-            key={hour}
-            label={String(hour).padStart(2, "0")}
-            value={hour}
-          />
-        ))}
-      </Picker>
-    </View>
+           <View className="border border-[#b7ead1] rounded-[26px] px-4 py-6 mb-6">
+              <Text className="text-[18px] font-extrabold text-[#0f172a] mb-3">NAME</Text>
+              <View className="bg-white rounded-2xl border border-gray-200 px-4 py-3 mb-6">
+                <TextInput
+                  value={editor?.name ?? ""}
+                  onChangeText={(t: string) => setEditor((prev) => (prev ? { ...prev, name: t } : prev))}
+                  placeholder="Reminder name"
+                  placeholderTextColor="#9ca3af"
+                  className="text-[18px] font-semibold text-[#0f172a]"
+                />
+              </View>
 
-    <Text className="text-[40px] font-extrabold text-[#0f172a] mx-2">:</Text>
-
-    <View className="flex-1">
-      <Picker
-        selectedValue={editor?.minute ?? 23}
-        onValueChange={(value) =>
-          setEditor((prev) => (prev ? { ...prev, minute: value } : prev))
-        }
-        style={{
-          height: 80,
-          fontSize: 40,
-          color: "#0f172a",
-        }}
-        itemStyle={{ fontSize: 40, fontWeight: "800", color: "#0f172a" }}
-      >
-        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-          <Picker.Item
-            key={minute}
-            label={String(minute).padStart(2, "0")}
-            value={minute}
-          />
-        ))}
-      </Picker>
-    </View>
-
-    <View className="flex-1">
-      <Picker
-        selectedValue={editor?.period ?? "AM"}
-        onValueChange={(value) =>
+  <View className="bg-[#eef2f1] rounded-xl items-center justify-center py-3">
+    {Platform.OS === "ios" ? (
+      <DateTimePicker
+        mode="time"
+        display="spinner"
+        value={(() => {
+          const h12 = editor?.hour ?? 5;
+          const m = editor?.minute ?? 0;
+          const p = editor?.period ?? "AM";
+          const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
+          const d = new Date();
+          d.setHours(h24, m, 0, 0);
+          return d;
+        })()}
+        onChange={(_, date) => {
+          if (!date) return;
+          const h24 = date.getHours();
+          const minute = date.getMinutes();
+          const period = h24 >= 12 ? "PM" : "AM";
+          const h12 = ((h24 + 11) % 12) + 1;
           setEditor((prev) =>
-            prev ? { ...prev, period: value as "AM" | "PM" } : prev
-          )
-        }
-        style={{
-          height: 80,
-          fontSize: 40,
-          color: "#0f172a",
+            prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
+          );
         }}
-        itemStyle={{ fontSize: 40, fontWeight: "800", color: "#0f172a" }}
-      >
-        <Picker.Item label="AM" value="AM" />
-        <Picker.Item label="PM" value="PM" />
-      </Picker>
-    </View>
+        style={{ height: 140, width: "100%" }}
+        textColor="#0f172a"
+      />
+    ) : (
+      <>
+        <Pressable
+          onPress={() => setShowTimePicker(true)}
+          className="bg-white rounded-2xl px-5 py-4 w-full active:opacity-90"
+        >
+          <Text className="text-[26px] font-extrabold text-[#0f172a] text-center">
+            {String(editor?.hour ?? 5).padStart(2, "0")}:{String(editor?.minute ?? 0).padStart(2, "0")}{" "}
+            {editor?.period ?? "AM"}
+          </Text>
+          <Text className="text-xs text-[#667085] text-center mt-1 font-semibold">
+            Tap to change time
+          </Text>
+        </Pressable>
+
+        {showTimePicker ? (
+          <DateTimePicker
+            mode="time"
+            display="spinner"
+            value={(() => {
+              const h12 = editor?.hour ?? 5;
+              const m = editor?.minute ?? 0;
+              const p = editor?.period ?? "AM";
+              const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
+              const d = new Date();
+              d.setHours(h24, m, 0, 0);
+              return d;
+            })()}
+            onChange={(event, date) => {
+              // Android: picker is a dialog; must handle dismissal.
+              if (event?.type === "dismissed") {
+                setShowTimePicker(false);
+                return;
+              }
+              if (!date) return;
+              const h24 = date.getHours();
+              const minute = date.getMinutes();
+              const period = h24 >= 12 ? "PM" : "AM";
+              const h12 = ((h24 + 11) % 12) + 1;
+              setEditor((prev) =>
+                prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
+              );
+              setShowTimePicker(false);
+            }}
+          />
+        ) : null}
+      </>
+    )}
   </View>
 </View>
 
@@ -810,15 +925,15 @@ export default function RemindersScreen() {
 
             <Pressable
               onPress={saveModalReminder}
-              className="bg-[#76C893] rounded-[24px] py-6 items-center shadow-sm"
+              className="bg-[#76C893] rounded-[24px] py-5 items-center shadow-sm"
             >
-              <Text className="text-white text-[22px] font-extrabold">
+              <Text className="text-white text-[20px] font-extrabold">
                 Save Reminder
               </Text>
             </Pressable>
 
-            <Pressable onPress={() => setEditor(null)} className="items-center mt-6">
-              <Text className="text-[#98a2b3] text-[19px] font-semibold">
+            <Pressable onPress={() => setEditor(null)} className="items-center mt-5">
+              <Text className="text-[#98a2b3] text-[17px] font-semibold">
                 Cancel
               </Text>
             </Pressable>

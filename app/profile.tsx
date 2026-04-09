@@ -1,36 +1,40 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  Image,
-  Modal,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
-import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
-import { auth, db } from "../firebaseConfig";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
 import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
 } from "@/lib/deleteUserAccount";
+import { calcBmi, generateActiveWorkoutPlan, type PlanDuration } from "@/lib/workoutPlan";
+import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { auth, db } from "../firebaseConfig";
 
 type GoalLabel = "Gain Weight" | "Maintain Weight" | "Lose Weight";
 type Gender = "male" | "female";
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [userName, setUserName] = useState(" ");
   const [userEmail, setUserEmail] = useState(" ");
   const [goal, setGoal] = useState<GoalLabel>("Lose Weight");
+  const [recommendedGoalLabel, setRecommendedGoalLabel] = useState<GoalLabel | null>(null);
   const [gender, setGender] = useState<Gender>("male");
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
@@ -43,34 +47,42 @@ export default function ProfileScreen() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
-    const loadProfile = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
+    const user = auth.currentUser;
+    if (!user) return;
 
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as any;
 
-        if (snap.exists()) {
-          const data = snap.data();
+        if (typeof data?.name === "string") setUserName(data.name);
+        if (typeof data?.email === "string") setUserEmail(data.email);
+        if (data?.gender === "male" || data?.gender === "female") setGender(data.gender);
 
-          if (data.name) setUserName(data.name);
-          if (data.email) setUserEmail(data.email);
-          if (data.gender === "male" || data.gender === "female") {
-            setGender(data.gender);
-          }
+        if (data?.recommendedPlan === "gain") setGoal("Gain Weight");
+        else if (data?.recommendedPlan === "maintain") setGoal("Maintain Weight");
+        else if (data?.recommendedPlan === "lose") setGoal("Lose Weight");
 
-          if (data.recommendedPlan === "gain") setGoal("Gain Weight");
-          else if (data.recommendedPlan === "maintain") setGoal("Maintain Weight");
-          else if (data.recommendedPlan === "lose") setGoal("Lose Weight");
-
-          setProfileImage(data.profileImage || null);
+        const bmi =
+          typeof data?.bmi === "number" && Number.isFinite(data.bmi)
+            ? data.bmi
+            : calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
+        if (typeof bmi === "number" && Number.isFinite(bmi)) {
+          if (bmi < 18.5) setRecommendedGoalLabel("Gain Weight");
+          else if (bmi <= 24.5) setRecommendedGoalLabel("Maintain Weight");
+          else setRecommendedGoalLabel("Lose Weight");
+        } else {
+          setRecommendedGoalLabel(null);
         }
-      } catch (error) {
-        console.log("Failed to load profile:", error);
-      }
-    };
 
-    loadProfile();
+        if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
+        else setProfileImage(null);
+      },
+      (error) => console.log("Failed to subscribe profile:", error)
+    );
+
+    return () => unsub();
   }, []);
 
   const goalLabelToKey = (g: GoalLabel): "gain" | "maintain" | "lose" => {
@@ -83,19 +95,71 @@ export default function ProfileScreen() {
     const user = auth.currentUser;
     if (!user) return;
 
-    try {
-      setSavingGoal(true);
-      setGoal(next);
-      await updateDoc(doc(db, "users", user.uid), {
-        recommendedPlan: goalLabelToKey(next),
-      });
-      setGoalModalVisible(false);
-    } catch (e) {
-      console.log("Failed to update goal:", e);
-      Alert.alert("Error", "Failed to update your goal. Please try again.");
-    } finally {
-      setSavingGoal(false);
+    if (next === goal) {
+      Alert.alert("No change", "This is already your current goal.");
+      return;
     }
+
+    const newKey = goalLabelToKey(next);
+
+    Alert.alert(
+      "Update goal?",
+      "Your daily calorie target and personalised workout plan will be recalculated. This may change your remaining calories and future workouts.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Update",
+          style: "default",
+          onPress: async () => {
+            try {
+              setSavingGoal(true);
+              setGoal(next);
+
+              const userRef = doc(db, "users", user.uid);
+              const snap = await getDoc(userRef);
+              const data = snap.exists() ? (snap.data() as any) : {};
+
+              const updates: any = {
+                recommendedPlan: newKey,
+              };
+
+              const duration = data?.planDuration as PlanDuration | undefined;
+              const weight = Number(data?.weight ?? 0);
+              const height = Number(data?.height ?? 0);
+              const bmi = calcBmi(weight, height);
+
+              // If the user already had a plan for this goal, restore it (stable plan when switching back).
+              const desiredDuration = data?.planDuration as PlanDuration | undefined;
+              const existingPlan =
+                desiredDuration && data?.workoutPlansByGoal?.[newKey]?.[desiredDuration]
+                  ? data.workoutPlansByGoal[newKey][desiredDuration]
+                  : null;
+
+              if (existingPlan) {
+                updates.activeWorkoutPlan = existingPlan;
+                updates.planDuration = existingPlan.duration;
+              } else if (duration && bmi) {
+                const plan = generateActiveWorkoutPlan({ duration, bmi, goal: newKey });
+                updates.planDuration = duration;
+                updates.planDurationChosenAt = serverTimestamp();
+                updates.activeWorkoutPlan = plan;
+                updates[`workoutPlansByGoal.${newKey}.${duration}`] = plan;
+              }
+
+              await updateDoc(userRef, updates);
+
+              setGoalModalVisible(false);
+              Alert.alert("Goal updated", "Your goal has been updated successfully.");
+            } catch (e) {
+              console.log("Failed to update goal:", e);
+              Alert.alert("Error", "Failed to update your goal. Please try again.");
+            } finally {
+              setSavingGoal(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = async () => {
@@ -172,12 +236,27 @@ export default function ProfileScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
-        <View className="px-6 pt-14">
-          <View className="relative items-center justify-center mb-7">
-            <Text className="text-2xl font-extrabold text-gray-900">Profile</Text>
-          </View>
+      <ScrollView
+        contentContainerStyle={{
+          paddingBottom: 120,
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+        }}
+      >
+        <View className="relative mb-6 h-12 justify-center">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={12}
+            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
+          >
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </View>
+          </Pressable>
+          <Text className="text-center text-xl font-extrabold text-gray-900">Profile</Text>
+        </View>
 
+        <View>
           <View className="items-center mb-6">
             <View className="relative">
               <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
@@ -212,6 +291,16 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
 
+          <Pressable onPress={() => router.push("/reminder")} className={rowClass}>
+            <View className="flex-row items-center flex-1">
+              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
+                <Ionicons name="alarm-outline" size={22} color="#76C893" />
+              </View>
+              <Text className="text-lg font-bold text-gray-900 ml-4">Reminders</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+          </Pressable>
+
           <Pressable onPress={() => setGoalModalVisible(true)} className={rowClass}>
             <View className="flex-row items-center flex-1">
               <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
@@ -225,36 +314,6 @@ export default function ProfileScreen() {
               </View>
             </View>
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
-          </Pressable>
-
-          <Pressable
-            onPress={() => router.push("/reminder")}
-            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 mb-3.5 shadow-sm"
-          >
-            <View className="flex-row items-center justify-between mb-1">
-              <View className="flex-row items-center flex-1 min-w-0 pr-2">
-                <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center shrink-0">
-                  <Ionicons name="alarm-outline" size={22} color="#76C893" />
-                </View>
-                <Text className="text-lg font-bold text-gray-900 ml-4 shrink-0">
-                  Reminders
-                </Text>
-              </View>
-              <View className="shrink-0">
-                <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
-              </View>
-            </View>
-
-            <View className="ml-16 -mt-0.5 pr-1">
-              <Text
-                className="text-[#76C893] text-lg font-semibold"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.72}
-              >
-                Set Workout Time, Meal Time, and Water Intake.
-              </Text>
-            </View>
           </Pressable>
 
           <Pressable
@@ -336,6 +395,7 @@ export default function ProfileScreen() {
                 ] as const
               ).map((o) => {
                 const active = goal === o.label;
+                const recommended = recommendedGoalLabel === o.label;
                 return (
                   <Pressable
                     key={o.label}
@@ -347,7 +407,16 @@ export default function ProfileScreen() {
                   >
                     <View className="flex-row items-center justify-between">
                       <View className="pr-3 flex-1">
-                        <Text className="text-base font-extrabold text-gray-900">{o.label}</Text>
+                        <View className="flex-row items-center flex-wrap">
+                          <Text className="text-base font-extrabold text-gray-900">{o.label}</Text>
+                          {recommended ? (
+                            <View className="ml-2 px-2 py-1 rounded-full bg-amber-50 border border-amber-200">
+                              <Text className="text-[10px] font-extrabold text-amber-800">
+                                RECOMMEND
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
                         <Text className="text-sm text-gray-500 mt-1">{o.desc}</Text>
                       </View>
                       <View
@@ -362,6 +431,20 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
+
+            {recommendedGoalLabel && goal !== recommendedGoalLabel ? (
+              <View className="mt-5 bg-[#eaf7f0] border border-[#b7ead1] rounded-2xl p-4">
+                <View className="flex-row items-start">
+                  <View className="w-8 h-8 rounded-full bg-white items-center justify-center mr-3">
+                    <Ionicons name="information-circle-outline" size={18} color="#52B69A" />
+                  </View>
+                  <Text className="flex-1 text-sm text-gray-700 leading-6">
+                    To improve your health, we recommended you{" "}
+                    <Text className="font-extrabold text-red-600">{recommendedGoalLabel}</Text> goal.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
 
             <View className="flex-row justify-end mt-6">
               <Pressable

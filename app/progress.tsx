@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Slider from "@react-native-community/slider";
 import { useRouter } from "expo-router";
-import { Accelerometer, Pedometer } from "expo-sensors";
-import { auth, db } from "../firebaseConfig";
+import { Accelerometer } from "expo-sensors";
 import {
   addDoc,
   collection,
@@ -15,14 +14,23 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import Slider from "@react-native-community/slider";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
+
+const fmtDateKey = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -37,7 +45,12 @@ export default function ProgressScreen() {
   const [consumedYesterday, setConsumedYesterday] = useState(0);
   const [burnedYesterday, setBurnedYesterday] = useState(0);
   const [waterMlToday, setWaterMlToday] = useState(0);
+  /** Today's sum from waterLogs + whether any log exists for today (prefer over dailyStats when logs exist). */
+  const [waterFromLogs, setWaterFromLogs] = useState<{ sum: number; count: number } | null>(null);
+  const [waterRecordedToday, setWaterRecordedToday] = useState(false);
   const [stepsToday, setStepsToday] = useState<number>(0);
+  const [stepsAutoDb, setStepsAutoDb] = useState(0);
+  const [stepsManualDb, setStepsManualDb] = useState<number | null>(null);
   const [stepSource, setStepSource] = useState<"pedometer" | "accelerometer" | "unavailable">("pedometer");
 
   const [logVisible, setLogVisible] = useState(false);
@@ -46,7 +59,7 @@ export default function ProgressScreen() {
   const [logDate, setLogDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [weightRefreshKey, setWeightRefreshKey] = useState(0);
-
+  const [dayTick, setDayTick] = useState(0);
   const [weightSeries, setWeightSeries] = useState<number[]>([]);
   const [hasWeightLogs, setHasWeightLogs] = useState(false);
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
@@ -86,6 +99,37 @@ export default function ProgressScreen() {
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
+  const displaySteps = useMemo(() => {
+    if (stepsManualDb != null) return Math.round(stepsManualDb);
+    return Math.max(Math.round(stepsToday), Math.round(stepsAutoDb));
+  }, [stepsAutoDb, stepsManualDb, stepsToday]);
+
+  /** Source of truth for "today's total": waterLogs. If none, show 0. */
+  const waterTotalTodayMl = useMemo(() => {
+    if (!waterFromLogs) return 0;
+    if (waterFromLogs.count <= 0) return 0;
+    return Math.max(0, waterFromLogs.sum);
+  }, [waterFromLogs]);
+
+  const hasWaterLogsToday = useMemo(() => (waterFromLogs?.count ?? 0) > 0, [waterFromLogs]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const id = setTimeout(() => {
+      const key = fmtDateKey(new Date());
+      void setDoc(
+        doc(db, "users", user.uid, "dailyStats", key),
+        {
+          stepsAuto: Math.max(0, Math.round(stepsToday)),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }, 12000);
+    return () => clearTimeout(id);
+  }, [stepsToday]);
+
   useEffect(() => {
     const load = async () => {
       const user = auth.currentUser;
@@ -109,21 +153,19 @@ export default function ProgressScreen() {
   }, []);
 
   useEffect(() => {
+    const id = setInterval(() => setDayTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
 
-    const dateKey = (d: Date) => {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    };
-
     const now = new Date();
-    const todayKey = dateKey(now);
+    const todayKey = fmtDateKey(now);
     const y = new Date(now);
     y.setDate(y.getDate() - 1);
-    const yesterdayKey = dateKey(y);
+    const yesterdayKey = fmtDateKey(y);
 
     const unsubToday = onSnapshot(
       doc(db, "users", user.uid, "dailyStats", todayKey),
@@ -131,12 +173,22 @@ export default function ProgressScreen() {
         const data = snap.exists() ? (snap.data() as any) : {};
         setConsumedToday(typeof data?.consumedKcal === "number" ? data.consumedKcal : 0);
         setBurnedToday(typeof data?.burnedKcal === "number" ? data.burnedKcal : 0);
-        setWaterMlToday(typeof data?.waterMl === "number" ? data.waterMl : 0);
+        const wm = data?.waterMl;
+        setWaterMlToday(typeof wm === "number" && Number.isFinite(wm) ? Math.round(wm) : 0);
+        // Recorded "today" should reflect actual water logs (not stale dailyStats flags).
+        setWaterRecordedToday(false);
+        const sa = data?.stepsAuto;
+        setStepsAutoDb(typeof sa === "number" && Number.isFinite(sa) ? Math.max(0, sa) : 0);
+        const sm = data?.stepsManual;
+        setStepsManualDb(typeof sm === "number" && Number.isFinite(sm) ? Math.max(0, Math.round(sm)) : null);
       },
       () => {
         setConsumedToday(0);
         setBurnedToday(0);
         setWaterMlToday(0);
+        setWaterRecordedToday(false);
+        setStepsAutoDb(0);
+        setStepsManualDb(null);
       }
     );
 
@@ -157,11 +209,44 @@ export default function ProgressScreen() {
       unsubToday();
       unsubYesterday();
     };
-  }, []);
+  }, [dayTick]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const q = query(
+      collection(db, "users", user.uid, "waterLogs"),
+      orderBy("createdAt", "desc"),
+      limit(120)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const todayKey = fmtDateKey(new Date());
+        let sum = 0;
+        let count = 0;
+        for (const d of snap.docs) {
+          const data = d.data() as any;
+          const logDay = data?.logDate?.toDate?.() instanceof Date ? data.logDate.toDate() : null;
+          const createdAt = data?.createdAt?.toDate?.() instanceof Date ? data.createdAt.toDate() : null;
+          const dk = logDay ? fmtDateKey(logDay) : createdAt ? fmtDateKey(createdAt) : null;
+          if (dk !== todayKey) continue;
+          count += 1;
+          const amt =
+            typeof data?.amountMl === "number" && Number.isFinite(data.amountMl) ? data.amountMl : 0;
+          sum += amt;
+        }
+        setWaterFromLogs({ sum: Math.round(sum), count });
+      },
+      () => setWaterFromLogs({ sum: 0, count: 0 })
+    );
+    return () => unsub();
+  }, [dayTick]);
 
   useEffect(() => {
     let timer: any = null;
     let accelSub: { remove: () => void } | null = null;
+    let pedSub: { remove: () => void } | null = null;
     let mounted = true;
 
     // Peak -> trough step detector + "walking lock" to avoid counting single pick-up motions.
@@ -251,6 +336,7 @@ export default function ProgressScreen() {
 
     const pollPedometer = async () => {
       try {
+        const { Pedometer } = await import("expo-sensors");
         const available = await Pedometer.isAvailableAsync();
         if (!mounted) return;
         if (!available) return;
@@ -267,21 +353,62 @@ export default function ProgressScreen() {
       }
     };
 
+    const startLivePedometer = async () => {
+      try {
+        const { Pedometer } = await import("expo-sensors");
+        const available = await Pedometer.isAvailableAsync();
+        if (!mounted) return false;
+        if (!available) return false;
+
+        setStepSource("pedometer");
+
+        // Baseline = steps since start of day at subscription time.
+        const start = startOfDay(new Date());
+        const baseRes = await Pedometer.getStepCountAsync(start, new Date());
+        if (!mounted) return false;
+        let baseline = typeof baseRes?.steps === "number" ? baseRes.steps : 0;
+        setStepsToday(Math.max(0, Math.round(baseline)));
+
+        pedSub = Pedometer.watchStepCount((result: any) => {
+          if (!mounted) return;
+          // If day changed, refresh baseline.
+          const k = dateKey(new Date());
+          if (k !== currentDayKey) {
+            currentDayKey = k;
+            baseline = 0;
+          }
+          const inc = typeof result?.steps === "number" ? result.steps : 0;
+          setStepsToday(Math.max(0, Math.round(baseline + inc)));
+        });
+
+        // Refresh baseline every few minutes to prevent drift.
+        timer = setInterval(async () => {
+          try {
+            const k = dateKey(new Date());
+            if (k !== currentDayKey) {
+              currentDayKey = k;
+              baseline = 0;
+            }
+            const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
+            if (!mounted) return;
+            baseline = typeof res?.steps === "number" ? res.steps : baseline;
+          } catch {}
+        }, 5 * 60_000);
+
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     const run = async () => {
       try {
-        const pedAvailable = await Pedometer.isAvailableAsync();
         if (!mounted) return;
 
-        if (pedAvailable) {
-          setStepSource("pedometer");
-          const ok = await pollPedometer();
-          if (ok) {
-            timer = setInterval(() => {
-              void pollPedometer();
-            }, 30_000);
-            return;
-          }
-          // Pedometer exists but cannot read (permissions/Expo Go) -> fallback.
+        setStepSource("pedometer");
+        const ok = await startLivePedometer();
+        if (ok) {
+          return;
         }
 
         const accelOk = await startAccelerometerSteps();
@@ -296,9 +423,14 @@ export default function ProgressScreen() {
     return () => {
       mounted = false;
       if (timer) clearInterval(timer);
+      pedSub?.remove();
       accelSub?.remove();
     };
   }, []);
+
+  useEffect(() => {
+    setWaterRecordedToday(hasWaterLogsToday);
+  }, [hasWaterLogsToday]);
 
   useEffect(() => {
     const loadWeightSeries = async () => {
@@ -416,13 +548,57 @@ export default function ProgressScreen() {
     return Number.isFinite(value) ? value : 0;
   }, [effectiveWeightKg, heightCm]);
 
-  const bmiStatus = useMemo(() => {
-    if (!bmi) return "—";
-    if (bmi < 18.5) return "Under";
-    if (bmi < 25) return "Normal";
-    if (bmi < 30) return "Over";
-    return "Obese";
+  const bmiCategoryIdx = useMemo(() => {
+    if (!bmi) return 1;
+    if (bmi < 18.5) return 0;
+    if (bmi <= 24.9) return 1;
+    if (bmi <= 29.9) return 2;
+    return 3;
   }, [bmi]);
+
+  const bmiMarkerPct = useMemo(() => {
+    if (!bmi) return 12.5;
+    const b = Math.min(Math.max(bmi, 12), 48);
+    if (b < 18.5) return ((b - 12) / (18.5 - 12)) * 25;
+    if (b <= 24.9) return 25 + ((b - 18.5) / (24.9 - 18.5)) * 25;
+    if (b <= 29.9) return 50 + ((b - 25) / (29.9 - 25)) * 25;
+    return 75 + Math.min((b - 30) / (48 - 30), 1) * 25;
+  }, [bmi]);
+
+  const bmiCategoryLabel = useMemo(() => {
+    if (!bmi) return "—";
+    return (["UNDER", "NORMAL", "OVER", "OBESE"] as const)[bmiCategoryIdx];
+  }, [bmi, bmiCategoryIdx]);
+
+  const bmiCategoryPillClass = useMemo(() => {
+    if (bmiCategoryIdx === 0) return "bg-sky-50 border-sky-200";
+    if (bmiCategoryIdx === 1) return "bg-emerald-50 border-emerald-200";
+    if (bmiCategoryIdx === 2) return "bg-amber-50 border-amber-200";
+    return "bg-red-50 border-red-200";
+  }, [bmiCategoryIdx]);
+
+  const bmiCategoryPillTextClass = useMemo(() => {
+    if (bmiCategoryIdx === 0) return "text-sky-700";
+    if (bmiCategoryIdx === 1) return "text-emerald-800";
+    if (bmiCategoryIdx === 2) return "text-amber-800";
+    return "text-red-700";
+  }, [bmiCategoryIdx]);
+
+  /** Recommended plan copy follows BMI ranges (not profile goal). */
+  const bmiPlanCaps = useMemo(() => {
+    if (!bmi) return "MAINTAIN WEIGHT";
+    if (bmi < 18.5) return "GAIN WEIGHT";
+    if (bmi > 25) return "LOSE WEIGHT";
+    return "MAINTAIN WEIGHT";
+  }, [bmi]);
+
+  const bmiCaretColor = useMemo(() => {
+    if (!bmi) return "#52B69A";
+    if (bmiCategoryIdx === 0) return "#0284c7";
+    if (bmiCategoryIdx === 1) return "#059669";
+    if (bmiCategoryIdx === 2) return "#fbbf24";
+    return "#dc2626";
+  }, [bmi, bmiCategoryIdx]);
 
   const metricLabel = useMemo(() => {
     if (tab === "weight") return "CURRENT METRIC";
@@ -557,56 +733,14 @@ export default function ProgressScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} className="px-6 pt-14">
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} className="px-6 pt-10">
         {/* Header */}
-        <View className="items-center mb-6">
-          <Text className="text-2xl font-extrabold text-gray-900">Progress</Text>
-        </View>
-
-        {/* BMI Card */}
-        <View className="bg-white rounded-3xl p-5 border border-gray-100">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-[10px] tracking-widest text-gray-400 font-bold">
-              BODY MASS INDEX
-            </Text>
-            <View className="px-3 py-1 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
-              <Text className="text-xs font-semibold text-[#52B69A]">{bmiStatus}</Text>
-            </View>
-          </View>
-
-          <View className="flex-row items-end mt-4">
-            <Text className="text-4xl font-extrabold text-gray-900">
-              {bmi ? bmi.toFixed(1) : "--"}
-            </Text>
-            <Text className="text-gray-500 ml-2 mb-1">kg/m²</Text>
-          </View>
-
-          {/* BMI scale */}
-          <View className="mt-4">
-            <View className="flex-row h-2 rounded-full overflow-hidden">
-              <View className="flex-1 bg-blue-300" />
-              <View className="flex-1 bg-green-300" />
-              <View className="flex-1 bg-yellow-300" />
-              <View className="flex-1 bg-red-300" />
-            </View>
-
-            <View className="flex-row justify-between mt-2">
-              <Text className="text-[10px] text-gray-400">18.5</Text>
-              <Text className="text-[10px] text-gray-400">25.0</Text>
-              <Text className="text-[10px] text-gray-400">30.0</Text>
-            </View>
-
-            <View className="flex-row justify-between mt-2">
-              <Text className="text-[10px] text-gray-400 font-bold">UNDER</Text>
-              <Text className="text-[10px] text-gray-400 font-bold">NORMAL</Text>
-              <Text className="text-[10px] text-gray-400 font-bold">OVER</Text>
-              <Text className="text-[10px] text-gray-400 font-bold">OBESE</Text>
-            </View>
-          </View>
+        <View className="flex-row justify-between items-center mb-8">
+          <Text className="text-4xl font-extrabold text-gray-900">Progress</Text>
         </View>
 
         {/* Segmented Control */}
-        <View className="mt-5 bg-white rounded-full p-1 flex-row border border-gray-100">
+        <View className="mt-3 bg-white rounded-full p-1 flex-row border border-gray-100">
           <Pressable
             onPress={() => setTab("weight")}
             className={`flex-1 py-3 rounded-full items-center ${
@@ -640,7 +774,7 @@ export default function ProgressScreen() {
         </View>
 
         {/* Period selector (different style from tabs) */}
-        <View className="mt-4 flex-row justify-between">
+        <View className="mt-2 flex-row justify-between">
           {(
             [
               { key: "week", label: "Weekly" },
@@ -666,10 +800,10 @@ export default function ProgressScreen() {
         </View>
 
         {/* Metric + chart card */}
-        <View className="mt-5 bg-white rounded-3xl p-5 border border-gray-100">
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold">
+        <View className="mt-4 bg-white rounded-3xl p-5 border border-gray-100">
+          <View className="flex-row items-start justify-between">
+            <View className="flex-1 pr-2">
+              <Text className="text-base font-extrabold tracking-wide text-gray-900">
                 {metricLabel}
               </Text>
               <View className="flex-row items-end mt-2 flex-wrap">
@@ -697,15 +831,14 @@ export default function ProgressScreen() {
                   <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates daily</Text>
                 </View>
               )}
-
-              <Pressable onPress={openDetails} className="mt-2">
-                <Text className="text-sm font-extrabold text-[#52B69A]">SEE ALL &gt;</Text>
+              <Pressable onPress={openDetails} className="mt-2 active:opacity-80">
+                <Text className="text-base font-extrabold text-[#52B69A]">SEE ALL &gt;</Text>
               </Pressable>
             </View>
           </View>
 
           {/* Chart */}
-          <View className="mt-6">
+          <View className="mt-4">
             <View className="h-32 rounded-2xl bg-[#f3f4f3] overflow-hidden">
               <View className="absolute left-0 right-0 bottom-0 h-14 bg-[#76C893] opacity-10" />
               {tab === "weight" && hoverIdx != null && (
@@ -762,37 +895,77 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* Water + Steps */}
-        <View className="mt-8 mb-2">
-          <View className="flex-row justify-between gap-3">
-            <View className="flex-1 bg-white rounded-3xl p-4 border border-gray-100">
+        {/* Daily steps + water */}
+        <View className="mt-4 gap-3">
+          <View className="flex-row justify-between gap-4">
+            <Pressable
+              onPress={() => router.push("/step-progress" as any)}
+              className="flex-1 bg-white rounded-3xl p-4 pb-5 border border-gray-100 active:opacity-90"
+            >
               <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">Water Intake</Text>
-                <Ionicons name="water-outline" size={18} color="#76C893" />
-              </View>
-              <Text className="text-3xl font-extrabold text-gray-900 mt-3">
-                {(Math.round(waterMlToday) || 0).toLocaleString()} ml
-              </Text>
-              <Text className="text-xs text-gray-500 mt-2">Auto-updates daily</Text>
-            </View>
-
-            <View className="flex-1 bg-white rounded-3xl p-4 border border-gray-100">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">Step Count</Text>
+                <Text className="text-lg font-extrabold text-gray-900">Daily Steps</Text>
                 <Ionicons name="walk-outline" size={18} color="#76C893" />
               </View>
-              <Text className="text-3xl font-extrabold text-gray-900 mt-3">
-                {(Math.round(stepsToday) || 0).toLocaleString()} steps
+              <Text className="text-[10px] tracking-widest text-gray-400 font-bold mt-2">TODAY&apos;S TOTAL</Text>
+              <Text className="text-3xl font-extrabold text-gray-900 mt-1">
+                {displaySteps.toLocaleString()} steps
               </Text>
-              <Text className="text-xs text-gray-500 mt-2">
+              <Text className="text-sm text-gray-500 mt-2">
                 {stepSource === "pedometer"
-                  ? "From phone pedometer"
+                  ? "From phone"
                   : stepSource === "accelerometer"
                     ? "Tracking when walking"
                     : "Not available on this device"}
               </Text>
-            </View>
+              {stepSource !== "unavailable" ? (
+                <Text className="text-sm font-semibold text-blue-600 mt-1.5">Tap for progress</Text>
+              ) : null}
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push("/water-intake" as any)}
+              className="flex-1 bg-white rounded-3xl p-4 pb-5 border border-gray-100 active:opacity-90"
+            >
+              <View className="flex-row items-center justify-between">
+                <Text className="text-lg font-extrabold text-gray-900">Water Intake</Text>
+                <Ionicons name="water-outline" size={18} color="#76C893" />
+              </View>
+              <Text className="text-[10px] tracking-widest text-gray-400 font-bold mt-2">TODAY&apos;S TOTAL</Text>
+              <Text className="text-3xl font-extrabold text-gray-900 mt-1">
+                {waterTotalTodayMl.toLocaleString()} ml
+              </Text>
+              <Text className="text-sm text-gray-500 mt-2">Record Your Water Intake</Text>
+              {!waterRecordedToday ? (
+                <Text className="text-sm text-amber-700 font-semibold mt-1">
+                  You haven&apos;t recorded water today.
+                </Text>
+              ) : null}
+              <Text className="text-sm font-semibold text-blue-600 mt-1.5">Tap to record</Text>
+            </Pressable>
           </View>
+        </View>
+
+        {/* Achievements (moved from Home) */}
+        <View className="mt-4">
+          <Pressable
+            onPress={() => router.push("/achievements" as any)}
+            className="bg-white rounded-3xl border border-gray-100 px-5 py-5 active:bg-gray-50 shadow-sm shadow-black/5"
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1 pr-3">
+                <View className="w-14 h-14 rounded-2xl bg-[#eaf7f0] items-center justify-center">
+                  <Ionicons name="trophy-outline" size={30} color="#76C893" />
+                </View>
+                <View className="ml-4 flex-1">
+                  <Text className="text-xl font-extrabold text-gray-900">Achievements</Text>
+                  <Text className="text-sm text-gray-500 mt-1 leading-5">
+                    Workout, meal, community & streak badges
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            </View>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -805,7 +978,7 @@ export default function ProgressScreen() {
 
         <Pressable onPress={() => router.replace("/discover")} className="items-center">
           <Ionicons name="compass-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">EXPLORE</Text>
+          <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
         </Pressable>
 
         <Pressable className="items-center">

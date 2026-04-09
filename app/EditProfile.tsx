@@ -12,8 +12,10 @@ import {
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { auth, db } from "../firebaseConfig";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { auth, db, storage } from "../firebaseConfig";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { ImageEditor } from "expo-dynamic-image-crop";
@@ -29,11 +31,13 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export default function EditProfile() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userBio, setUserBio] = useState("");
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [gender, setGender] = useState<"male" | "female">("male");
 
   const [age, setAge] = useState(28);
   const [height, setHeight] = useState(175.0);
@@ -135,6 +139,9 @@ export default function EditProfile() {
         setUserEmail(data.email || user.email || "");
         setUserBio(data.bio || "");
         setProfileImage(data.profileImage || null);
+        if (data.gender === "male" || data.gender === "female") {
+          setGender(data.gender);
+        }
 
         if (typeof data.age === "number") {
           setAge(data.age);
@@ -270,20 +277,86 @@ export default function EditProfile() {
     try {
       setLoading(true);
 
-      const validAge = clamp(age, 20, 90);
-      const validHeight = clamp(height, 120, 220);
-      const validWeight = clamp(weight, 30, 200);
+      // Re-validate using text inputs too (so manual typing saves correctly)
+      const parsedAge = parseInt(ageText || "", 10);
+      if (!Number.isFinite(parsedAge)) {
+        setAgeError("Age must be between 20 and 90.");
+        Alert.alert("Invalid age", "Age must be between 20 and 90.");
+        return;
+      }
+      const nextAge = clamp(parsedAge, 20, 90);
+      if (nextAge !== parsedAge) {
+        setAgeError("Age must be between 20 and 90.");
+        Alert.alert("Invalid age", "Age must be between 20 and 90.");
+        return;
+      } else {
+        setAgeError("");
+      }
 
-      const bmi = calculateBMI(validWeight, validHeight);
+      const parsedHeight = parseFloat(heightText || "");
+      if (!Number.isFinite(parsedHeight)) {
+        setHeightError("Height must be between 120 cm and 220 cm.");
+        Alert.alert("Invalid height", "Height must be between 120 cm and 220 cm.");
+        return;
+      }
+      const nextHeight = clamp(parsedHeight, 120, 220);
+      if (nextHeight !== parsedHeight) {
+        setHeightError("Height must be between 120 cm and 220 cm.");
+        Alert.alert("Invalid height", "Height must be between 120 cm and 220 cm.");
+        return;
+      } else {
+        setHeightError("");
+      }
+
+      const parsedWeight = parseFloat(weightText || "");
+      if (!Number.isFinite(parsedWeight)) {
+        setWeightError("Weight must be between 30 kg and 200 kg.");
+        Alert.alert("Invalid weight", "Weight must be between 30 kg and 200 kg.");
+        return;
+      }
+      const nextWeight = clamp(parsedWeight, 30, 200);
+      if (nextWeight !== parsedWeight) {
+        setWeightError("Weight must be between 30 kg and 200 kg.");
+        Alert.alert("Invalid weight", "Weight must be between 30 kg and 200 kg.");
+        return;
+      } else {
+        setWeightError("");
+      }
+
+      // Keep slider values in sync with the saved values
+      setAge(nextAge);
+      setAgeText(String(nextAge));
+      setHeight(nextHeight);
+      setHeightText(nextHeight.toFixed(1));
+      setWeight(nextWeight);
+      setWeightText(nextWeight.toFixed(1));
+
+      const bmi = calculateBMI(nextWeight, nextHeight);
       const pickedActivity = options.find((o) => o.key === activityLevel);
 
+      // Upload local image URI to Firebase Storage so it persists across app restarts.
+      let profileImageUrl: string | null = profileImage;
+      if (profileImage && !profileImage.startsWith("http")) {
+        try {
+          const blob = await (await fetch(profileImage)).blob();
+          const objectRef = ref(storage, `users/${user.uid}/profile.jpg`);
+          await uploadBytes(objectRef, blob, { contentType: "image/jpeg" });
+          profileImageUrl = await getDownloadURL(objectRef);
+        } catch (e) {
+          console.log("Profile image upload failed:", e);
+          // Keep existing value if upload fails; user can retry save.
+        }
+      }
+
       await updateDoc(doc(db, "users", user.uid), {
-        name: userName,
+        name: userName.trim().slice(0, 14),
+        email: userEmail || user.email || null,
+        gender,
         bio: userBio,
-        profileImage,
-        age: validAge,
-        height: validHeight,
-        weight: validWeight,
+        profileImage: profileImageUrl,
+        age: nextAge,
+        height: nextHeight,
+        weight: nextWeight,
         bmi,
         activityLevel: pickedActivity?.key ?? null,
         activityMultiplier: pickedActivity?.multiplier ?? null,
@@ -305,11 +378,15 @@ export default function EditProfile() {
   return (
     <>
       <ScrollView
-        className="flex-1 bg-[#eef2f1] px-6 pt-14"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        className="flex-1 bg-[#eef2f1]"
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + 84,
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="relative mb-4 h-14 justify-center">
+        <View className="relative mb-6 h-12 justify-center">
           <Pressable
             onPress={() => {
               try {
@@ -319,16 +396,26 @@ export default function EditProfile() {
               }
             }}
             hitSlop={12}
-            className="absolute left-0 top-4 h-14 w-20 justify-center pl-2"
+            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
           >
             <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
               <Ionicons name="arrow-back" size={24} color="#111827" />
             </View>
           </Pressable>
 
-          <Text className="text-center text-2xl font-extrabold text-gray-900">
+          <Text className="text-center text-xl font-extrabold text-gray-900">
             Edit Profile
           </Text>
+
+          <Pressable
+            onPress={handleSave}
+            disabled={loading}
+            className="absolute right-0 top-0 h-14 w-20 justify-center items-end pr-2"
+          >
+            <Text className={`text-base font-extrabold ${loading ? "text-gray-400" : "text-[#76C893]"}`}>
+              Save
+            </Text>
+          </Pressable>
         </View>
 
         <View className="items-center mb-6">
@@ -339,7 +426,9 @@ export default function EditProfile() {
                   source={
                     profileImage
                       ? { uri: profileImage }
-                      : require("../assets/images/malefitnesspic.avif")
+                      : gender === "female"
+                        ? require("../assets/images/femalefitnesspic.avif")
+                        : require("../assets/images/malefitnesspic.avif")
                   }
                   className="w-full h-full rounded-full"
                   resizeMode="cover"
@@ -370,10 +459,16 @@ export default function EditProfile() {
           </Pressable>
         </View>
 
-        <Text className="text-lg text-gray-700 mb-2">Full Name</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-lg text-gray-700">Full Name</Text>
+          <Text className="text-sm text-gray-500 font-semibold">
+            {Math.min(userName.length, 14)}/14
+          </Text>
+        </View>
         <TextInput
           value={userName}
-          onChangeText={setUserName}
+          onChangeText={(t) => setUserName(t.slice(0, 14))}
+          maxLength={14}
           className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
           placeholder="Enter your full name"
         />
@@ -625,19 +720,24 @@ export default function EditProfile() {
           })}
         </View>
 
+      </ScrollView>
+
+      <View
+        className="absolute left-0 right-0 bg-[#eef2f1] px-5 pt-3"
+        style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
+      >
         <Pressable
           onPress={handleSave}
           disabled={loading}
-          className={`w-full bg-[#76C893] py-4 rounded-xl items-center ${
-            loading ? "opacity-50" : ""
+          className={`bg-[#76C893] py-4 rounded-full items-center active:opacity-90 ${
+            loading ? "opacity-60" : ""
           }`}
         >
-          <Text className="text-white text-lg font-semibold">
-            {loading ? "Saving..." : "Save Changes"}
+          <Text className="text-white font-bold text-base">
+            {loading ? "Saving..." : "Save Change"}
           </Text>
         </Pressable>
-        <View className="h-6" />
-      </ScrollView>
+      </View>
 
       <Modal visible={editorVisible} animationType="slide" transparent={false}>
         <View className="flex-1 bg-black">
@@ -648,9 +748,7 @@ export default function EditProfile() {
 
             <Text className="text-white text-lg font-bold">Edit Photo</Text>
 
-            <Pressable onPress={saveEditedPhoto}>
-              <Text className="text-[#76C893] text-base font-bold">Save</Text>
-            </Pressable>
+            <View className="w-12" />
           </View>
 
           <View className="flex-1 items-center justify-center px-4">
@@ -711,7 +809,7 @@ export default function EditProfile() {
               className="mt-4 bg-[#76C893] rounded-2xl py-4 items-center"
             >
               <Text className="text-white text-base font-bold">
-                Use This Photo
+                Confirm
               </Text>
             </Pressable>
           </View>

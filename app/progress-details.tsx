@@ -281,6 +281,12 @@ export default function ProgressDetailsScreen() {
     setLogVisible(true);
   };
 
+  const openEditWeightFor = (date: Date, baseWeight?: number) => {
+    setLogDate(date);
+    setLogWeightText(typeof baseWeight === "number" && Number.isFinite(baseWeight) && baseWeight > 0 ? baseWeight.toFixed(1) : "");
+    setLogVisible(true);
+  };
+
   const saveWeightLog = async () => {
     const user = auth.currentUser;
     if (!user) return;
@@ -408,7 +414,7 @@ export default function ProgressDetailsScreen() {
               </View>
             </View>
 
-            <View className="mt-5 bg-white rounded-3xl p-5 border border-gray-100">
+            <View className="mt-5 bg-white rounded-3xl p-5 pb-6 border border-gray-100">
               <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">RECENT WEIGHTS</Text>
               <View className="mt-4 gap-3">
                 {windowWeights.length === 0 ? (
@@ -419,9 +425,18 @@ export default function ProgressDetailsScreen() {
                       <Text className="text-base font-bold text-gray-700">
                         {period === "week" ? formatLongDate(r.date) : r.label}
                       </Text>
-                      <Text className="text-base font-extrabold text-gray-900">
-                        {r.weight ? `${r.weight.toFixed(1)} kg` : "—"}
-                      </Text>
+                      <View className="flex-row items-center">
+                        <Text className="text-base font-extrabold text-gray-900">
+                          {r.weight ? `${r.weight.toFixed(1)} kg` : "—"}
+                        </Text>
+                        <Pressable
+                          onPress={() => openEditWeightFor(r.date, r.weight)}
+                          hitSlop={10}
+                          className="ml-3 w-9 h-9 rounded-full bg-white border border-gray-200 items-center justify-center"
+                        >
+                          <Ionicons name="create-outline" size={18} color="#111827" />
+                        </Pressable>
+                      </View>
                     </View>
                   ))
                 )}
