@@ -1,6 +1,10 @@
+import { WORKOUTS_BY_TYPE, type WorkoutType } from "./workoutCatalog";
+
 export type GoalKey = "gain" | "maintain" | "lose";
 export type PlanDuration = "week" | "biweekly" | "monthly";
-export type WorkoutType = "Yoga" | "Strength" | "HIIT" | "Cardio";
+/** Matches `suggestWorkoutTypes` BMI breakpoints — each band keeps its own cached plan in Firestore. */
+export type BmiBandKey = "under" | "normal" | "over";
+export type { WorkoutType };
 
 export type ActiveWorkoutPlan = {
   duration: PlanDuration;
@@ -11,94 +15,63 @@ export type ActiveWorkoutPlan = {
   schedule: { day: number; type: WorkoutType; workout: string }[];
 };
 
-export const WORKOUTS_BY_TYPE: Record<WorkoutType, readonly string[]> = {
-  Yoga: [
-    "Restorative yoga",
-    "Yin yoga",
-    "Nadisodhana yoga",
-    "Hatha yoga",
-    "General yoga",
-    "Vinyasa flow",
-    "Hot yoga",
-    "Surya Namaskar",
-    "Ashtanga yoga",
-    "Power yoga",
-    "Iyengar Yoga",
-    "Kundalini Yoga",
-    "Sivananda Yoga",
-    "Bikram Yoga",
-    "Stretching, Yoga",
-  ],
-  Strength: [
-    "Squat",
-    "Deadlift",
-    "Kettlebell swing",
-    "Push-up",
-    "Push-up, high intensity",
-    "Lunge",
-    "Lunge, high intensity",
-    "Pull-up",
-    "Pull-up, vigorous",
-    "Plank",
-    "Front squat",
-    "Goblet squat",
-    "Bulgarian split squat",
-    "Leg press",
-    "Romanian deadlift",
-    "Exercise",
-    "Barbell Incline Bench Press",
-    "Barbell Overhead Press (high)",
-    "Barbell Row",
-    "Barbell Snatch",
-    "Barbell Hip Thrust",
-  ],
-  HIIT: [
-    "Mountain climbers",
-    "Jumping jacks",
-    "Burpees",
-    "Jump squats",
-    "Indoor cycling",
-    "Running curved treadmill, 5.0 to 5.9 mph",
-    "Running curved treadmill, 7.0 to 7.9 mph",
-    "Running curved treadmill, 9.0 to 9.9 mph",
-    "Running curved treadmill, 8.0 to 8.9 mph",
-    "Battle ropes",
-    "Stair running",
-    "Rope jumping, moderate pace, general, 100 to 120 skips/min, 2 foot skip, plain bounce",
-    "Rope jumping, fast pace, 120-160 skips/min",
-  ],
-  Cardio: [
-    "Walking, 2mph",
-    "Walking, 3mph(20 min/mile)",
-    "Walking, 17 min/mile",
-    "Walking, 15min/mile",
-    "Jogging, 12 min/mile",
-    "Cycling (12 mph)",
-    "Rope jumping, slow pace, < 100 skips/min, 2 foot skip, rhythm bounce",
-    "Hooping",
-    "Stair treadmill ergometer",
-    "Walking, 2mph",
-    "Running, 10 min/mile",
-    "Running, 9 min/mile",
-    "Running: 7 min. mile",
-    "Running, 8 min/mile",
-    "Trampoline",
-    "Walking up stairs",
-    "Stationary cycling, 100 watts",
-    "Stationary cycling, 50 watts",
-    "Stationary cycling, 60 watts",
-    "Boxing, punching bag, 60 b/min",
-    "Boxing, punching bag, 120 b/min",
-    "Boxing, punching bag, 180 b/min",
-  ],
-};
-
 export function calcBmi(weightKg: number, heightCm: number) {
   if (!weightKg || !heightCm) return null;
   const h = heightCm / 100;
   if (!h) return null;
   const v = weightKg / (h * h);
   return Number.isFinite(v) ? v : null;
+}
+
+export function bmiBandKey(bmi: number): BmiBandKey {
+  if (bmi < 18.5) return "under";
+  if (bmi <= 24.5) return "normal";
+  return "over";
+}
+
+/** Firestore field: `workoutPlansByBmiGoal.{band}.{goal}.{duration}` */
+export function workoutPlansByBmiGoalField(band: BmiBandKey, goal: GoalKey, duration: PlanDuration): string {
+  return `workoutPlansByBmiGoal.${band}.${goal}.${duration}`;
+}
+
+/** Banded cache first, then legacy `workoutPlansByGoal` (pre–per-band storage). */
+export function getWorkoutPlanFromUserDoc(
+  data: Record<string, unknown> | undefined,
+  bmi: number,
+  goal: GoalKey,
+  duration: PlanDuration
+): ActiveWorkoutPlan | null {
+  const band = bmiBandKey(bmi);
+  const bandRoot = data?.workoutPlansByBmiGoal as Record<string, unknown> | undefined;
+  const bandGoal = bandRoot?.[band] as Record<string, unknown> | undefined;
+  const bandGoalDur = bandGoal?.[goal] as Record<string, unknown> | undefined;
+  const banded = bandGoalDur?.[duration] as ActiveWorkoutPlan | undefined;
+  if (banded && typeof banded === "object" && banded.schedule?.length) return banded;
+
+  const legacyRoot = data?.workoutPlansByGoal as Record<string, unknown> | undefined;
+  const legacyGoal = legacyRoot?.[goal] as Record<string, unknown> | undefined;
+  const legacy = legacyGoal?.[duration] as ActiveWorkoutPlan | undefined;
+  if (legacy && typeof legacy === "object" && legacy.schedule?.length) return legacy;
+
+  return null;
+}
+
+/** True if stored plan no longer matches BMI+goal rules (e.g. reused cache from another BMI band). */
+export function activeWorkoutPlanOutOfSync(
+  plan: Pick<ActiveWorkoutPlan, "goal" | "suggestedTypes"> | null | undefined,
+  bmi: number | null,
+  goal: GoalKey | null
+): boolean {
+  if (!plan || bmi == null || goal == null) return false;
+  if (plan.goal !== goal) return true;
+  const expected = suggestWorkoutTypes(bmi, goal);
+  const got = (plan.suggestedTypes ?? []) as string[];
+  if (got.length !== expected.length) return true;
+  // Order matters: same three types in different rotation (normal vs over "lose") → different schedules.
+  for (let i = 0; i < expected.length; i++) {
+    if (String(got[i]) !== String(expected[i])) return true;
+  }
+  return false;
 }
 
 export function suggestWorkoutTypes(bmi: number, goal: GoalKey): WorkoutType[] {
@@ -110,10 +83,11 @@ export function suggestWorkoutTypes(bmi: number, goal: GoalKey): WorkoutType[] {
   if (bmi <= 24.5) {
     if (goal === "gain") return ["Strength", "Yoga"];
     if (goal === "maintain") return ["Strength", "Cardio"];
+    // Lose weight, BMI 18.5–24.5: rotation Cardio → HIIT → Strength (product matrix).
     return ["Cardio", "HIIT", "Strength"];
   }
-  // bmi > 24.5
-  if (goal === "lose") return ["Cardio", "HIIT", "Strength"];
+  // bmi > 24.5 — lose weight: same three types, different rotation vs normal band → different generated plan.
+  if (goal === "lose") return ["Cardio", "Strength", "HIIT"];
   if (goal === "maintain") return ["Cardio"];
   return ["Strength"];
 }
@@ -148,5 +122,17 @@ export function generateActiveWorkoutPlan(params: {
     suggestedTypes: types,
     schedule,
   };
+}
+
+/** Restore a saved plan for this BMI band if types still match; otherwise generate a new one. */
+export function pickOrGenerateWorkoutPlanForBand(
+  data: Record<string, unknown> | undefined,
+  bmi: number,
+  goal: GoalKey,
+  duration: PlanDuration
+): ActiveWorkoutPlan {
+  const cached = getWorkoutPlanFromUserDoc(data, bmi, goal, duration);
+  if (cached && !activeWorkoutPlanOutOfSync(cached, bmi, goal)) return cached;
+  return generateActiveWorkoutPlan({ duration, bmi, goal });
 }
 

@@ -1,9 +1,23 @@
+import { CaloriesDonut } from "@/components/CaloriesDonut";
 import { bumpWorkoutPlanDay } from "@/lib/achievements";
-import { calcBmi, generateActiveWorkoutPlan, type PlanDuration } from "@/lib/workoutPlan";
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
+import { plansEqual, sanitizeActiveWorkoutPlan } from "@/lib/workoutCatalog";
+import {
+  activeWorkoutPlanOutOfSync,
+  bmiBandKey,
+  calcBmi,
+  pickOrGenerateWorkoutPlanForBand,
+  type ActiveWorkoutPlan,
+  type PlanDuration,
+  workoutPlansByBmiGoalField,
+} from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Image, ImageBackground, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
@@ -44,6 +58,9 @@ function HomeSectionHeading({
 
 export default function HomeScreen() {
   const router = useRouter();
+  const calendarTz = useUserCalendarTimezone();
+  const [dayRoll, setDayRoll] = useState(0);
+  const dayKey = useMemo(() => formatCalendarDayKey(new Date(), calendarTz), [calendarTz, dayRoll]);
   const [userName, setUserName] = useState("");
   const [gender, setGender] = useState<"male" | "female" | null>(null);
   const [age, setAge] = useState<number>(0);
@@ -54,13 +71,6 @@ export default function HomeScreen() {
   const [planDuration, setPlanDuration] = useState<PlanDuration | null>(null);
   const [planPickerVisible, setPlanPickerVisible] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
-  const [dayKey, setDayKey] = useState(() => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  });
   const [consumedToday, setConsumedToday] = useState(0);
   const [burnedToday, setBurnedToday] = useState(0);
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -118,14 +128,6 @@ export default function HomeScreen() {
     return "#dc2626";
   }, [bmi, bmiCategoryIdx]);
 
-  const generatePlan = useCallback(
-    (duration: PlanDuration) => {
-      if (!bmi || !recommendedPlan) return null;
-      return generateActiveWorkoutPlan({ duration, bmi, goal: recommendedPlan });
-    },
-    [bmi, recommendedPlan]
-  );
-
   const chooseDurationAndSave = useCallback(
     async (duration: PlanDuration) => {
       const user = auth.currentUser;
@@ -138,14 +140,15 @@ export default function HomeScreen() {
 
       try {
         setSavingPlan(true);
-        // If user already has a saved plan for this goal, keep it stable.
-        const plan = generatePlan(duration);
-        if (!plan) throw new Error("Plan generation failed");
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+        const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, recommendedPlan, duration);
+        const band = bmiBandKey(bmi);
         await updateDoc(doc(db, "users", user.uid), {
           planDuration: duration,
           planDurationChosenAt: serverTimestamp(),
           activeWorkoutPlan: plan,
-          [`workoutPlansByGoal.${recommendedPlan}.${duration}`]: plan,
+          [workoutPlansByBmiGoalField(band, recommendedPlan, duration)]: plan,
         } as any);
         setPlanDuration(duration);
         setPlanPickerVisible(false);
@@ -157,7 +160,7 @@ export default function HomeScreen() {
         setSavingPlan(false);
       }
     },
-    [bmi, generatePlan, recommendedPlan, router]
+    [bmi, recommendedPlan, router]
   );
 
   useEffect(() => {
@@ -182,6 +185,35 @@ export default function HomeScreen() {
           setPlanDuration(data.planDuration);
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
+
+        const rawPlan = data?.activeWorkoutPlan as ActiveWorkoutPlan | undefined;
+        if (rawPlan) {
+          const bmiLive = calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
+          const goalLive =
+            data?.recommendedPlan === "gain" ||
+            data?.recommendedPlan === "maintain" ||
+            data?.recommendedPlan === "lose"
+              ? data.recommendedPlan
+              : null;
+          const durOk =
+            rawPlan.duration === "week" ||
+            rawPlan.duration === "biweekly" ||
+            rawPlan.duration === "monthly";
+
+          if (bmiLive != null && goalLive && durOk && activeWorkoutPlanOutOfSync(rawPlan, bmiLive, goalLive)) {
+            const next = pickOrGenerateWorkoutPlanForBand(data, bmiLive, goalLive, rawPlan.duration);
+            const band = bmiBandKey(bmiLive);
+            void updateDoc(doc(db, "users", user.uid), {
+              activeWorkoutPlan: next,
+              [workoutPlansByBmiGoalField(band, goalLive, rawPlan.duration)]: next,
+            } as any);
+          } else {
+            const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
+            if (fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
+              void updateDoc(doc(db, "users", user.uid), { activeWorkoutPlan: fixedPlan } as any);
+            }
+          }
+        }
       },
       (error) => {
         console.log("Failed to subscribe user profile:", error);
@@ -192,16 +224,15 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    const tick = () => {
-      const d = new Date();
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      setDayKey(`${yyyy}-${mm}-${dd}`);
-    };
+    const unsub = onAuthStateChanged(auth, (user: User | null) => {
+      if (user) void runRemoveZeroKcalWorkoutLogsOnce();
+    });
+    return () => unsub();
+  }, []);
 
-    // Update at least once a minute; keeps "today" correct when app stays open.
-    const id = setInterval(tick, 60_000);
+  useEffect(() => {
+    // Recompute calendar day when timezone loads and once a minute (midnight rollover).
+    const id = setInterval(() => setDayRoll((n) => n + 1), 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -227,7 +258,7 @@ export default function HomeScreen() {
     );
 
     return () => unsub();
-  }, [dayKey]);
+  }, [calendarTz, dayKey]);
 
   const consumed = consumedToday;
   const burned = burnedToday;
@@ -262,6 +293,13 @@ export default function HomeScreen() {
     return rounded.toLocaleString();
   };
 
+  /** Over budget: show |remaining| in center, label "Over". Donut uses orange (food) + green (exercise). */
+  const caloriesOverBudget = Boolean(intakeTarget && remainingCalories < 0);
+  const caloriesCenterDisplay = !intakeTarget
+    ? "—"
+    : formatKcal(caloriesOverBudget ? Math.abs(remainingCalories) : remainingCalories);
+  const caloriesCenterLabel = !intakeTarget ? "Remaining" : caloriesOverBudget ? "Over" : "Remaining";
+
   const comingSoon = (title: string) => {
     Alert.alert(title, "Coming soon.");
   };
@@ -269,7 +307,7 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-[#eef2f1]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
-        <View className="px-6 pt-8">
+        <View className="px-3 pt-10">
           {/* Header */}
           <View className="flex-row justify-between items-center">
             <View>
@@ -356,33 +394,51 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Remaining Calories Card */}
-          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100">
-            <View className="flex-row items-center justify-between">
-              <View className="w-28 h-28 rounded-full border-[8px] border-[#76C893] items-center justify-center bg-white">
-                <Text className="text-3xl font-extrabold text-gray-900">
-                  {formatKcal(remainingCalories)}
-                </Text>
-                <Text className="text-[10px] text-gray-400 font-semibold mt-1">
-                  KCAL LEFT
-                </Text>
+          {/* Calories: donut (orange food, green exercise) + Goal/Food/Exercise row + calculation */}
+          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100 shadow-sm shadow-black/5">
+            <Text className="text-2xl font-extrabold text-gray-900">Today Calorie</Text>
+
+            <View className="flex-row items-start mt-4">
+              <View className="relative w-[120px] h-[120px] items-center justify-center shrink-0">
+                <CaloriesDonut goal={intakeTarget} food={consumed} exercise={burned} size={120} strokeWidth={10} />
+                <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
+                  <Text className="text-3xl font-extrabold text-gray-900">{caloriesCenterDisplay}</Text>
+                  <Text className="text-sm text-gray-900 font-medium mt-0.5">{caloriesCenterLabel}</Text>
+                </View>
               </View>
 
-              <View className="flex-1 ml-5">
-                <Text className="text-2xl font-extrabold text-gray-900 leading-7">
-                  Remaining{"\n"}Calories
-                </Text>
-
-                <View className="mt-2">
-                  <View className="flex-row items-center mb-1.5">
-                    <View className="w-2 h-2 rounded-full bg-[#76C893] mr-2" />
-                    <Text className="text-gray-500 text-sm">Consumed: {formatKcal(consumed)}</Text>
+              <View className="flex-1 ml-3 min-w-0">
+                <View className="flex-row justify-between">
+                  <View className="flex-1 items-center px-0.5">
+                    <Ionicons name="flag-outline" size={20} color="#9ca3af" />
+                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Goal</Text>
+                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                      {intakeTarget ? formatKcal(intakeTarget) : "—"}
+                    </Text>
                   </View>
-
-                  <View className="flex-row items-center">
-                    <View className="w-2 h-2 rounded-full bg-[#b7ead1] mr-2" />
-                    <Text className="text-gray-500 text-sm">Burned: {formatKcal(burned)}</Text>
+                  <View className="flex-1 items-center px-0.5">
+                    <Ionicons name="restaurant" size={20} color="#f97316" />
+                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Food</Text>
+                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                      {formatKcal(consumed)}
+                    </Text>
                   </View>
+                  <View className="flex-1 items-center px-0.5">
+                    <Ionicons name="flame" size={20} color="#22c55e" />
+                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Exercise</Text>
+                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                      {formatKcal(burned)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="mt-3 pt-3 border-t border-gray-100">
+                  <Text className="text-xs text-gray-500 leading-5">Remaining = Goal − Food + Exercise</Text>
+                  <Text className="text-sm text-gray-800 font-semibold mt-1 leading-5">
+                    {intakeTarget
+                      ? `${formatKcal(intakeTarget)} − ${formatKcal(consumed)} + ${formatKcal(burned)} = ${formatKcal(remainingCalories)} kcal`
+                      : "—"}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -405,6 +461,7 @@ export default function HomeScreen() {
             <View className="bg-white/20 p-4">
               <Pressable
                 className="mt-28 rounded-full overflow-hidden"
+                style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
                 onPress={() => {
                   const u = auth.currentUser;
                   if (u) void bumpWorkoutPlanDay(u.uid);

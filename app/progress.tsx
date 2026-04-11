@@ -1,8 +1,15 @@
+import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
+import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
+import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
+import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { Accelerometer } from "expo-sensors";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -18,22 +25,18 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
 
-const fmtDateKey = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const localStepDraftKey = (dateKey: string) => `daily-steps-draft:${dateKey}`;
 
 export default function ProgressScreen() {
   const router = useRouter();
+  const calendarTz = useUserCalendarTimezone();
   const [tab, setTab] = useState<TabKey>("weight");
   const [period, setPeriod] = useState<PeriodKey>("week");
 
@@ -47,10 +50,10 @@ export default function ProgressScreen() {
   const [waterMlToday, setWaterMlToday] = useState(0);
   /** Today's sum from waterLogs + whether any log exists for today (prefer over dailyStats when logs exist). */
   const [waterFromLogs, setWaterFromLogs] = useState<{ sum: number; count: number } | null>(null);
-  const [waterRecordedToday, setWaterRecordedToday] = useState(false);
   const [stepsToday, setStepsToday] = useState<number>(0);
   const [stepsAutoDb, setStepsAutoDb] = useState(0);
   const [stepsManualDb, setStepsManualDb] = useState<number | null>(null);
+  const [stepsHydrated, setStepsHydrated] = useState(false);
   const [stepSource, setStepSource] = useState<"pedometer" | "accelerometer" | "unavailable">("pedometer");
 
   const [logVisible, setLogVisible] = useState(false);
@@ -59,11 +62,16 @@ export default function ProgressScreen() {
   const [logDate, setLogDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [weightRefreshKey, setWeightRefreshKey] = useState(0);
+  /** Skip the first focus so we don't double-fetch on mount; refetch when returning (e.g. from weight progress). */
+  const progressWeightFocusSkipRef = useRef(true);
   const [dayTick, setDayTick] = useState(0);
   const [weightSeries, setWeightSeries] = useState<number[]>([]);
+  const [workoutSeries, setWorkoutSeries] = useState<number[]>([]);
+  const [workoutRefreshKey, setWorkoutRefreshKey] = useState(0);
   const [hasWeightLogs, setHasWeightLogs] = useState(false);
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const sameDayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -113,22 +121,73 @@ export default function ProgressScreen() {
 
   const hasWaterLogsToday = useMemo(() => (waterFromLogs?.count ?? 0) > 0, [waterFromLogs]);
 
+  /** True if today has any water (logs and/or dailyStats total). Do not reset from dailyStats snapshots — that caused the reminder to flash after other fields updated. */
+  const waterRecordedToday = useMemo(() => {
+    if (hasWaterLogsToday) return true;
+    if (waterMlToday > 0) return true;
+    return false;
+  }, [hasWaterLogsToday, waterMlToday]);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) void runRemoveZeroKcalWorkoutLogsOnce();
+    });
+    return () => unsub();
+  }, []);
+
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    const id = setTimeout(() => {
-      const key = fmtDateKey(new Date());
-      void setDoc(
-        doc(db, "users", user.uid, "dailyStats", key),
-        {
-          stepsAuto: Math.max(0, Math.round(stepsToday)),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }, 12000);
-    return () => clearTimeout(id);
-  }, [stepsToday]);
+    if (!stepsHydrated) return;
+    const key = formatCalendarDayKey(new Date(), calendarTz);
+    const liveSteps = Math.max(0, Math.round(stepsToday));
+    const savedSteps = Math.max(0, Math.round(stepsAutoDb));
+    const nextSteps = Math.max(liveSteps, savedSteps);
+    void setDoc(
+      doc(db, "users", user.uid, "dailyStats", key),
+      {
+        stepsAuto: nextSteps,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }, [calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
+
+  useEffect(() => {
+    if (!stepsHydrated) return;
+    const key = formatCalendarDayKey(new Date(), calendarTz);
+    const value = Math.max(Math.max(0, Math.round(stepsToday)), Math.max(0, Math.round(stepsAutoDb)));
+    void AsyncStorage.setItem(localStepDraftKey(key), String(value));
+  }, [calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    const syncDraftToAccount = async () => {
+      const dayKey = formatCalendarDayKey(new Date(), calendarTz);
+      try {
+        const draftRaw = await AsyncStorage.getItem(localStepDraftKey(dayKey));
+        if (cancelled || draftRaw == null) return;
+        const draftSteps = parseInt(draftRaw, 10);
+        if (!Number.isFinite(draftSteps) || draftSteps < 0) return;
+        await setDoc(
+          doc(db, "users", user.uid, "dailyStats", dayKey),
+          {
+            stepsAuto: Math.max(0, Math.round(draftSteps)),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.log("Failed syncing local step draft:", e);
+      }
+    };
+    void syncDraftToAccount();
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarTz]);
 
   useEffect(() => {
     const load = async () => {
@@ -150,6 +209,22 @@ export default function ProgressScreen() {
     };
 
     load();
+  }, [weightRefreshKey]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as { profileImage?: string };
+        if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
+        else setProfileImage(null);
+      },
+      () => {}
+    );
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -160,12 +235,11 @@ export default function ProgressScreen() {
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
+    setStepsHydrated(false);
 
     const now = new Date();
-    const todayKey = fmtDateKey(now);
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    const yesterdayKey = fmtDateKey(y);
+    const todayKey = formatCalendarDayKey(now, calendarTz);
+    const yesterdayKey = addDaysToYmd(todayKey, -1);
 
     const unsubToday = onSnapshot(
       doc(db, "users", user.uid, "dailyStats", todayKey),
@@ -175,20 +249,21 @@ export default function ProgressScreen() {
         setBurnedToday(typeof data?.burnedKcal === "number" ? data.burnedKcal : 0);
         const wm = data?.waterMl;
         setWaterMlToday(typeof wm === "number" && Number.isFinite(wm) ? Math.round(wm) : 0);
-        // Recorded "today" should reflect actual water logs (not stale dailyStats flags).
-        setWaterRecordedToday(false);
         const sa = data?.stepsAuto;
-        setStepsAutoDb(typeof sa === "number" && Number.isFinite(sa) ? Math.max(0, sa) : 0);
+        const nextAuto = typeof sa === "number" && Number.isFinite(sa) ? Math.max(0, sa) : 0;
+        setStepsAutoDb(nextAuto);
+        setStepsToday((prev) => Math.max(prev, nextAuto));
         const sm = data?.stepsManual;
         setStepsManualDb(typeof sm === "number" && Number.isFinite(sm) ? Math.max(0, Math.round(sm)) : null);
+        setStepsHydrated(true);
       },
       () => {
         setConsumedToday(0);
         setBurnedToday(0);
         setWaterMlToday(0);
-        setWaterRecordedToday(false);
         setStepsAutoDb(0);
         setStepsManualDb(null);
+        setStepsHydrated(true);
       }
     );
 
@@ -209,7 +284,7 @@ export default function ProgressScreen() {
       unsubToday();
       unsubYesterday();
     };
-  }, [dayTick]);
+  }, [calendarTz, dayTick]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -222,14 +297,18 @@ export default function ProgressScreen() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const todayKey = fmtDateKey(new Date());
+        const todayKey = formatCalendarDayKey(new Date(), calendarTz);
         let sum = 0;
         let count = 0;
         for (const d of snap.docs) {
           const data = d.data() as any;
           const logDay = data?.logDate?.toDate?.() instanceof Date ? data.logDate.toDate() : null;
           const createdAt = data?.createdAt?.toDate?.() instanceof Date ? data.createdAt.toDate() : null;
-          const dk = logDay ? fmtDateKey(logDay) : createdAt ? fmtDateKey(createdAt) : null;
+          const dk = logDay
+            ? formatCalendarDayKey(logDay, calendarTz)
+            : createdAt
+              ? formatCalendarDayKey(createdAt, calendarTz)
+              : null;
           if (dk !== todayKey) continue;
           count += 1;
           const amt =
@@ -241,20 +320,21 @@ export default function ProgressScreen() {
       () => setWaterFromLogs({ sum: 0, count: 0 })
     );
     return () => unsub();
-  }, [dayTick]);
+  }, [calendarTz, dayTick]);
 
   useEffect(() => {
-    let timer: any = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let pedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let accelSub: { remove: () => void } | null = null;
     let pedSub: { remove: () => void } | null = null;
     let mounted = true;
 
-    // Peak -> trough step detector + "walking lock" to avoid counting single pick-up motions.
+    // Peak -> trough step detector + "walking lock" (fallback when hardware step counter is unavailable).
     let lastStepAt = 0;
     let above = false;
-    const peakThreshold = 1.25; // g (higher = fewer false positives)
-    const troughThreshold = 1.10; // g
-    const cooldownMs = 420;
+    const peakThreshold = 1.28; // g — stricter to reduce non-walking jitter
+    const troughThreshold = 1.08; // g
+    const cooldownMs = 380; // ~2.6 steps/s max; typical walking ~1–2 steps/s
 
     let walkingMode = false;
     let lastCandidateAt = 0;
@@ -278,9 +358,8 @@ export default function ProgressScreen() {
 
     const startAccelerometerSteps = async () => {
       try {
-        const available = await Accelerometer.isAvailableAsync();
-        if (!mounted) return false;
-        if (!available) return false;
+        const Accelerometer = await getAccelerometerOrNull();
+        if (!Accelerometer || !mounted) return false;
 
         setStepSource("accelerometer");
         Accelerometer.setUpdateInterval(50); // ~20Hz
@@ -307,16 +386,16 @@ export default function ProgressScreen() {
               lastCandidateAt = now;
 
               if (!walkingMode) {
-                // Require 4 candidates with realistic cadence to start counting (filters pick-up/shake).
-                // Typical walking cadence: ~0.4s to 1.0s per step.
+                // Require several candidates with walking-like cadence (filters pick-up/shake).
                 candidateTimes = candidateTimes.filter((t) => now - t <= 4000);
                 candidateTimes.push(now);
                 const n = candidateTimes.length;
                 const dt1 = n >= 2 ? candidateTimes[n - 1] - candidateTimes[n - 2] : Infinity;
                 const dt2 = n >= 3 ? candidateTimes[n - 2] - candidateTimes[n - 3] : Infinity;
                 const dt3 = n >= 4 ? candidateTimes[n - 3] - candidateTimes[n - 4] : Infinity;
-                const cadenceOk = (dt: number) => dt >= 400 && dt <= 1000;
-                if (n >= 4 && cadenceOk(dt1) && cadenceOk(dt2) && cadenceOk(dt3)) {
+                // Walking cadence ~50–160 steps/min → ~375–1200 ms between steps
+                const cadenceOk = (dt: number) => dt >= 350 && dt <= 1300;
+                if (n >= 5 && cadenceOk(dt1) && cadenceOk(dt2) && cadenceOk(dt3)) {
                   walkingMode = true;
                   candidateTimes = [];
                   // Don't retroactively count candidates; start counting only once walking is confirmed.
@@ -334,66 +413,41 @@ export default function ProgressScreen() {
       }
     };
 
-    const pollPedometer = async () => {
-      try {
-        const { Pedometer } = await import("expo-sensors");
-        const available = await Pedometer.isAvailableAsync();
-        if (!mounted) return;
-        if (!available) return;
-
-        setStepSource("pedometer");
-        const start = startOfDay(new Date());
-        const end = new Date();
-        const res = await Pedometer.getStepCountAsync(start, end);
-        if (!mounted) return;
-        setStepsToday(typeof res?.steps === "number" ? res.steps : 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
     const startLivePedometer = async () => {
       try {
-        const { Pedometer } = await import("expo-sensors");
-        const available = await Pedometer.isAvailableAsync();
-        if (!mounted) return false;
-        if (!available) return false;
+        const Pedometer = await getPedometerOrNull();
+        if (!Pedometer || !mounted) return false;
+
+        const perm = await Pedometer.requestPermissionsAsync();
+        if (!perm.granted || !mounted) return false;
 
         setStepSource("pedometer");
 
-        // Baseline = steps since start of day at subscription time.
-        const start = startOfDay(new Date());
-        const baseRes = await Pedometer.getStepCountAsync(start, new Date());
-        if (!mounted) return false;
-        let baseline = typeof baseRes?.steps === "number" ? baseRes.steps : 0;
-        setStepsToday(Math.max(0, Math.round(baseline)));
-
-        pedSub = Pedometer.watchStepCount((result: any) => {
+        // Use OS step count (Core Motion / Google Fit step sensor) — tuned for walking, not raw accel peaks.
+        const syncStepsFromOs = async () => {
           if (!mounted) return;
-          // If day changed, refresh baseline.
-          const k = dateKey(new Date());
-          if (k !== currentDayKey) {
-            currentDayKey = k;
-            baseline = 0;
+          try {
+            const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
+            const total = Math.max(0, Math.round(typeof res?.steps === "number" ? res.steps : 0));
+            setStepsToday(total);
+          } catch {
+            /* ignore */
           }
-          const inc = typeof result?.steps === "number" ? result.steps : 0;
-          setStepsToday(Math.max(0, Math.round(baseline + inc)));
+        };
+
+        await syncStepsFromOs();
+        if (!mounted) return false;
+
+        pedSub = Pedometer.watchStepCount(() => {
+          if (!mounted) return;
+          if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
+          pedDebounceTimer = setTimeout(() => {
+            pedDebounceTimer = null;
+            void syncStepsFromOs();
+          }, 400);
         });
 
-        // Refresh baseline every few minutes to prevent drift.
-        timer = setInterval(async () => {
-          try {
-            const k = dateKey(new Date());
-            if (k !== currentDayKey) {
-              currentDayKey = k;
-              baseline = 0;
-            }
-            const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
-            if (!mounted) return;
-            baseline = typeof res?.steps === "number" ? res.steps : baseline;
-          } catch {}
-        }, 5 * 60_000);
+        timer = setInterval(() => void syncStepsFromOs(), 45_000);
 
         return true;
       } catch {
@@ -422,15 +476,27 @@ export default function ProgressScreen() {
     void run();
     return () => {
       mounted = false;
+      if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
       if (timer) clearInterval(timer);
       pedSub?.remove();
       accelSub?.remove();
     };
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (progressWeightFocusSkipRef.current) {
+        progressWeightFocusSkipRef.current = false;
+        return;
+      }
+      setWeightRefreshKey((k) => k + 1);
+      setWorkoutRefreshKey((k) => k + 1);
+    }, []),
+  );
+
   useEffect(() => {
-    setWaterRecordedToday(hasWaterLogsToday);
-  }, [hasWaterLogsToday]);
+    setHoverIdx(null);
+  }, [tab]);
 
   useEffect(() => {
     const loadWeightSeries = async () => {
@@ -534,6 +600,80 @@ export default function ProgressScreen() {
 
     loadWeightSeries();
   }, [period, tab, weightRefreshKey]);
+
+  useEffect(() => {
+    const loadWorkoutSeries = async () => {
+      if (tab !== "workout") return;
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const zeros = (n: number) => Array.from({ length: n }, () => 0);
+
+      try {
+        const q = query(
+          collection(db, "users", user.uid, "workoutLogs"),
+          orderBy("createdAt", "desc"),
+          limit(400),
+        );
+        const snap = await getDocs(q);
+        const rows = snap.docs
+          .map((d) => {
+            const data = d.data() as any;
+            const createdAt = getCreatedAtDate(data.createdAt);
+            const burnedKcal = typeof data.burnedKcal === "number" ? data.burnedKcal : 0;
+            if (!createdAt) return null;
+            return {
+              burnedKcal,
+              createdAt,
+              dayKey: formatCalendarDayKey(createdAt, calendarTz),
+            };
+          })
+          .filter((r): r is { burnedKcal: number; createdAt: Date; dayKey: string } => r != null && r.burnedKcal > 0);
+
+        const now = new Date();
+
+        if (period === "week") {
+          const weekStart = startOfWeekMon(now);
+          const sums = Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(weekStart);
+            d.setDate(d.getDate() + i);
+            const key = formatCalendarDayKey(d, calendarTz);
+            return rows.filter((r) => r.dayKey === key).reduce((s, r) => s + r.burnedKcal, 0);
+          });
+          setWorkoutSeries(sums);
+          return;
+        }
+
+        if (period === "month") {
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const buckets = [0, 0, 0, 0];
+          for (const r of rows) {
+            if (r.createdAt < monthStart) continue;
+            if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear())
+              continue;
+            const dom = r.createdAt.getDate();
+            const idx = Math.min(3, Math.floor((dom - 1) / 7));
+            buckets[idx] += r.burnedKcal;
+          }
+          setWorkoutSeries(buckets);
+          return;
+        }
+
+        const year = now.getFullYear();
+        const sums = zeros(12);
+        for (const r of rows) {
+          if (r.createdAt.getFullYear() !== year) continue;
+          sums[r.createdAt.getMonth()] += r.burnedKcal;
+        }
+        setWorkoutSeries(sums);
+      } catch (e) {
+        console.log("Failed to load workout series:", e);
+        setWorkoutSeries(zeros(period === "week" ? 7 : period === "month" ? 4 : 12));
+      }
+    };
+
+    void loadWorkoutSeries();
+  }, [calendarTz, period, tab, workoutRefreshKey]);
 
   const effectiveWeightKg = useMemo(() => {
     if (todayLoggedWeight != null) return todayLoggedWeight;
@@ -673,6 +813,22 @@ export default function ProgressScreen() {
     return `${label}: ${v.toFixed(1)} kg`;
   }, [chartLabels, hoverIdx, tab, weightSeries]);
 
+  const workoutBarTooltip = useMemo(() => {
+    if (tab !== "workout") return "";
+    if (hoverIdx == null) return "";
+    const now = new Date();
+    if (period === "week") {
+      const ws = startOfWeekMon(now);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + hoverIdx);
+      const v = workoutSeries[hoverIdx] ?? 0;
+      return `${d.toLocaleDateString()}: ${Math.round(v).toLocaleString()} kcal`;
+    }
+    const label = chartLabels[hoverIdx] ?? "";
+    const v = workoutSeries[hoverIdx] ?? 0;
+    return `${label}: ${Math.round(v).toLocaleString()} kcal`;
+  }, [chartLabels, hoverIdx, period, tab, workoutSeries]);
+
   const openLogWeight = () => {
     const base = effectiveWeightKg;
     setLogWeightText(base ? base.toFixed(1) : "");
@@ -733,10 +889,20 @@ export default function ProgressScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} className="px-6 pt-10">
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} className="px-3 pt-10">
         {/* Header */}
         <View className="flex-row justify-between items-center mb-8">
           <Text className="text-4xl font-extrabold text-gray-900">Progress</Text>
+          <Pressable
+            onPress={() => router.push("/profile")}
+            className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+          >
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
+            ) : (
+              <Ionicons name="person-outline" size={22} color="#76C893" />
+            )}
+          </Pressable>
         </View>
 
         {/* Segmented Control */}
@@ -841,13 +1007,16 @@ export default function ProgressScreen() {
           <View className="mt-4">
             <View className="h-32 rounded-2xl bg-[#f3f4f3] overflow-hidden">
               <View className="absolute left-0 right-0 bottom-0 h-14 bg-[#76C893] opacity-10" />
-              {tab === "weight" && hoverIdx != null && (
-                <View className="absolute top-2 left-0 right-0 items-center">
-                  <View className="px-3 py-1 rounded-full bg-white border border-gray-200">
-                    <Text className="text-xs font-bold text-gray-800">{weightBarTooltip}</Text>
+              {((tab === "weight" && weightBarTooltip) || (tab === "workout" && workoutBarTooltip)) &&
+                hoverIdx != null && (
+                  <View className="absolute top-2 left-0 right-0 items-center">
+                    <View className="px-3 py-1 rounded-full bg-white border border-gray-200">
+                      <Text className="text-xs font-bold text-gray-800">
+                        {tab === "weight" ? weightBarTooltip : workoutBarTooltip}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
               {tab === "weight" ? (
                 <View className="flex-1 flex-row items-end px-4 pb-2">
                   {(() => {
@@ -861,6 +1030,40 @@ export default function ProgressScreen() {
                       const active = hoverIdx === idx;
                       return (
                         <View key={`bar-${idx}`} className="flex-1 items-center justify-end">
+                          <Pressable
+                            onPress={() => setHoverIdx((cur) => (cur === idx ? null : idx))}
+                            onHoverIn={() => setHoverIdx(idx)}
+                            onHoverOut={() => setHoverIdx(null)}
+                            className="items-center justify-end w-full"
+                          >
+                            <View
+                              style={{ height: h, width: active ? 12 : 10, borderRadius: 999 }}
+                              className={
+                                v === 0 ? "bg-gray-300" : active ? "bg-[#52B69A]" : "bg-[#76C893]"
+                              }
+                            />
+                          </Pressable>
+                          <Text className="text-[10px] text-gray-400 font-bold mt-2">
+                            {chartLabels[idx]}
+                          </Text>
+                        </View>
+                      );
+                    });
+                  })()}
+                </View>
+              ) : tab === "workout" ? (
+                <View className="flex-1 flex-row items-end px-4 pb-2">
+                  {(() => {
+                    const padded = workoutSeries.length ? workoutSeries : chartLabels.map(() => 0);
+                    const min = Math.min(...padded);
+                    const max = Math.max(...padded);
+                    const span = max - min || 1;
+
+                    return padded.map((v, idx) => {
+                      const h = 10 + Math.round(((v - min) / span) * 50);
+                      const active = hoverIdx === idx;
+                      return (
+                        <View key={`wbar-${idx}`} className="flex-1 items-center justify-end">
                           <Pressable
                             onPress={() => setHoverIdx((cur) => (cur === idx ? null : idx))}
                             onHoverIn={() => setHoverIdx(idx)}
@@ -912,9 +1115,9 @@ export default function ProgressScreen() {
               </Text>
               <Text className="text-sm text-gray-500 mt-2">
                 {stepSource === "pedometer"
-                  ? "From phone"
+                  ? "Phone step counter (walking & daily movement)"
                   : stepSource === "accelerometer"
-                    ? "Tracking when walking"
+                    ? "Estimated steps while walking"
                     : "Not available on this device"}
               </Text>
               {stepSource !== "unavailable" ? (

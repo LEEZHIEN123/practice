@@ -1,12 +1,6 @@
 import React, { useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,7 +57,7 @@ export default function ContactUsScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 24,
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
         keyboardShouldPersistTaps="handled"

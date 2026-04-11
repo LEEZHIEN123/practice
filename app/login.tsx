@@ -6,14 +6,8 @@ import {
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Text, TextInput, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { auth } from "../firebaseConfig";
 
 export default function Login() {
@@ -78,7 +72,7 @@ export default function Login() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1] justify-center px-6">
+    <View className="flex-1 bg-[#eef2f1] justify-center px-3">
       {/* Profile Icon */}
       <View className="items-center mb-6">
         <View className="w-28 h-28 bg-white rounded-full items-center justify-center shadow-lg">

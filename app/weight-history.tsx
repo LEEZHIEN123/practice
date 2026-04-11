@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { auth, db } from "../firebaseConfig";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
 
@@ -177,7 +177,7 @@ export default function WeightHistoryScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-6 pt-14">
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
           <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
             <Ionicons name="chevron-back" size={24} color="#111827" />

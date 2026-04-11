@@ -4,6 +4,9 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -16,13 +19,6 @@ const startOfWeekMon = (d: Date) => {
   const out = startOfDay(d);
   out.setDate(out.getDate() - diff);
   return out;
-};
-
-const dateKeyYMD = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 };
 
 const formatLongDate = (d: Date) => {
@@ -48,6 +44,7 @@ function effectiveSteps(data: { stepsAuto?: unknown; stepsManual?: unknown } | u
 
 export default function StepProgressScreen() {
   const router = useRouter();
+  const calendarTz = useUserCalendarTimezone();
   const params = useLocalSearchParams<{ period?: string }>();
   const initialPeriod = (params.period === "month" || params.period === "year" || params.period === "week"
     ? params.period
@@ -91,7 +88,7 @@ export default function StepProgressScreen() {
     if (!editOpen) return;
     const user = auth.currentUser;
     if (!user) return;
-    const k = dateKeyYMD(editModalDate);
+    const k = formatCalendarDayKey(editModalDate, calendarTz);
     const ref = doc(db, "users", user.uid, "dailyStats", k);
     const unsub = onSnapshot(
       ref,
@@ -109,7 +106,7 @@ export default function StepProgressScreen() {
       }
     );
     return () => unsub();
-  }, [editOpen, editModalDate]);
+  }, [calendarTz, editModalDate, editOpen]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -130,7 +127,7 @@ export default function StepProgressScreen() {
             d.setDate(d.getDate() + i);
             return d;
           });
-          const keys = days.map((d) => dateKeyYMD(d));
+          const keys = days.map((d) => formatCalendarDayKey(d, calendarTz));
           const snaps = await Promise.all(keys.map((k) => getDoc(doc(db, "users", user.uid, "dailyStats", k))));
           const series = snaps.map((s) => effectiveSteps(s.exists() ? (s.data() as any) : undefined));
           setStepSeries(series);
@@ -150,7 +147,7 @@ export default function StepProgressScreen() {
           const buckets = [0, 0, 0, 0];
           const d = new Date(monthStart);
           while (d <= monthEnd) {
-            const k = dateKeyYMD(d);
+            const k = formatCalendarDayKey(d, calendarTz);
             const snap = await getDoc(doc(db, "users", user.uid, "dailyStats", k));
             const v = effectiveSteps(snap.exists() ? (snap.data() as any) : undefined);
             const dom = d.getDate();
@@ -175,7 +172,7 @@ export default function StepProgressScreen() {
           const last = new Date(year, m + 1, 0).getDate();
           for (let day = 1; day <= last; day++) {
             const d = new Date(year, m, day);
-            const k = dateKeyYMD(d);
+            const k = formatCalendarDayKey(d, calendarTz);
             const snap = await getDoc(doc(db, "users", user.uid, "dailyStats", k));
             const v = effectiveSteps(snap.exists() ? (snap.data() as any) : undefined);
             sums[m] += v;
@@ -200,61 +197,79 @@ export default function StepProgressScreen() {
     };
 
     void load();
-  }, [anchor, chartLabels, period, seriesRefresh]);
+  }, [anchor, calendarTz, chartLabels, period, seriesRefresh]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid, "dailyStats", todayKey),
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : {};
+        const manual =
+          typeof data?.stepsManual === "number" && Number.isFinite(data.stepsManual)
+            ? Math.max(0, Math.round(data.stepsManual))
+            : null;
+        const auto =
+          typeof data?.stepsAuto === "number" && Number.isFinite(data.stepsAuto)
+            ? Math.max(0, Math.round(data.stepsAuto))
+            : 0;
+        setTodayManualOverride(manual);
+        setLiveTodayAuto(auto);
+      },
+      () => {
+        setTodayManualOverride(null);
+      }
+    );
+    return () => unsub();
+  }, [calendarTz]);
 
   // Real-time steps for "today" (only affects the currently-visible window/bucket).
   useEffect(() => {
     let mounted = true;
     let pedSub: { remove: () => void } | null = null;
-    let timer: any = null;
-    let unsubTodayDoc: null | (() => void) = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let pedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const startLive = async () => {
       const user = auth.currentUser;
       if (!user) return;
 
-      // Subscribe to today's manual override (if user set it, we should not live-update the bar).
-      const todayKey = dateKeyYMD(new Date());
-      unsubTodayDoc = onSnapshot(
-        doc(db, "users", user.uid, "dailyStats", todayKey),
-        (snap) => {
-          const data = snap.exists() ? (snap.data() as any) : {};
-          const manual =
-            typeof data?.stepsManual === "number" && Number.isFinite(data.stepsManual) ? Math.max(0, Math.round(data.stepsManual)) : null;
-          if (mounted) setTodayManualOverride(manual);
-        },
-        () => mounted && setTodayManualOverride(null)
-      );
-
-      // Only need true real-time for the weekly view; month/year are aggregates.
+      // Only need live OS step polls for the weekly chart; month/year use aggregates from load().
       if (period !== "week") return;
 
       try {
-        const { Pedometer } = await import("expo-sensors");
-        const available = await Pedometer.isAvailableAsync();
-        if (!mounted || !available) return;
+        const Pedometer = await getPedometerOrNull();
+        if (!mounted || !Pedometer) return;
 
-        // Baseline steps since midnight.
-        const start = startOfDay(new Date());
-        const baseRes = await Pedometer.getStepCountAsync(start, new Date());
-        if (!mounted) return;
-        let baseline = typeof baseRes?.steps === "number" ? baseRes.steps : 0;
-        setLiveTodayAuto(Math.max(0, Math.round(baseline)));
+        const perm = await Pedometer.requestPermissionsAsync();
+        if (!perm.granted || !mounted) return;
 
-        pedSub = Pedometer.watchStepCount((result: any) => {
+        const syncStepsFromOs = async () => {
           if (!mounted) return;
-          const inc = typeof result?.steps === "number" ? result.steps : 0;
-          setLiveTodayAuto(Math.max(0, Math.round(baseline + inc)));
-        });
-
-        // Refresh baseline periodically to avoid drift.
-        timer = setInterval(async () => {
           try {
             const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
-            if (!mounted) return;
-            baseline = typeof res?.steps === "number" ? res.steps : baseline;
-          } catch {}
-        }, 5 * 60_000);
+            const total = Math.max(0, Math.round(typeof res?.steps === "number" ? res.steps : 0));
+            setLiveTodayAuto(total);
+          } catch {
+            /* ignore */
+          }
+        };
+
+        await syncStepsFromOs();
+        if (!mounted) return;
+
+        pedSub = Pedometer.watchStepCount(() => {
+          if (!mounted) return;
+          if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
+          pedDebounceTimer = setTimeout(() => {
+            pedDebounceTimer = null;
+            void syncStepsFromOs();
+          }, 400);
+        });
+
+        timer = setInterval(() => void syncStepsFromOs(), 45_000);
       } catch {
         // ignore; falls back to Firestore-loaded series
       }
@@ -263,9 +278,9 @@ export default function StepProgressScreen() {
     void startLive();
     return () => {
       mounted = false;
+      if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
       pedSub?.remove();
       if (timer) clearInterval(timer);
-      unsubTodayDoc?.();
     };
   }, [period]);
 
@@ -294,6 +309,23 @@ export default function StepProgressScreen() {
       return next;
     });
   }, [anchor, liveTodayAuto, period, todayManualOverride]);
+
+  useEffect(() => {
+    if (period !== "week") return;
+    if (todayManualOverride != null) return;
+    if (liveTodayAuto == null) return;
+    const user = auth.currentUser;
+    if (!user) return;
+    const dayKey = formatCalendarDayKey(new Date(), calendarTz);
+    void setDoc(
+      doc(db, "users", user.uid, "dailyStats", dayKey),
+      {
+        stepsAuto: Math.max(0, Math.round(liveTodayAuto)),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }, [calendarTz, liveTodayAuto, period, todayManualOverride]);
 
   useFocusEffect(
     useCallback(() => {
@@ -349,7 +381,7 @@ export default function StepProgressScreen() {
     }
     try {
       setSaving(true);
-      const dayKey = dateKeyYMD(editModalDate);
+      const dayKey = formatCalendarDayKey(editModalDate, calendarTz);
       await setDoc(
         doc(db, "users", user.uid, "dailyStats", dayKey),
         {
@@ -373,7 +405,7 @@ export default function StepProgressScreen() {
     if (!user) return;
     try {
       setSaving(true);
-      const dayKey = dateKeyYMD(editModalDate);
+      const dayKey = formatCalendarDayKey(editModalDate, calendarTz);
       await setDoc(
         doc(db, "users", user.uid, "dailyStats", dayKey),
         { stepsManual: deleteField() },
@@ -392,7 +424,7 @@ export default function StepProgressScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-6 pt-14">
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
           <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
             <Ionicons name="chevron-back" size={24} color="#111827" />

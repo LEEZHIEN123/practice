@@ -1,9 +1,45 @@
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import {
+  calcExerciseKcal,
+  getWorkoutDetail,
+  getWorkoutMet,
+  plansEqual,
+  sanitizeActiveWorkoutPlan,
+} from "@/lib/workoutCatalog";
+import { bmiBandKey, calcBmi, durationDays, generateActiveWorkoutPlan, workoutPlansByBmiGoalField } from "@/lib/workoutPlan";
+import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
+import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
-import { Timestamp, addDoc, collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import type { QueryDocumentSnapshot } from "firebase/firestore";
+import {
+  Timestamp,
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  increment,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Pressable, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
@@ -25,36 +61,11 @@ function fmtHms(totalSeconds: number) {
   return `${mm}:${String(ss).padStart(2, "0")}`;
 }
 
-function fmtDurationWords(totalSeconds: number) {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const mm = Math.floor(s / 60);
-  const ss = s % 60;
-  if (mm <= 0) return `${ss} sec`;
-  if (ss <= 0) return `${mm} min`;
-  return `${mm} min ${ss} sec`;
-}
-
-function fmtTimeOnly(d: Date) {
-  try {
-    return d.toLocaleTimeString();
-  } catch {
-    return d.toTimeString();
-  }
-}
-
-function fmtDateTime(d: Date) {
-  try {
-    return d.toLocaleString();
-  } catch {
-    return d.toString();
-  }
-}
-
 function typeIcon(type: string) {
   const t = type.toLowerCase();
   if (t.includes("yoga")) return "leaf-outline";
   if (t.includes("hiit")) return "flash-outline";
-  if (t.includes("cardio")) return "heart-outline";
+  if (t.includes("cardio")) return "walk-outline";
   return "barbell-outline";
 }
 
@@ -66,15 +77,167 @@ function typeColor(type: string) {
   return "#1e3a8a";
 }
 
-export default function DayWorkoutScreen() {
-  const router = useRouter();
+/** Main timer + countdown digits (user-requested red, not workout-type accent). */
+const TIMER_RED = "#dc2626";
+
+/** App green — matches suggested workout / MET accents in the app. */
+const ACCENT_GREEN = "#52B69A";
+
+const MIN_RECORD_SECONDS = 5;
+
+function normalizeWorkoutName(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function planDurationCompletionLabel(d: "week" | "biweekly" | "monthly"): string {
+  if (d === "week") return "7-day";
+  if (d === "biweekly") return "14-day";
+  return "30-day";
+}
+
+type DayRecordRow = {
+  id: string;
+  title: string;
+  /** Plan slot 1..N from Firestore; used to hide other days’ rows if any leak in */
+  planDay: number | null;
+  startedAt: Date;
+  endedAt: Date;
+  elapsedSeconds: number;
+  burnedKcal: number;
+  met: number;
+};
+
+/** Prefer workoutLogs; add workoutSessions rows that are not duplicates (legacy / missing log). */
+function mergeWorkoutRecords(logs: DayRecordRow[], sessions: DayRecordRow[]): DayRecordRow[] {
+  const out: DayRecordRow[] = [...logs];
+  for (const s of sessions) {
+    const dup = logs.some(
+      (l) =>
+        Math.abs(l.endedAt.getTime() - s.endedAt.getTime()) < 8000 &&
+        Math.round(l.burnedKcal) === Math.round(s.burnedKcal) &&
+        l.title === s.title
+    );
+    if (!dup) out.push(s);
+  }
+  out.sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime());
+  return out;
+}
+
+/** Keep only rows for this plan day + this schedule workout (not other exercises). */
+function filterRecordsForThisScreen(
+  rows: DayRecordRow[],
+  planDayNum: number,
+  scheduleWorkout: string | null
+): DayRecordRow[] {
+  const w = scheduleWorkout?.trim() || null;
+  if (!w) return [];
+  const wn = normalizeWorkoutName(w);
+  return rows.filter((r) => {
+    if (normalizeWorkoutName(r.title) !== wn) return false;
+    if (typeof r.planDay === "number" && r.planDay !== planDayNum) return false;
+    return true;
+  });
+}
+
+function mapWorkoutLogDoc(
+  d: QueryDocumentSnapshot,
+  planDayNum: number,
+  expectedPlanCreatedAt: string | null
+): DayRecordRow | null {
+  const data = d.data() as Record<string, unknown>;
+  if ((data as any)?.origin === "discover") return null;
+  const docPc = (data as any)?.planCreatedAt;
+  if (expectedPlanCreatedAt) {
+    if (docPc !== expectedPlanCreatedAt) return null;
+  }
+  const docDay = (data as any)?.day;
+  if (typeof docDay === "number" && docDay !== planDayNum) return null;
+  const createdAt = (data as any)?.createdAt?.toDate?.();
+  const endedAt = createdAt instanceof Date ? createdAt : null;
+  if (!endedAt) return null;
+  const durationMin =
+    typeof (data as any)?.durationMin === "number" && Number.isFinite((data as any).durationMin)
+      ? (data as any).durationMin
+      : 0;
+  const elapsedSeconds = Math.max(0, Math.round(durationMin * 60));
+  if (elapsedSeconds < MIN_RECORD_SECONDS) return null;
+  const burnedKcal =
+    typeof (data as any)?.burnedKcal === "number" && Number.isFinite((data as any).burnedKcal)
+      ? Math.round((data as any).burnedKcal)
+      : 0;
+  if (burnedKcal <= 0) return null;
+  const met =
+    typeof (data as any)?.met === "number" && Number.isFinite((data as any).met)
+      ? (data as any).met
+      : getWorkoutMet(String((data as any)?.workoutType ?? ""), String((data as any)?.title ?? "")) ?? 0;
+  const title =
+    typeof (data as any)?.title === "string" && (data as any).title.length > 0 ? (data as any).title : "Workout";
+  const startedAt = new Date(endedAt.getTime() - elapsedSeconds * 1000);
+  const planDay = typeof docDay === "number" && Number.isFinite(docDay) ? docDay : null;
+  return { id: `log-${d.id}`, title, planDay, startedAt, endedAt, elapsedSeconds, burnedKcal, met };
+}
+
+function mapSessionDoc(
+  d: QueryDocumentSnapshot,
+  planDayNum: number,
+  expectedPlanCreatedAt: string | null
+): DayRecordRow | null {
+  const data = d.data() as Record<string, unknown>;
+  if ((data as any)?.origin === "discover") return null;
+  const docPc = (data as any)?.planCreatedAt;
+  if (expectedPlanCreatedAt) {
+    if (docPc !== expectedPlanCreatedAt) return null;
+  }
+  const docDay = (data as any)?.day;
+  if (typeof docDay === "number" && docDay !== planDayNum) return null;
+  const st = (data as any)?.status;
+  if (st !== "completed") return null;
+  const endedAt = (data as any)?.endedAt?.toDate?.() instanceof Date ? (data as any).endedAt.toDate() : null;
+  const startedAt =
+    (data as any)?.startedAt?.toDate?.() instanceof Date ? (data as any).startedAt.toDate() : null;
+  if (!endedAt || !startedAt) return null;
+  const elapsedSeconds =
+    typeof (data as any)?.elapsedSeconds === "number" && Number.isFinite((data as any).elapsedSeconds)
+      ? Math.max(0, Math.floor((data as any).elapsedSeconds))
+      : Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
+  if (elapsedSeconds < MIN_RECORD_SECONDS) return null;
+  const metFromDoc = typeof (data as any)?.met === "number" && Number.isFinite((data as any).met) ? (data as any).met : null;
+  const met =
+    metFromDoc ?? getWorkoutMet(String((data as any)?.type ?? ""), String((data as any)?.workout ?? "")) ?? 0;
+  let burnedKcal = 0;
+  if (typeof (data as any)?.burnedKcal === "number" && Number.isFinite((data as any).burnedKcal)) {
+    burnedKcal = Math.round((data as any).burnedKcal);
+  } else {
+    const w =
+      typeof (data as any)?.weightKgUsed === "number" && Number.isFinite((data as any).weightKgUsed)
+        ? (data as any).weightKgUsed
+        : 0;
+    burnedKcal = Math.max(0, Math.round(calcExerciseKcal(met, elapsedSeconds / 60, w)));
+  }
+  if (burnedKcal <= 0) return null;
+  const title =
+    typeof (data as any)?.workout === "string" && (data as any).workout.length > 0 ? (data as any).workout : "Workout";
+  const planDay = typeof docDay === "number" && Number.isFinite(docDay) ? docDay : null;
+  return {
+    id: `sess-${d.id}`,
+    title,
+    planDay,
+    startedAt,
+    endedAt,
+    elapsedSeconds,
+    burnedKcal,
+    met,
+  };
+}
+
+/**
+ * Heavy UI + tab state lives here so tab presses do not re-run expo-router hooks
+ * (which can throw “Couldn't find a navigation context” when nested with React 19).
+ */
+function DayWorkoutBody({ dayNum }: { dayNum: number }) {
   const insets = useSafeAreaInsets();
+  const calendarTz = useUserCalendarTimezone();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  const params = useLocalSearchParams<{ day?: string }>();
-  const dayNum = useMemo(() => {
-    const n = Number(params.day);
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
-  }, [params.day]);
 
   const [plan, setPlan] = useState<ActiveWorkoutPlan | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -92,82 +255,107 @@ export default function DayWorkoutScreen() {
   const [, setMode] = useState<"countup" | "countdown">("countup");
   const modeRef = useRef<"countup" | "countdown">("countup");
   const targetSecondsRef = useRef<number | null>(null);
-  const [dayRecords, setDayRecords] = useState<
-    { startedAt: Date; endedAt: Date; elapsedSeconds: number }[]
-  >([]);
+  const [workoutLogRows, setWorkoutLogRows] = useState<DayRecordRow[]>([]);
+  const [workoutSessionRows, setWorkoutSessionRows] = useState<DayRecordRow[]>([]);
+  const [contentTab, setContentTab] = useState<"instruction" | "record">("instruction");
   const [canResume, setCanResume] = useState(false);
+  const [planCycleCompleteVisible, setPlanCycleCompleteVisible] = useState(false);
+  const [planCycleCompleteLabel, setPlanCycleCompleteLabel] = useState("");
   const autoCompleteFiredRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const sessionStartedAtMsRef = useRef<number | null>(null);
   const baseElapsedRef = useRef(0);
   const tickIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  /** Ignore Firestore snapshots that arrive after we switched day/workout (listener not yet torn down). */
+  const recordsSubGenRef = useRef(0);
   const row = useMemo(() => {
     const r = plan?.schedule?.find((x) => x.day === dayNum) ?? null;
     return r;
   }, [dayNum, plan]);
 
-  const MIN_RECORD_SECONDS = 5;
+  const workoutDetail = useMemo(() => (row ? getWorkoutDetail(row.type, row.workout) : null), [row]);
 
-  const planCreatedAtMs = useMemo(() => {
-    const v: any = plan?.createdAt ?? null;
-    if (!v) return null;
-    if (typeof v === "number" && Number.isFinite(v)) return Math.floor(v);
-    if (typeof v === "string") {
-      const ms = Date.parse(v);
-      return Number.isFinite(ms) ? ms : null;
-    }
-    if (typeof v?.toMillis === "function") return Math.floor(v.toMillis());
-    return null;
-  }, [plan?.createdAt]);
+  const dayRecords = useMemo(() => {
+    const merged = mergeWorkoutRecords(workoutLogRows, workoutSessionRows);
+    return filterRecordsForThisScreen(merged, dayNum, row?.workout ?? null);
+  }, [workoutLogRows, workoutSessionRows, dayNum, row?.workout]);
+
+  const totalRecordKcal = useMemo(
+    () => dayRecords.reduce((sum, r) => sum + (Number.isFinite(r.burnedKcal) ? r.burnedKcal : 0), 0),
+    [dayRecords]
+  );
 
   useEffect(() => {
-    if (!uid || planCreatedAtMs == null) return;
-    const q = query(
-      collection(db, "users", uid, "workoutSessions"),
-      orderBy("startedAt", "desc"),
-      // When a new "running" session is created, it can push older completed
-      // sessions out of a small limit. Use a larger window for stable records.
-      limit(300)
-    );
-    const unsub = onSnapshot(
-      q,
+    if (!uid) return;
+
+    const workoutName = row?.workout?.trim() || null;
+    if (!workoutName) {
+      setWorkoutLogRows([]);
+      setWorkoutSessionRows([]);
+      return;
+    }
+
+    const gen = ++recordsSubGenRef.current;
+    setWorkoutLogRows([]);
+    setWorkoutSessionRows([]);
+
+    const wn = normalizeWorkoutName(workoutName);
+    const expectedPlanCreatedAt = plan?.createdAt?.trim() ? plan.createdAt : null;
+
+    /**
+     * Equality-only on `day` (single-field index — no composite). Sort newest-first in-app.
+     * `where` + `orderBy(createdAt)` needs a composite index in Firebase; without deploy, listeners fail and records vanish.
+     * Client-filter by planCreatedAt so week vs biweekly/monthly (same day + same exercise) stay separate.
+     */
+    const qLogs = query(collection(db, "users", uid, "workoutLogs"), where("day", "==", dayNum), limit(100));
+    const qSessions = query(collection(db, "users", uid, "workoutSessions"), where("day", "==", dayNum), limit(100));
+
+    const unsubLogs = onSnapshot(
+      qLogs,
       (snap) => {
-        const rows: { startedAt: Date; endedAt: Date; elapsedSeconds: number }[] = [];
+        if (recordsSubGenRef.current !== gen) return;
+        const rows: DayRecordRow[] = [];
         for (const d of snap.docs) {
-          const data = d.data() as any;
-          if (data?.status !== "completed") continue;
-          const planMsRaw = data?.planCreatedAt ?? null;
-          const planMs =
-            typeof planMsRaw === "number"
-              ? Math.floor(planMsRaw)
-              : typeof planMsRaw === "string"
-                ? (() => {
-                    const ms = Date.parse(planMsRaw);
-                    return Number.isFinite(ms) ? ms : null;
-                  })()
-              : typeof planMsRaw?.toMillis === "function"
-                ? Math.floor(planMsRaw.toMillis())
-                : null;
-          if (planMs == null || planMs !== planCreatedAtMs) continue;
-          if (Number(data?.day) !== dayNum) continue;
-          const startedAt = data?.startedAt?.toDate?.() instanceof Date ? data.startedAt.toDate() : null;
-          const endedAt = data?.endedAt?.toDate?.() instanceof Date ? data.endedAt.toDate() : null;
-          if (!startedAt || !endedAt) continue;
-          const elapsedSeconds =
-            typeof data?.elapsedSeconds === "number" && Number.isFinite(data.elapsedSeconds)
-              ? Math.max(0, Math.floor(data.elapsedSeconds))
-              : 0;
-          if (elapsedSeconds < MIN_RECORD_SECONDS) continue;
-          rows.push({ startedAt, endedAt, elapsedSeconds });
+          const rec = mapWorkoutLogDoc(d, dayNum, expectedPlanCreatedAt);
+          if (!rec) continue;
+          if (normalizeWorkoutName(rec.title) !== wn) continue;
+          rows.push(rec);
         }
-        setDayRecords(rows.sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime()));
+        rows.sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime());
+        setWorkoutLogRows(rows.slice(0, 80));
       },
-      () => setDayRecords([])
+      (err) => {
+        console.log("workoutLogs listener error:", err);
+        if (recordsSubGenRef.current === gen) setWorkoutLogRows([]);
+      }
     );
-    return () => unsub();
-  }, [dayNum, planCreatedAtMs, uid]);
+
+    const unsubSessions = onSnapshot(
+      qSessions,
+      (snap) => {
+        if (recordsSubGenRef.current !== gen) return;
+        const rows: DayRecordRow[] = [];
+        for (const d of snap.docs) {
+          const rec = mapSessionDoc(d, dayNum, expectedPlanCreatedAt);
+          if (!rec) continue;
+          if (normalizeWorkoutName(rec.title) !== wn) continue;
+          rows.push(rec);
+        }
+        rows.sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime());
+        setWorkoutSessionRows(rows.slice(0, 80));
+      },
+      (err) => {
+        console.log("workoutSessions listener error:", err);
+        if (recordsSubGenRef.current === gen) setWorkoutSessionRows([]);
+      }
+    );
+
+    return () => {
+      unsubLogs();
+      unsubSessions();
+    };
+  }, [dayNum, uid, row?.workout, plan?.createdAt]);
 
   useEffect(() => {
     if (!uid) return;
@@ -175,7 +363,12 @@ export default function DayWorkoutScreen() {
       doc(db, "users", uid),
       (snap) => {
         const data = snap.exists() ? (snap.data() as any) : {};
-        setPlan((data?.activeWorkoutPlan as ActiveWorkoutPlan) ?? null);
+        const rawPlan = (data?.activeWorkoutPlan as ActiveWorkoutPlan) ?? null;
+        const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
+        if (rawPlan && fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
+          void updateDoc(doc(db, "users", uid), { activeWorkoutPlan: fixedPlan } as any);
+        }
+        setPlan(fixedPlan ?? rawPlan);
       },
       () => setPlan(null)
     );
@@ -206,11 +399,13 @@ export default function DayWorkoutScreen() {
       if (m === "countdown" && tgt != null) {
         const remain = Math.max(0, tgt - nextElapsed);
         setElapsed(remain);
-        if (remain <= 0) {
+          if (remain <= 0) {
           if (!autoCompleteFiredRef.current) {
             autoCompleteFiredRef.current = true;
-            void completeWorkout().finally(() => {
-              Alert.alert("Congratulations!", "Workout completed.");
+            void completeWorkout().then((cycled) => {
+              if (!cycled) {
+                Alert.alert("Congratulations!", "Workout completed.");
+              }
               autoCompleteFiredRef.current = false;
             });
           }
@@ -393,9 +588,10 @@ export default function DayWorkoutScreen() {
     setCanResume(true);
   };
 
-  const completeWorkout = async () => {
+  const completeWorkout = async (): Promise<boolean> => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user) return false;
+    let didRegeneratePlanCycle = false;
     const endedAtClient = new Date();
     await pauseWorkout();
 
@@ -428,7 +624,62 @@ export default function DayWorkoutScreen() {
       modeRef.current = "countup";
       targetSecondsRef.current = null;
       setCanResume(false);
-      return;
+      setSessionId(null);
+      return false;
+    }
+
+    const startedMs =
+      typeof sessionStartedAtMsRef.current === "number" && Number.isFinite(sessionStartedAtMsRef.current)
+        ? sessionStartedAtMsRef.current
+        : endedAtClient.getTime() - Math.max(0, Math.floor(baseElapsedRef.current)) * 1000;
+    const startedAtClient = new Date(startedMs);
+
+    const durationMin = elapsedSec / 60;
+    let burnedRecorded = 0;
+    let metUsed = 3;
+    let weightUsed = 0;
+    if (row) {
+      metUsed = getWorkoutMet(row.type, row.workout) ?? 3;
+      try {
+        const uSnap = await getDoc(doc(db, "users", user.uid));
+        weightUsed = Number((uSnap.data() as any)?.weight ?? 0);
+        burnedRecorded = Math.max(0, Math.round(calcExerciseKcal(metUsed, durationMin, weightUsed)));
+      } catch (e) {
+        console.log("Failed to read weight for calories:", e);
+      }
+    }
+
+    if (burnedRecorded <= 0) {
+      if (sessionId) {
+        try {
+          await updateDoc(doc(db, "users", user.uid, "workoutSessions", sessionId), {
+            status: "stopped",
+            endedAt: Timestamp.fromDate(endedAtClient),
+            endedAtClientMs: endedAtClient.getTime(),
+            elapsedSeconds: elapsedSec,
+            updatedAt: serverTimestamp(),
+          });
+        } catch (e) {
+          console.log("Failed to stop zero-kcal workout:", e);
+        }
+      }
+      Alert.alert(
+        "Workout not saved",
+        "This workout finished at 0 kcal, so it won't be saved as a record."
+      );
+      baseElapsedRef.current = 0;
+      startedAtRef.current = null;
+      sessionStartedAtMsRef.current = null;
+      setElapsed(0);
+      setRunning(false);
+      stopTicker();
+      setMode("countup");
+      setTargetSeconds(null);
+      modeRef.current = "countup";
+      targetSecondsRef.current = null;
+      setCanResume(false);
+      setSessionId(null);
+      return false;
     }
 
     if (sessionId) {
@@ -437,27 +688,122 @@ export default function DayWorkoutScreen() {
         endedAt: Timestamp.fromDate(endedAtClient),
         endedAtClientMs: endedAtClient.getTime(),
         elapsedSeconds: elapsedSec,
+        burnedKcal: burnedRecorded,
+        met: metUsed,
+        weightKgUsed: weightUsed,
+        durationMin: Math.round(durationMin * 100) / 100,
         updatedAt: serverTimestamp(),
       });
     }
 
-    // Update workout record UI immediately (serverTimestamp fields may be pending briefly).
-    const startedMs =
-      typeof sessionStartedAtMsRef.current === "number" && Number.isFinite(sessionStartedAtMsRef.current)
-        ? sessionStartedAtMsRef.current
-        : endedAtClient.getTime() - Math.max(0, Math.floor(baseElapsedRef.current)) * 1000;
-    const startedAtClient = new Date(startedMs);
-    setDayRecords((prev) => [
-      { startedAt: startedAtClient, endedAt: endedAtClient, elapsedSeconds: elapsedSec },
-      ...prev,
-    ]);
-
-    // Mark completion (Workout Plan will advance to next day on the next calendar day).
+    let newWorkoutLogId: string | null = null;
     try {
-      await updateDoc(doc(db, "users", user.uid), {
-        activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
-        activePlanLastCompletedAt: serverTimestamp(),
-      } as any);
+      if (row && burnedRecorded > 0) {
+        const dayKey = formatCalendarDayKey(new Date(), calendarTz);
+        await setDoc(
+          doc(db, "users", user.uid, "dailyStats", dayKey),
+          { burnedKcal: increment(burnedRecorded), updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      }
+      if (row) {
+        const ref = await addDoc(collection(db, "users", user.uid, "workoutLogs"), {
+          title: row.workout,
+          burnedKcal: burnedRecorded,
+          durationMin: Math.round(durationMin * 100) / 100,
+          met: metUsed,
+          weightKgUsed: weightUsed,
+          workoutType: row.type,
+          createdAt: serverTimestamp(),
+          day: row.day,
+          planCreatedAt: plan?.createdAt ?? null,
+        });
+        newWorkoutLogId = ref.id;
+      }
+    } catch (e) {
+      console.log("Failed to record workout calories / log:", e);
+    }
+
+    if (newWorkoutLogId && row) {
+      const logRowId = `log-${newWorkoutLogId}`;
+      setWorkoutLogRows((prev) => {
+        if (prev.some((p) => p.id === logRowId)) return prev;
+        return [
+          {
+            id: logRowId,
+            title: row.workout,
+            planDay: row.day,
+            startedAt: startedAtClient,
+            endedAt: endedAtClient,
+            elapsedSeconds: elapsedSec,
+            burnedKcal: burnedRecorded,
+            met: metUsed,
+          },
+          ...prev,
+        ];
+      });
+    }
+
+    // Next start must create a new session document (avoids duplicate React keys + bad reuse).
+    setSessionId(null);
+    setContentTab("record");
+
+    // Mark completion, or roll to a new plan after the final day of week / biweekly / monthly.
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const dur = plan?.duration;
+      const totalPlanDays =
+        dur === "week" || dur === "biweekly" || dur === "monthly" ? durationDays(dur) : 0;
+      const finishingFullPlan = Boolean(plan && totalPlanDays > 0 && dayNum === totalPlanDays);
+
+      if (finishingFullPlan && plan) {
+        const uSnap = await getDoc(userRef);
+        const uData = uSnap.data() as any;
+        const stored = uData?.activeWorkoutPlan as ActiveWorkoutPlan | null;
+        const samePlan =
+          Boolean(stored?.createdAt && plan.createdAt && stored.createdAt === plan.createdAt);
+
+        if (samePlan) {
+          const weight = Number(uData?.weight ?? 0);
+          const height = Number(uData?.height ?? 0);
+          let bmi = calcBmi(weight, height);
+          if (bmi == null && typeof plan.bmi === "number" && Number.isFinite(plan.bmi)) {
+            bmi = plan.bmi;
+          }
+          const goal =
+            plan.goal === "gain" || plan.goal === "maintain" || plan.goal === "lose"
+              ? plan.goal
+              : uData?.recommendedPlan === "gain" ||
+                  uData?.recommendedPlan === "maintain" ||
+                  uData?.recommendedPlan === "lose"
+                ? uData.recommendedPlan
+                : null;
+
+          if (bmi != null && goal && dur) {
+            const next = generateActiveWorkoutPlan({ duration: dur, bmi, goal });
+            const band = bmiBandKey(bmi);
+            await updateDoc(userRef, {
+              activeWorkoutPlan: next,
+              [workoutPlansByBmiGoalField(band, goal, dur)]: next,
+              activePlanLastCompletedDay: null,
+              activePlanLastCompletedAt: null,
+            } as any);
+            setPlanCycleCompleteLabel(planDurationCompletionLabel(dur));
+            setPlanCycleCompleteVisible(true);
+            didRegeneratePlanCycle = true;
+          } else {
+            await updateDoc(userRef, {
+              activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
+              activePlanLastCompletedAt: serverTimestamp(),
+            } as any);
+          }
+        }
+      } else {
+        await updateDoc(userRef, {
+          activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
+          activePlanLastCompletedAt: serverTimestamp(),
+        } as any);
+      }
     } catch (e) {
       console.log("Failed to advance plan day:", e);
     }
@@ -473,6 +819,7 @@ export default function DayWorkoutScreen() {
     modeRef.current = "countup";
     targetSecondsRef.current = null;
     setCanResume(false);
+    return didRegeneratePlanCycle;
   };
 
   const accent = row ? typeColor(row.type) : "#1e3a8a";
@@ -488,7 +835,7 @@ export default function DayWorkoutScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <View style={{ paddingTop: insets.top + 8 }} className="px-6 pb-4 flex-row items-center">
+      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
         <Pressable
           onPress={requestBack}
           hitSlop={12}
@@ -501,33 +848,120 @@ export default function DayWorkoutScreen() {
         </View>
       </View>
 
-      <View className="px-6">
-        <View className="bg-white rounded-3xl p-5 border border-gray-100">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold">WORKOUT TYPE</Text>
-              <Text className="text-xl font-extrabold text-gray-900 mt-2">{row?.type ?? "—"}</Text>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 64 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View className="px-3 pb-0">
+          <View className="bg-white rounded-3xl p-5 border border-gray-100">
+            <View className="flex-row items-start justify-between">
+              <View className="flex-1 pr-3 min-w-0">
+                <Text className="text-base font-extrabold text-gray-900 tracking-wide">WORKOUT TYPE</Text>
+                <Text className="text-xl font-extrabold mt-2" style={{ color: "#2563eb" }}>
+                  {row?.type ?? "—"}
+                </Text>
+              </View>
+              <View className="items-center shrink-0 justify-center">
+                <View
+                  className="w-[72px] h-[72px] rounded-2xl items-center justify-center"
+                  style={{ backgroundColor: `${accent}18` }}
+                >
+                  <Ionicons name={typeIcon(row?.type ?? "") as any} size={32} color={accent} />
+                </View>
+              </View>
             </View>
-            <View
-              className="w-16 h-16 rounded-2xl items-center justify-center"
-              style={{ backgroundColor: `${accent}15` }}
-            >
-              <Ionicons name={typeIcon(row?.type ?? "") as any} size={30} color={accent} />
+
+            {/* WORKOUT label + example name (same rhythm as WORKOUT TYPE / type); MET aligns top-right; tighter gap from row above */}
+            <View className="flex-row items-start justify-between mt-2 gap-2">
+              <View className="flex-1 min-w-0 pr-2">
+                <Text className="text-base font-extrabold text-gray-900 tracking-wide">WORKOUT</Text>
+                <Text
+                  className="text-xl font-extrabold mt-2 leading-7"
+                  style={{ color: "#dc2626" }}
+                  numberOfLines={6}
+                >
+                  {row?.workout ?? "—"}
+                </Text>
+              </View>
+              <View className="shrink-0 items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 min-w-[96px]">
+                <Text className="text-base font-extrabold tracking-wide text-emerald-800">MET VALUE</Text>
+                <Text className="text-xl font-extrabold text-emerald-950 mt-2">
+                  {workoutDetail != null ? String(workoutDetail.met) : "—"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Same segmented style as Progress (Weight / Workout / Meal); slightly wider track */}
+            <View className="mt-5 -mx-2">
+              <View className="bg-white rounded-full p-1.5 flex-row border border-gray-100">
+                <Pressable
+                  onPress={() => setContentTab("instruction")}
+                  className={`flex-1 py-3.5 px-3 rounded-full items-center ${
+                    contentTab === "instruction" ? "bg-[#eaf7f0]" : "bg-transparent"
+                  }`}
+                >
+                  <Text
+                    className={`${contentTab === "instruction" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}
+                  >
+                    Instructions
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setContentTab("record")}
+                  className={`flex-1 py-3.5 px-3 rounded-full items-center ${
+                    contentTab === "record" ? "bg-[#eaf7f0]" : "bg-transparent"
+                  }`}
+                >
+                  <Text className={`${contentTab === "record" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                    Workout record
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View className="mt-4">
+                {contentTab === "instruction" ? (
+                  <>
+                    {(() => {
+                      const instructionImage = getWorkoutInstructionImage(row?.workout ?? null);
+                      if (!instructionImage) return null;
+                      return (
+                        <Image
+                          source={instructionImage}
+                          style={{ width: "100%", height: 220 }}
+                          contentFit="contain"
+                          transition={200}
+                        />
+                      );
+                    })()}
+                    <View className="mt-5">
+                      <Text className="text-base font-extrabold text-gray-900 tracking-wide">INSTRUCTIONS</Text>
+                      <Text className="text-gray-700 mt-3 leading-6 text-[15px]">
+                        {workoutDetail?.instruction ??
+                          "Follow a steady pace, focus on form, and stop if you feel pain. You can pause anytime and your time will be recorded."}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <WorkoutRecordPanel
+                    embedded
+                    planDayNum={dayNum}
+                    dayRecords={dayRecords}
+                    totalRecordKcal={totalRecordKcal}
+                    accentGreen={ACCENT_GREEN}
+                  />
+                )}
+              </View>
             </View>
           </View>
-
-          <Text className="text-[10px] tracking-widest text-gray-400 font-bold mt-5">WORKOUT</Text>
-          <Text className="text-lg font-extrabold text-gray-900 mt-2">{row?.workout ?? "—"}</Text>
-          <Text className="text-gray-600 mt-2 leading-6">
-            Follow a steady pace, focus on form, and stop if you feel pain. You can pause anytime and your time will be recorded.
-          </Text>
         </View>
-      </View>
+      </ScrollView>
 
       {/* bottom timer display */}
       <View
-        style={{ paddingBottom: insets.bottom + 10 }}
-        className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-5"
+        style={{ paddingBottom: insets.bottom + 6 }}
+        className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-3 py-3"
       >
         <View className="flex-row items-center justify-between">
           <Pressable
@@ -553,7 +987,7 @@ export default function DayWorkoutScreen() {
               }
               void pauseWorkout().then(() => setPauseMenuVisible(true));
             }}
-            className={`flex-1 py-4 rounded-full active:opacity-90 ${running ? "bg-red-600" : "bg-[#76C893]"}`}
+            className={`flex-1 py-3.5 rounded-full active:opacity-90 ${running ? "bg-red-600" : "bg-[#76C893]"}`}
           >
             <Text className="text-white font-extrabold text-lg text-center">
               {running ? "Pause" : canResume ? "Resume" : "Start Workout"}
@@ -561,35 +995,15 @@ export default function DayWorkoutScreen() {
           </Pressable>
 
           <View className="items-start ml-5">
-            <Text className="text-[10px] tracking-widest text-gray-400 font-bold">TIMER</Text>
-            <Text className="text-3xl font-extrabold" style={{ color: accent }}>
+            <Text className="text-[10px] tracking-widest font-bold" style={{ color: TIMER_RED }}>
+              TIMER
+            </Text>
+            <Text className="text-3xl font-extrabold" style={{ color: TIMER_RED }}>
               {fmtHms(elapsed)}
             </Text>
           </View>
         </View>
       </View>
-
-      {/* Workout record for this day */}
-      {dayRecords.length ? (
-        <View className="px-6 mt-4">
-          <View className="bg-white rounded-3xl p-5 border border-gray-100">
-            <Text className="text-[10px] tracking-widest text-gray-400 font-bold">WORKOUT RECORD</Text>
-            <View className="mt-3 gap-2">
-              {dayRecords.map((r, idx) => (
-                <View key={`rec-${idx}`} className="bg-[#f3f4f3] rounded-2xl px-4 py-3 border border-gray-200">
-                  <Text className="text-sm font-extrabold text-gray-900">
-                    {fmtDateTime(r.startedAt)}  →  {fmtTimeOnly(r.endedAt)}
-                  </Text>
-                  <Text className="text-sm text-gray-600 mt-1">
-                    Total:{" "}
-                    <Text className="font-extrabold text-gray-900">{fmtDurationWords(r.elapsedSeconds)}</Text>
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-      ) : null}
 
       {/* Start choice modal */}
       <Modal visible={startChoiceVisible} transparent animationType="fade" onRequestClose={() => setStartChoiceVisible(false)}>
@@ -740,8 +1154,10 @@ export default function DayWorkoutScreen() {
             <Text className="text-white text-lg font-extrabold mb-6 text-center">
               Your workout will begin in
             </Text>
-            <View className="w-40 h-40 rounded-full bg-white items-center justify-center border border-gray-200">
-              <Text className="text-6xl font-extrabold text-gray-900">{countdown}</Text>
+            <View className="w-40 h-40 rounded-full bg-white items-center justify-center border-2" style={{ borderColor: TIMER_RED }}>
+              <Text className="text-6xl font-extrabold" style={{ color: TIMER_RED }}>
+                {countdown}
+              </Text>
             </View>
           </View>
         </View>
@@ -837,6 +1253,7 @@ export default function DayWorkoutScreen() {
                     setRunning(false);
                     clearCountdown();
                     setCanResume(false);
+                    setSessionId(null);
                   } else {
                     void completeWorkout();
                   }
@@ -887,7 +1304,61 @@ export default function DayWorkoutScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={planCycleCompleteVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPlanCycleCompleteVisible(false);
+          router.replace("/workout-plan" as any);
+        }}
+      >
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
+            <View className="items-center mb-2">
+              <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center border border-emerald-200">
+                <Ionicons name="checkmark-circle" size={40} color="#059669" />
+              </View>
+            </View>
+            <Text className="text-2xl font-extrabold text-gray-900 text-center">Plan complete</Text>
+            <Text className="text-gray-600 mt-3 leading-6 text-center">
+              You finished your {planCycleCompleteLabel || "full"} workout plan. A new plan has been generated so you can
+              keep going.
+            </Text>
+
+            <View className="mt-6 gap-3">
+              <Pressable
+                onPress={() => {
+                  setPlanCycleCompleteVisible(false);
+                  router.replace("/workout-plan" as any);
+                }}
+                className="py-4 rounded-full items-center active:opacity-90"
+                style={{ backgroundColor: ACCENT_GREEN }}
+              >
+                <Text className="text-white text-lg font-extrabold">View new plan</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+function dayFromRouteParam(raw: string | string[] | undefined): number {
+  if (raw == null) return 1;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+/**
+ * Use route search params (not Linking.useLinkingURL) so `?day=` updates when navigating
+ * between days with router.push; the linking URL often stays stale and always showed day 1.
+ */
+export default function DayWorkoutScreen() {
+  const params = useLocalSearchParams<{ day?: string | string[] }>();
+  const dayNum = useMemo(() => dayFromRouteParam(params.day), [params.day]);
+  return <DayWorkoutBody dayNum={dayNum} />;
+}

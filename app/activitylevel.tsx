@@ -135,7 +135,7 @@ export default function ActivityLevel() {
   return (
     <View
       className="flex-1 bg-[#eef2f1]"
-      style={{ paddingTop: insets.top + 12, paddingHorizontal: 20 }}
+      style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}
     >
       {/* Header (same style as Contact Us) */}
       <View className="relative mb-6 h-12 justify-center">

@@ -3,7 +3,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Text, TouchableOpacity } from "react-native";
+import { ActivityIndicator, Image, Text } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { auth } from "../firebaseConfig";
 
 export default function Home() {
@@ -29,7 +30,7 @@ export default function Home() {
     return (
       <LinearGradient
         colors={["#f7fdf9", "#e6f4ee"]}
-        className="flex-1 items-center justify-center px-6"
+        className="flex-1 items-center justify-center px-3"
       >
         <ActivityIndicator size="large" color="#76C893" />
         <Text className="text-gray-500 text-base mt-4">Loading…</Text>
@@ -40,7 +41,7 @@ export default function Home() {
   return (
     <LinearGradient
       colors={["#f7fdf9", "#e6f4ee"]}
-      className="flex-1 items-center justify-center px-6"
+      className="flex-1 items-center justify-center px-3"
     >
       {/* Image */}
       <Image
@@ -60,7 +61,7 @@ export default function Home() {
       </Text>
 
       {/* Custom Rounded Button */}
-      <TouchableOpacity
+      <Pressable
         onPress={handleGetStarted}
         className="px-20 bg-green-300 py-5 rounded-full items-center shadow-lg flex-row justify-center"
       >
@@ -69,7 +70,7 @@ export default function Home() {
         </Text>
 
         <Ionicons name="arrow-forward" size={22} color="#15803d" />
-      </TouchableOpacity>
+      </Pressable>
     </LinearGradient>
   );
 }

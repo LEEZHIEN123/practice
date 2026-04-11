@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const SECTIONS: { title: string; body: string; bullets?: string[] }[] = [
@@ -49,7 +50,7 @@ export default function TermsOfServiceScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
           paddingBottom: insets.bottom + 100,
         }}
@@ -91,7 +92,7 @@ export default function TermsOfServiceScreen() {
       </ScrollView>
 
       <View
-        className="absolute left-0 right-0 bg-white border-t border-gray-100 px-5 pt-3"
+        className="absolute left-0 right-0 bg-white border-t border-gray-100 px-3 pt-3"
         style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
       >
         <Pressable

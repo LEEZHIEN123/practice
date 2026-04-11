@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,7 +11,7 @@ export default function ComingSoonScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <View style={{ paddingTop: insets.top + 8 }} className="px-6 pb-4 flex-row items-center">
+      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}

@@ -1,3 +1,5 @@
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
@@ -20,13 +22,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
-const dateKeyYMD = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
-
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
 const formatLongDate = (d: Date) => {
@@ -46,6 +41,7 @@ type WaterLogRow = { id: string; amountMl: number; createdAt: Date; dayKey: stri
 
 export default function WaterIntakeScreen() {
   const router = useRouter();
+  const calendarTz = useUserCalendarTimezone();
   const [mlText, setMlText] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -55,26 +51,34 @@ export default function WaterIntakeScreen() {
   const [recentLogs, setRecentLogs] = useState<WaterLogRow[]>([]);
   const [editingLog, setEditingLog] = useState<WaterLogRow | null>(null);
   const [editMlText, setEditMlText] = useState("");
+  /** When set, "Recent water intake" lists only this calendar day; `null` = all loaded days (incl. yesterday). */
+  const [recentViewDay, setRecentViewDay] = useState<Date | null>(null);
+  const [showRecentDayPicker, setShowRecentDayPicker] = useState(false);
 
   const isSelectedToday = useMemo(
-    () => dateKeyYMD(selectedDate) === dateKeyYMD(new Date()),
-    [selectedDate]
+    () =>
+      formatCalendarDayKey(selectedDate, calendarTz) === formatCalendarDayKey(new Date(), calendarTz),
+    [calendarTz, selectedDate]
   );
 
   const selectedDayLogsCount = useMemo(() => {
-    const k = dateKeyYMD(selectedDate);
+    const k = formatCalendarDayKey(selectedDate, calendarTz);
     return recentLogs.reduce((n, r) => (r.dayKey === k ? n + 1 : n), 0);
-  }, [recentLogs, selectedDate]);
+  }, [calendarTz, recentLogs, selectedDate]);
 
   const selectedDayLogsTotalMl = useMemo(() => {
-    const k = dateKeyYMD(selectedDate);
+    const k = formatCalendarDayKey(selectedDate, calendarTz);
     return recentLogs.reduce((s, r) => (r.dayKey === k ? s + r.amountMl : s), 0);
-  }, [recentLogs, selectedDate]);
+  }, [calendarTz, recentLogs, selectedDate]);
+
+  /** Any water for the selected day: logs and/or dailyStats (avoids false “no record” if one source lags). */
+  const hasWaterIntakeForSelectedDay =
+    selectedDayLogsCount > 0 || (Number.isFinite(dayTotalMl) && dayTotalMl > 0);
 
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    const k = dateKeyYMD(selectedDate);
+    const k = formatCalendarDayKey(selectedDate, calendarTz);
     const ref = doc(db, "users", user.uid, "dailyStats", k);
     const unsub = onSnapshot(
       ref,
@@ -92,7 +96,7 @@ export default function WaterIntakeScreen() {
       }
     );
     return () => unsub();
-  }, [selectedDate]);
+  }, [calendarTz, selectedDate]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -100,7 +104,7 @@ export default function WaterIntakeScreen() {
     const q = query(
       collection(db, "users", user.uid, "waterLogs"),
       orderBy("createdAt", "desc"),
-      limit(100)
+      limit(150)
     );
     const unsub = onSnapshot(
       q,
@@ -113,7 +117,9 @@ export default function WaterIntakeScreen() {
           const createdAt = data?.createdAt?.toDate?.() instanceof Date ? data.createdAt.toDate() : null;
           if (!createdAt) continue;
           const logDay = data?.logDate?.toDate?.() instanceof Date ? data.logDate.toDate() : null;
-          const dayKey = logDay ? dateKeyYMD(logDay) : dateKeyYMD(createdAt);
+          const dayKey = logDay
+            ? formatCalendarDayKey(logDay, calendarTz)
+            : formatCalendarDayKey(createdAt, calendarTz);
           rows.push({ id: d.id, amountMl, createdAt, dayKey });
         }
         setRecentLogs(rows);
@@ -121,7 +127,7 @@ export default function WaterIntakeScreen() {
       () => setRecentLogs([])
     );
     return () => unsub();
-  }, []);
+  }, [calendarTz]);
 
   const save = async () => {
     const user = auth.currentUser;
@@ -134,7 +140,7 @@ export default function WaterIntakeScreen() {
     try {
       setSaving(true);
       const day = startOfDay(selectedDate);
-      const key = dateKeyYMD(selectedDate);
+      const key = formatCalendarDayKey(selectedDate, calendarTz);
 
       await addDoc(collection(db, "users", user.uid, "waterLogs"), {
         amountMl: parsed,
@@ -255,9 +261,20 @@ export default function WaterIntakeScreen() {
     });
   }, [recentLogs]);
 
+  const filteredGroupedWater = useMemo(() => {
+    if (!recentViewDay) return groupedWater;
+    const k = formatCalendarDayKey(recentViewDay, calendarTz);
+    return groupedWater.filter((g) => g.dateKey === k);
+  }, [calendarTz, groupedWater, recentViewDay]);
+
+  const recentFilterLabel = useMemo(() => {
+    if (!recentViewDay) return null;
+    return formatLongDate(recentViewDay);
+  }, [recentViewDay]);
+
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} className="px-6 pt-14">
+      <ScrollView contentContainerStyle={{ paddingBottom: 56 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
           <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
             <Ionicons name="chevron-back" size={24} color="#111827" />
@@ -269,7 +286,7 @@ export default function WaterIntakeScreen() {
         <View className="bg-white rounded-3xl p-5 border border-gray-100">
           <View className="flex-row items-start justify-between">
             <View className="flex-1 pr-2">
-              <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">
+              <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">
                 {isSelectedToday ? "TODAY" : "SELECTED DAY"}
               </Text>
               <Text className="text-lg font-extrabold text-gray-900 mt-2">
@@ -281,12 +298,17 @@ export default function WaterIntakeScreen() {
                 })}
               </Text>
               <Text className="text-sm text-gray-600 mt-2 font-extrabold">
-                Total: {(selectedDayLogsCount === 0 ? 0 : selectedDayLogsTotalMl).toLocaleString()} ml
+                Total:{" "}
+                {(hasWaterIntakeForSelectedDay
+                  ? Math.max(selectedDayLogsTotalMl, dayTotalMl)
+                  : 0
+                ).toLocaleString()}{" "}
+                ml
               </Text>
               {recordedAt && isSelectedToday ? (
                 <Text className="text-xs text-gray-500 mt-1">Last updated: {recordedAt.toLocaleString()}</Text>
               ) : null}
-              {selectedDayLogsCount === 0 ? (
+              {!hasWaterIntakeForSelectedDay ? (
                 <Text className="text-sm text-amber-700 font-semibold mt-2">
                   {isSelectedToday ? "You haven't recorded water today." : "No water logged for this day yet."}
                 </Text>
@@ -344,23 +366,104 @@ export default function WaterIntakeScreen() {
           </Pressable>
         </View>
 
-        <View className="mt-6 bg-white rounded-3xl p-5 pb-6 border border-gray-100">
-          <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">RECENT WATER INTAKE</Text>
-          <Text className="text-xs text-gray-500 mt-1">Grouped by day: entries, then total for that day.</Text>
-          <View className="mt-4 gap-4">
+        <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-10 border border-gray-100">
+          <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">RECENT WATER INTAKE</Text>
+          <Text className="text-xs text-gray-500 mt-1">
+            History includes today and previous days. Filter by day or pick a date.
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="mt-4 -mx-1"
+            contentContainerStyle={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}
+          >
+            <Pressable
+              onPress={() => setRecentViewDay(null)}
+              className={`px-4 py-2.5 rounded-full border ${
+                recentViewDay === null ? "bg-[#76C893] border-[#76C893]" : "bg-white border-gray-200"
+              }`}
+            >
+              <Text
+                className={`font-extrabold text-sm ${recentViewDay === null ? "text-white" : "text-gray-800"}`}
+              >
+                All days
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowRecentDayPicker(true)}
+              className={`flex-row items-center px-4 py-2.5 rounded-full border ${
+                recentViewDay !== null ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
+              }`}
+            >
+              <Ionicons name="calendar-outline" size={18} color={recentViewDay !== null ? "#52B69A" : "#6b7280"} />
+              <Text
+                className={`font-extrabold text-sm ml-1.5 ${recentViewDay !== null ? "text-[#52B69A]" : "text-gray-800"}`}
+              >
+                Pick a day
+              </Text>
+            </Pressable>
+          </ScrollView>
+
+          {recentViewDay ? (
+            <View className="mt-3 flex-row items-center justify-between">
+              <Text className="text-sm text-gray-500 flex-1 pr-2">
+                Showing: <Text className="font-extrabold text-gray-800">{recentFilterLabel}</Text>
+              </Text>
+              <Pressable onPress={() => setRecentViewDay(null)} hitSlop={8}>
+                <Text className="text-sm font-extrabold text-[#52B69A]">Show all</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {showRecentDayPicker && (
+            <View className="mt-3">
+              <DateTimePicker
+                value={recentViewDay ?? new Date()}
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                maximumDate={new Date()}
+                onChange={(event, date) => {
+                  if (Platform.OS !== "ios") setShowRecentDayPicker(false);
+                  if (event.type === "dismissed") return;
+                  if (date) setRecentViewDay(date);
+                }}
+              />
+              {Platform.OS === "ios" ? (
+                <Pressable
+                  onPress={() => setShowRecentDayPicker(false)}
+                  className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center"
+                >
+                  <Text className="font-extrabold text-[#52B69A]">Done</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          )}
+
+          <View className="mt-4 gap-4 pb-2">
             {groupedWater.length === 0 ? (
               <Text className="text-gray-500 text-sm">No water logs yet.</Text>
+            ) : filteredGroupedWater.length === 0 ? (
+              <Text className="text-gray-500 text-sm">
+                No water recorded for this day. Try &quot;All days&quot; or another date.
+              </Text>
             ) : (
-              groupedWater.map((g) => (
-                <View key={g.dateKey} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                  <Text className="text-base font-extrabold text-gray-900">{formatLongDate(g.dayDate)}</Text>
-                  <View className="mt-2 gap-2">
+              filteredGroupedWater.map((g) => (
+                <View
+                  key={g.dateKey}
+                  className="rounded-2xl border-2 border-gray-200 bg-white overflow-hidden shadow-sm shadow-black/10"
+                >
+                  <View className="bg-[#eaf7f0] border-b-2 border-[#b7ead1] px-4 py-3">
+                    <Text className="text-[10px] font-extrabold tracking-[0.2em] text-[#52B69A]">DAY</Text>
+                    <Text className="text-lg font-extrabold text-gray-900 mt-1">{formatLongDate(g.dayDate)}</Text>
+                  </View>
+                  <View className="px-3 py-3 gap-2 bg-[#fafafa]">
                     {g.entries.map((r) => (
                       <View
                         key={r.id}
-                        className="flex-row items-center justify-between bg-[#f3f4f3] rounded-2xl px-4 py-3 border border-gray-200"
+                        className="flex-row items-center justify-between bg-white rounded-xl px-3 py-3 border border-gray-200"
                       >
-                        <Text className="text-sm text-gray-600">{r.createdAt.toLocaleTimeString()}</Text>
+                        <Text className="text-sm text-gray-600 font-semibold">{r.createdAt.toLocaleTimeString()}</Text>
                         <View className="flex-row items-center">
                           <Text className="text-base font-extrabold text-gray-900">
                             +{r.amountMl.toLocaleString()} ml
@@ -369,7 +472,7 @@ export default function WaterIntakeScreen() {
                             onPress={() => beginEditLog(r)}
                             disabled={saving}
                             hitSlop={10}
-                            className="ml-3 w-9 h-9 rounded-full bg-white border border-gray-200 items-center justify-center"
+                            className="ml-3 w-9 h-9 rounded-full bg-[#f3f4f3] border border-gray-200 items-center justify-center"
                           >
                             <Ionicons name="create-outline" size={18} color="#111827" />
                           </Pressable>
@@ -377,7 +480,7 @@ export default function WaterIntakeScreen() {
                             onPress={() => confirmDeleteLog(r)}
                             disabled={saving}
                             hitSlop={10}
-                            className="ml-2 w-9 h-9 rounded-full bg-white border border-gray-200 items-center justify-center"
+                            className="ml-2 w-9 h-9 rounded-full bg-[#fef2f2] border border-red-100 items-center justify-center"
                           >
                             <Ionicons name="trash-outline" size={18} color="#dc2626" />
                           </Pressable>
@@ -385,9 +488,10 @@ export default function WaterIntakeScreen() {
                       </View>
                     ))}
                   </View>
-                  <Text className="text-sm font-extrabold text-[#52B69A] mt-2">
-                    Total: {g.total.toLocaleString()} ml
-                  </Text>
+                  <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
+                    <Text className="text-xs font-extrabold tracking-widest text-gray-500">DAY TOTAL</Text>
+                    <Text className="text-base font-extrabold text-[#52B69A]">{g.total.toLocaleString()} ml</Text>
+                  </View>
                 </View>
               ))
             )}
@@ -397,7 +501,7 @@ export default function WaterIntakeScreen() {
 
       <Modal visible={!!editingLog} transparent animationType="fade" onRequestClose={() => setEditingLog(null)}>
         <Pressable
-          className="flex-1 bg-black/40 justify-center px-5"
+          className="flex-1 bg-black/40 justify-center px-6"
           onPress={() => setEditingLog(null)}
         >
           <Pressable

@@ -1,3 +1,6 @@
+import { Pressable } from "@/components/Pressable";
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
@@ -15,14 +18,21 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
 
 type WeightRow = { weight: number; createdAt: Date };
-type WorkoutRow = { title: string; burnedKcal: number; durationMin: number; createdAt: Date };
+type WorkoutRow = {
+  id: string;
+  title: string;
+  burnedKcal: number;
+  durationMin: number;
+  createdAt: Date;
+  dayKey: string;
+};
 type MealRow = { title: string; calories: number; createdAt: Date };
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -56,6 +66,27 @@ const formatLongDate = (d: Date) => {
   }
 };
 
+/** Clock time with hours, minutes, and seconds (locale-aware). */
+const formatTimeHms = (d: Date) => {
+  try {
+    return d.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return d.toLocaleTimeString();
+  }
+};
+
+/** `durationMin` from logs is treated as minutes (may be fractional) → "M min S sec". */
+const formatDurationMinSec = (durationMin: number) => {
+  const totalSec = Math.max(0, Math.round(Number(durationMin) * 60));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m} min ${s} sec`;
+};
+
 export default function ProgressDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string; period?: string }>();
@@ -76,8 +107,13 @@ export default function ProgressDetailsScreen() {
     initialPeriod === "week" ? Array(7).fill(0) : initialPeriod === "month" ? Array(4).fill(0) : Array(12).fill(0)
   );
   const [windowWeights, setWindowWeights] = useState<{ label: string; date: Date; weight: number }[]>([]);
-  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutRow[]>([]);
+  const [allWorkoutRows, setAllWorkoutRows] = useState<WorkoutRow[]>([]);
+  const [workoutSeries, setWorkoutSeries] = useState<number[]>(() => Array(7).fill(0));
+  const [workoutRecentDay, setWorkoutRecentDay] = useState<Date | null>(null);
+  const [workoutDayPickerOpen, setWorkoutDayPickerOpen] = useState(false);
   const [recentMeals, setRecentMeals] = useState<MealRow[]>([]);
+
+  const calendarTz = useUserCalendarTimezone();
 
   const [logVisible, setLogVisible] = useState(false);
   const [logWeightText, setLogWeightText] = useState("");
@@ -119,17 +155,24 @@ export default function ProgressDetailsScreen() {
       }
 
       if (tab === "workout") {
-        const q = query(collection(db, "users", user.uid, "workoutLogs"), orderBy("createdAt", "desc"), limit(15));
+        const q = query(collection(db, "users", user.uid, "workoutLogs"), orderBy("createdAt", "desc"), limit(600));
         const snap = await getDocs(q);
         const rows = snap.docs
-          .map((d) => d.data() as any)
-          .map((r) => ({
-            title: typeof r.title === "string" ? r.title : "Workout",
-            burnedKcal: typeof r.burnedKcal === "number" ? r.burnedKcal : 0,
-            durationMin: typeof r.durationMin === "number" ? r.durationMin : 0,
-            createdAt: getCreatedAtDate(r.createdAt) ?? new Date(),
-          })) as WorkoutRow[];
-        setRecentWorkouts(rows);
+          .map((d) => {
+            const data = d.data() as any;
+            const createdAt = getCreatedAtDate(data.createdAt) ?? new Date();
+            const burnedKcal = typeof data.burnedKcal === "number" ? data.burnedKcal : 0;
+            return {
+              id: d.id,
+              title: typeof data.title === "string" ? data.title : "Workout",
+              burnedKcal,
+              durationMin: typeof data.durationMin === "number" ? data.durationMin : 0,
+              createdAt,
+              dayKey: formatCalendarDayKey(createdAt, calendarTz),
+            };
+          })
+          .filter((r) => Math.round(r.burnedKcal) > 0) as WorkoutRow[];
+        setAllWorkoutRows(rows);
         return;
       }
 
@@ -146,7 +189,7 @@ export default function ProgressDetailsScreen() {
     };
 
     load();
-  }, [tab, weightRefreshKey]);
+  }, [tab, weightRefreshKey, calendarTz]);
 
   const headerTitle = tab === "weight" ? "Weight Progress" : tab === "workout" ? "Workout Progress" : "Meal Progress";
 
@@ -241,6 +284,87 @@ export default function ProgressDetailsScreen() {
     );
   }, [allWeightRows, anchor, chartLabels, period, tab]);
 
+  useEffect(() => {
+    if (tab !== "workout") return;
+    const rows = allWorkoutRows;
+    if (period === "week") {
+      const weekStart = startOfWeekMon(anchor);
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + i);
+        return d;
+      });
+      const sums = days.map((d) => {
+        const key = formatCalendarDayKey(d, calendarTz);
+        return rows.filter((r) => r.dayKey === key).reduce((s, r) => s + r.burnedKcal, 0);
+      });
+      setWorkoutSeries(sums);
+      return;
+    }
+    if (period === "month") {
+      const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      const buckets = [0, 0, 0, 0];
+      for (const r of rows) {
+        if (r.createdAt < monthStart) continue;
+        if (r.createdAt.getMonth() !== anchor.getMonth() || r.createdAt.getFullYear() !== anchor.getFullYear())
+          continue;
+        const dom = r.createdAt.getDate();
+        const idx = Math.min(3, Math.floor((dom - 1) / 7));
+        buckets[idx] += r.burnedKcal;
+      }
+      setWorkoutSeries(buckets);
+      return;
+    }
+    const year = anchor.getFullYear();
+    const sums = Array.from({ length: 12 }, () => 0);
+    for (const r of rows) {
+      if (r.createdAt.getFullYear() !== year) continue;
+      sums[r.createdAt.getMonth()] += r.burnedKcal;
+    }
+    setWorkoutSeries(sums);
+  }, [allWorkoutRows, anchor, calendarTz, period, tab]);
+
+  const groupedWorkouts = useMemo(() => {
+    const map = new Map<string, WorkoutRow[]>();
+    for (const r of allWorkoutRows) {
+      const list = map.get(r.dayKey);
+      if (list) list.push(r);
+      else map.set(r.dayKey, [r]);
+    }
+    const keys = [...map.keys()]
+      .filter((k): k is string => typeof k === "string" && k.length > 0)
+      .sort((a, b) => b.localeCompare(a));
+    return keys.map((dateKey) => {
+      const entries = [...(map.get(dateKey) ?? [])].sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+      );
+      const total = entries.reduce((s, e) => s + e.burnedKcal, 0);
+      const parts = dateKey.split("-");
+      const yy = parseInt(parts[0] ?? "0", 10);
+      const mm = parseInt(parts[1] ?? "1", 10);
+      const dd = parseInt(parts[2] ?? "1", 10);
+      const dayDate = new Date(yy, mm - 1, dd);
+      return { dateKey, entries, total, dayDate };
+    });
+  }, [allWorkoutRows]);
+
+  const filteredGroupedWorkouts = useMemo(() => {
+    if (!workoutRecentDay) return groupedWorkouts;
+    const k = formatCalendarDayKey(workoutRecentDay, calendarTz);
+    return groupedWorkouts.filter((g) => g.dateKey === k);
+  }, [calendarTz, groupedWorkouts, workoutRecentDay]);
+
+  const workoutRecentFilterLabel = useMemo(() => {
+    if (!workoutRecentDay) return null;
+    return formatLongDate(workoutRecentDay);
+  }, [workoutRecentDay]);
+
+  /** Align bar count with chart period (avoids length mismatch before effects run). */
+  const workoutBarsForChart = useMemo(() => {
+    const len = period === "week" ? 7 : period === "month" ? 4 : 12;
+    return Array.from({ length: len }, (_, i) => workoutSeries[i] ?? 0);
+  }, [workoutSeries, period]);
+
   const goPrev = () => {
     const d = new Date(anchor);
     if (period === "week") d.setDate(d.getDate() - 7);
@@ -320,7 +444,7 @@ export default function ProgressDetailsScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-6 pt-14">
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
           <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
             <Ionicons name="chevron-back" size={24} color="#111827" />
@@ -444,25 +568,208 @@ export default function ProgressDetailsScreen() {
             </View>
           </>
         ) : tab === "workout" ? (
-          <View className="bg-white rounded-3xl p-5 border border-gray-100">
-            <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">RECENT WORKOUTS</Text>
-            <Text className="text-sm text-gray-500 mt-2">This section will auto update every day.</Text>
-            <View className="mt-4 gap-3">
-              {recentWorkouts.length === 0 ? (
-                <Text className="text-gray-500">No workouts yet.</Text>
-              ) : (
-                recentWorkouts.map((w, idx) => (
-                  <View key={`${w.createdAt.getTime()}-${idx}`} className="flex-row items-center justify-between bg-[#f3f4f3] rounded-2xl px-4 py-3 border border-gray-200">
-                    <View className="flex-1 pr-3">
-                      <Text className="text-sm font-bold text-gray-700">{formatLongDate(w.createdAt)}</Text>
-                      <Text className="text-xs text-gray-500 mt-1">{w.title} • {Math.round(w.durationMin)} mins</Text>
-                    </View>
-                    <Text className="text-sm font-extrabold text-gray-900">{Math.round(w.burnedKcal)} kcal</Text>
+          <>
+            <View className="bg-white rounded-3xl p-5 border border-gray-100">
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
+                  <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
+                </View>
+                <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
+                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates daily</Text>
+                </View>
+              </View>
+
+              <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+                {(["week", "month", "year"] as const).map((k) => {
+                  const active = period === k;
+                  return (
+                    <Pressable
+                      key={k}
+                      onPress={() => setPeriod(k)}
+                      className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                    >
+                      <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                        {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View className="mt-4 flex-row items-center">
+                <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                  <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
+                    <Ionicons name="chevron-back" size={18} color="#76C893" />
                   </View>
-                ))
-              )}
+                </Pressable>
+
+                <View className="flex-1 mx-2">
+                  <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
+                    <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                    <View className="flex-1 flex-row items-end px-3 pb-5">
+                      {(() => {
+                        const max = Math.max(...workoutBarsForChart, 1);
+                        const span = max || 1;
+                        return workoutBarsForChart.map((v, idx) => {
+                          const h = 14 + Math.round((v / span) * 130);
+                          return (
+                            <View key={`wk-${idx}`} className="flex-1 items-center">
+                              <View
+                                style={{ height: h, width: 12, borderRadius: 999 }}
+                                className={v === 0 ? "bg-gray-300" : "bg-[#76C893]"}
+                              />
+                            </View>
+                          );
+                        });
+                      })()}
+                    </View>
+                  </View>
+
+                  <View className="flex-row mt-3 px-3">
+                    {chartLabels.map((d, idx) => (
+                      <View key={`${d}-${idx}`} className="flex-1 items-center">
+                        <Text className="text-[10px] text-gray-500 font-bold">{d}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {canGoNext ? (
+                  <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                    <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
+                      <Ionicons name="chevron-forward" size={18} color="#76C893" />
+                    </View>
+                  </Pressable>
+                ) : (
+                  <View className="w-8 h-52" />
+                )}
+              </View>
             </View>
-          </View>
+
+            <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-14 border border-gray-100">
+              <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">RECENT WORKOUTS</Text>
+              <Text className="text-xs text-gray-500 mt-1">
+                History includes today and previous days. Filter by day or pick a date.
+              </Text>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="mt-4 -mx-1"
+                contentContainerStyle={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}
+              >
+                <Pressable
+                  onPress={() => setWorkoutRecentDay(null)}
+                  className={`px-4 py-2.5 rounded-full border ${
+                    workoutRecentDay === null ? "bg-[#76C893] border-[#76C893]" : "bg-white border-gray-200"
+                  }`}
+                >
+                  <Text
+                    className={`font-extrabold text-sm ${workoutRecentDay === null ? "text-white" : "text-gray-800"}`}
+                  >
+                    All days
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setWorkoutDayPickerOpen(true)}
+                  className={`flex-row items-center px-4 py-2.5 rounded-full border ${
+                    workoutRecentDay !== null ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
+                  }`}
+                >
+                  <Ionicons name="calendar-outline" size={18} color={workoutRecentDay !== null ? "#52B69A" : "#6b7280"} />
+                  <Text
+                    className={`font-extrabold text-sm ml-1.5 ${workoutRecentDay !== null ? "text-[#52B69A]" : "text-gray-800"}`}
+                  >
+                    Pick a day
+                  </Text>
+                </Pressable>
+              </ScrollView>
+
+              {workoutRecentDay ? (
+                <View className="mt-3 flex-row items-center justify-between">
+                  <Text className="text-sm text-gray-500 flex-1 pr-2">
+                    Showing: <Text className="font-extrabold text-gray-800">{workoutRecentFilterLabel}</Text>
+                  </Text>
+                  <Pressable onPress={() => setWorkoutRecentDay(null)} hitSlop={8}>
+                    <Text className="text-sm font-extrabold text-[#52B69A]">Show all</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {workoutDayPickerOpen ? (
+                <View className="mt-3">
+                  <DateTimePicker
+                    value={workoutRecentDay ?? new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "inline" : "default"}
+                    maximumDate={new Date()}
+                    onChange={(event, date) => {
+                      if (Platform.OS !== "ios") setWorkoutDayPickerOpen(false);
+                      if (event.type === "dismissed") return;
+                      if (date) setWorkoutRecentDay(date);
+                    }}
+                  />
+                  {Platform.OS === "ios" ? (
+                    <Pressable
+                      onPress={() => setWorkoutDayPickerOpen(false)}
+                      className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center"
+                    >
+                      <Text className="font-extrabold text-[#52B69A]">Done</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <View className="mt-4 gap-4 pb-6">
+                {groupedWorkouts.length === 0 ? (
+                  <Text className="text-gray-500 text-sm">No workouts yet.</Text>
+                ) : filteredGroupedWorkouts.length === 0 ? (
+                  <Text className="text-gray-500 text-sm">
+                    No workouts for this day. Try &quot;All days&quot; or another date.
+                  </Text>
+                ) : (
+                  filteredGroupedWorkouts.map((g) => (
+                    <View
+                      key={g.dateKey}
+                      className="rounded-2xl border-2 border-gray-200 bg-white overflow-hidden shadow-sm shadow-black/10"
+                    >
+                      <View className="bg-[#eaf7f0] border-b-2 border-[#b7ead1] px-4 py-3">
+                        <Text className="text-[10px] font-extrabold tracking-[0.2em] text-[#52B69A]">DAY</Text>
+                        <Text className="text-lg font-extrabold text-gray-900 mt-1">{formatLongDate(g.dayDate)}</Text>
+                      </View>
+                      <View className="px-3 py-3 gap-2 bg-[#fafafa]">
+                        {g.entries.map((w) => (
+                          <View
+                            key={w.id}
+                            className="flex-row items-start justify-between bg-white rounded-xl px-3 py-3 border border-gray-200"
+                          >
+                            <View className="flex-1 pr-3">
+                              <Text className="text-sm text-gray-600 font-semibold">
+                                {formatTimeHms(w.createdAt)}
+                              </Text>
+                              <Text className="text-xs text-gray-500 mt-1" numberOfLines={2}>
+                                {w.title} • {formatDurationMinSec(w.durationMin)}
+                              </Text>
+                            </View>
+                            <Text className="text-base font-extrabold text-gray-900">
+                              {Math.round(w.burnedKcal).toLocaleString()} kcal
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                      <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
+                        <Text className="text-xs font-extrabold tracking-widest text-gray-500">DAY TOTAL</Text>
+                        <Text className="text-base font-extrabold text-[#52B69A]">
+                          {Math.round(g.total).toLocaleString()} kcal
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          </>
         ) : (
           <View className="bg-white rounded-3xl p-5 border border-gray-100">
             <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">RECENT MEALS</Text>

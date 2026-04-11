@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -179,7 +180,7 @@ export default function BmiAnalysis() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20 }}>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
         {/* Header (same style as Contact Us) */}
         <View className="relative mb-6 h-12 justify-center">
           <Text className="text-center text-xl font-extrabold text-gray-900">
@@ -197,7 +198,7 @@ export default function BmiAnalysis() {
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 110 }}
         showsVerticalScrollIndicator={false}
       >
 
@@ -333,7 +334,7 @@ export default function BmiAnalysis() {
       </ScrollView>
 
       <View
-        className="absolute left-0 right-0 bg-[#eef2f1] px-5 pt-3"
+        className="absolute left-0 right-0 bg-[#eef2f1] px-3 pt-3"
         style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
       >
         <Pressable

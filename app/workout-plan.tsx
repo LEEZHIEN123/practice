@@ -1,16 +1,48 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { calcBmi, generateActiveWorkoutPlan, type ActiveWorkoutPlan, type PlanDuration } from "@/lib/workoutPlan";
-import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { plansEqual, sanitizeActiveWorkoutPlan, type WorkoutType } from "@/lib/workoutCatalog";
+import {
+  bmiBandKey,
+  calcBmi,
+  pickOrGenerateWorkoutPlanForBand,
+  type ActiveWorkoutPlan,
+  type PlanDuration,
+  workoutPlansByBmiGoalField,
+} from "@/lib/workoutPlan";
+import {
+  collection,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
+function normalizeWorkoutName(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function isDiscoverWorkoutRecord(data: Record<string, unknown>): boolean {
+  return (data as any)?.origin === "discover";
+}
+
 function durationLabel(d: ActiveWorkoutPlan["duration"]) {
   if (d === "week") return "One Week Plan";
   if (d === "biweekly") return "Biweekly Plan";
   return "Monthly Plan";
+}
+
+/** Suggested-type chips: spell out acronyms in brackets where helpful. */
+function suggestedWorkoutTypeLabel(t: WorkoutType): string {
+  if (t === "HIIT") return "HIIT (High-Intensity Interval Training)";
+  return t;
 }
 
 export default function WorkoutPlanScreen() {
@@ -25,6 +57,68 @@ export default function WorkoutPlanScreen() {
   const [plansByDuration, setPlansByDuration] = useState<Record<string, any> | null>(null);
   const [lastCompletedDay, setLastCompletedDay] = useState<number | null>(null);
   const [lastCompletedAt, setLastCompletedAt] = useState<Date | null>(null);
+  /** Bumps on an interval so “today’s plan day” recomputes after midnight without relying only on Firestore updates. */
+  const [calendarTick, setCalendarTick] = useState(0);
+  /** Plan day 1 + same exercise name as current schedule (any plan version — survives goal/BMI plan swap). */
+  const [day1HitFromLogs, setDay1HitFromLogs] = useState(false);
+  const [day1HitFromSessions, setDay1HitFromSessions] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setCalendarTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !plan?.schedule?.length) {
+      setDay1HitFromLogs(false);
+      setDay1HitFromSessions(false);
+      return;
+    }
+    const day1Row = plan.schedule.find((r) => r.day === 1);
+    if (!day1Row?.workout?.trim()) {
+      setDay1HitFromLogs(false);
+      setDay1HitFromSessions(false);
+      return;
+    }
+    const wn = normalizeWorkoutName(day1Row.workout);
+
+    const qLogs = query(collection(db, "users", user.uid, "workoutLogs"), where("day", "==", 1), limit(80));
+    const qSess = query(collection(db, "users", user.uid, "workoutSessions"), where("day", "==", 1), limit(80));
+
+    const unsubLogs = onSnapshot(qLogs, (snap) => {
+      let hit = false;
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        if (isDiscoverWorkoutRecord(data)) continue;
+        const title = typeof data.title === "string" ? data.title : "";
+        if (normalizeWorkoutName(title) === wn) {
+          hit = true;
+          break;
+        }
+      }
+      setDay1HitFromLogs(hit);
+    });
+    const unsubSess = onSnapshot(qSess, (snap) => {
+      let hit = false;
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        if (isDiscoverWorkoutRecord(data)) continue;
+        if ((data as any).status !== "completed") continue;
+        const w = typeof (data as any).workout === "string" ? (data as any).workout : "";
+        if (normalizeWorkoutName(w) === wn) {
+          hit = true;
+          break;
+        }
+      }
+      setDay1HitFromSessions(hit);
+    });
+
+    return () => {
+      unsubLogs();
+      unsubSess();
+    };
+  }, [plan]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -33,12 +127,26 @@ export default function WorkoutPlanScreen() {
       doc(db, "users", user.uid),
       (snap) => {
         const data = snap.exists() ? (snap.data() as any) : {};
-        setPlan((data?.activeWorkoutPlan as ActiveWorkoutPlan) ?? null);
+        const rawPlan = (data?.activeWorkoutPlan as ActiveWorkoutPlan) ?? null;
+        const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
+        if (rawPlan && fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
+          void updateDoc(doc(db, "users", user.uid), { activeWorkoutPlan: fixedPlan } as any);
+        }
+        setPlan(fixedPlan ?? rawPlan);
         const bmi = calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
         setUserBmi(bmi);
         if (data?.recommendedPlan === "gain" || data?.recommendedPlan === "maintain" || data?.recommendedPlan === "lose")
           setGoal(data.recommendedPlan);
-        setPlansByDuration(data?.workoutPlansByGoal?.[data?.recommendedPlan] ?? null);
+        const rp = data?.recommendedPlan;
+        const bmiSnap = calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
+        let byDur: Record<string, unknown> | null = null;
+        if (rp === "gain" || rp === "maintain" || rp === "lose") {
+          if (bmiSnap != null) {
+            byDur = (data?.workoutPlansByBmiGoal?.[bmiBandKey(bmiSnap)]?.[rp] as Record<string, unknown>) ?? null;
+          }
+          if (!byDur) byDur = (data?.workoutPlansByGoal?.[rp] as Record<string, unknown>) ?? null;
+        }
+        setPlansByDuration(byDur);
         const cur = data?.planDuration;
         if (cur === "week" || cur === "biweekly" || cur === "monthly") setPendingDuration(cur);
         const lcd = Number(data?.activePlanLastCompletedDay);
@@ -60,22 +168,46 @@ export default function WorkoutPlanScreen() {
     return { bmiLine, goalLine };
   }, [goal, userBmi]);
 
+  const hasWorkoutForPlanDay1 = day1HitFromLogs || day1HitFromSessions;
+
   const todayPlanDay = useMemo(() => {
     if (!plan) return null;
     const clampDay = (d: number) => Math.max(1, Math.min(plan.schedule.length, d));
 
-    if (!lastCompletedDay || !lastCompletedAt) return 1;
+    const hasStoredProgress =
+      lastCompletedDay != null &&
+      lastCompletedAt != null &&
+      Number.isFinite(lastCompletedDay) &&
+      lastCompletedDay >= 1;
 
-    const now = new Date();
-    const sameCalendarDay =
-      now.getFullYear() === lastCompletedAt.getFullYear() &&
-      now.getMonth() === lastCompletedAt.getMonth() &&
-      now.getDate() === lastCompletedAt.getDate();
+    /**
+     * Prefer day-1 logs for *this* plan `createdAt`. If the user changed goal (or anything swapped the plan id),
+     * those logs may not match yet, but `activePlanLastCompletedDay` still reflects real progress — use it so
+     * "Today" does not reset to Day 1 when they change goal and change back.
+     */
+    const canUseScheduleProgress = hasWorkoutForPlanDay1 || hasStoredProgress;
 
-    // If user completed today's day today, keep TODAY on that day until tomorrow.
-    if (sameCalendarDay) return clampDay(lastCompletedDay);
-    return clampDay(lastCompletedDay + 1);
-  }, [plan, lastCompletedAt, lastCompletedDay]);
+    if (!canUseScheduleProgress) {
+      return 1;
+    }
+
+    if (lastCompletedDay != null && lastCompletedAt != null) {
+      const now = new Date();
+      const sameCalendarDay =
+        now.getFullYear() === lastCompletedAt.getFullYear() &&
+        now.getMonth() === lastCompletedAt.getMonth() &&
+        now.getDate() === lastCompletedAt.getDate();
+
+      // Same calendar day as last completion → still on that plan day. Next calendar day → advance (e.g. Day 1 done Mon → Tue shows Day 2).
+      if (sameCalendarDay) return clampDay(lastCompletedDay);
+      return clampDay(lastCompletedDay + 1);
+    }
+
+    // Firestore has a day-1 workout log for this exercise but activePlanLastCompleted* missing (e.g. after goal/BMI churn).
+    if (hasWorkoutForPlanDay1) return Math.min(2, plan.schedule.length);
+
+    return 1;
+  }, [plan, lastCompletedAt, lastCompletedDay, calendarTick, hasWorkoutForPlanDay1]);
 
   const saveDuration = async (duration: PlanDuration) => {
     const user = auth.currentUser;
@@ -86,15 +218,17 @@ export default function WorkoutPlanScreen() {
     }
     try {
       setBusy(true);
-      const existing = (plansByDuration as any)?.[duration] ?? null;
-      const next = existing ?? generateActiveWorkoutPlan({ duration, bmi: userBmi, goal });
+      const snap = await getDoc(doc(db, "users", user.uid));
+      const udata = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+      const next = pickOrGenerateWorkoutPlanForBand(udata, userBmi, goal, duration);
+      const band = bmiBandKey(userBmi);
       await updateDoc(doc(db, "users", user.uid), {
         planDuration: duration,
         planDurationChosenAt: serverTimestamp(),
         activeWorkoutPlan: next,
         activePlanLastCompletedDay: null,
         activePlanLastCompletedAt: null,
-        [`workoutPlansByGoal.${goal}.${duration}`]: next,
+        [workoutPlansByBmiGoalField(band, goal, duration)]: next,
       } as any);
       setPickerVisible(false);
     } catch (e) {
@@ -107,7 +241,7 @@ export default function WorkoutPlanScreen() {
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
-      <View style={{ paddingTop: insets.top + 8 }} className="px-6 pb-4 flex-row items-center">
+      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}
@@ -126,7 +260,7 @@ export default function WorkoutPlanScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} className="px-6">
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} className="px-3">
         {!plan ? (
           <View className="bg-white rounded-3xl p-5 border border-gray-100">
             <Text className="text-lg font-extrabold text-gray-900">No plan yet</Text>
@@ -168,7 +302,9 @@ export default function WorkoutPlanScreen() {
                     key={t}
                     className="px-4 py-2.5 rounded-full bg-[#eaf7f0] border border-[#b7ead1]"
                   >
-                    <Text className="text-base font-extrabold text-[#52B69A]">{t}</Text>
+                    <Text className="text-base font-extrabold text-[#52B69A]">
+                      {suggestedWorkoutTypeLabel(t)}
+                    </Text>
                   </View>
                 ))}
               </View>

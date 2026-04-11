@@ -1,11 +1,6 @@
 import React, { useCallback, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -105,7 +100,7 @@ export default function AchievementsScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 36,
-          paddingHorizontal: 24,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
       >

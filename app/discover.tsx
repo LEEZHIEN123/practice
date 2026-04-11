@@ -1,9 +1,29 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { doc, onSnapshot } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { auth, db } from "../firebaseConfig";
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as { profileImage?: string };
+        if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
+        else setProfileImage(null);
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
 
   const goSoon = (title: string) => {
     router.push(`/coming-soon?title=${encodeURIComponent(title)}` as any);
@@ -12,12 +32,22 @@ export default function DiscoverScreen() {
   return (
     <View className="flex-1 bg-[#f3f4f3]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
-        <View className="px-6 pt-10">
+        <View className="px-3 pt-10">
           {/* Header */}
           <View className="flex-row justify-between items-center mb-8">
             <Text className="text-4xl font-extrabold text-gray-900">
               Discover
             </Text>
+            <Pressable
+              onPress={() => router.push("/profile")}
+              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+            >
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
+              ) : (
+                <Ionicons name="person-outline" size={22} color="#76C893" />
+              )}
+            </Pressable>
           </View>
 
           {/* Explore Workouts */}
@@ -25,7 +55,10 @@ export default function DiscoverScreen() {
             Explore Workouts
           </Text>
 
-          <Pressable className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between">
+          <Pressable
+            onPress={() => router.push("/all-workouts" as any)}
+            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between active:opacity-90"
+          >
             <View className="flex-row items-center">
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
                 <MaterialCommunityIcons

@@ -1,8 +1,9 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
     Modal,
@@ -13,9 +14,8 @@ import {
     TextInput,
     View,
 } from "react-native";
-import Constants from "expo-constants";
-import { auth, db } from "../firebaseConfig";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { auth, db } from "../firebaseConfig";
 type ReminderKey = "workout" | "meal" | "water";
 
 type ReminderTime = {
@@ -619,7 +619,7 @@ export default function RemindersScreen() {
         className="flex-1"
         contentContainerStyle={{
           paddingBottom: 32,
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
         showsVerticalScrollIndicator={false}
@@ -766,7 +766,7 @@ export default function RemindersScreen() {
             );
           })}
 
-          <Text className="text-center text-[11px] font-bold text-[#98a2b3] tracking-[1.5px] px-6 mt-2 leading-5">
+          <Text className="text-center text-[11px] font-bold text-[#98a2b3] tracking-[1.5px] px-3 mt-2 leading-5">
             CONFIGURE INDIVIDUAL REMINDERS TO KEEP YOUR ROUTINE BALANCED. TAP THE + ICON TO ADD NEW ALERT TIMES.
           </Text>
         </View>
@@ -776,7 +776,7 @@ export default function RemindersScreen() {
 
       <Modal visible={!!editor} transparent animationType="fade">
         <View className="flex-1 bg-black/35 justify-end">
-          <View className="bg-[#f7f7f7] rounded-t-[38px] px-6 pt-8 pb-10">
+          <View className="bg-[#f7f7f7] rounded-t-[38px] px-3 pt-8 pb-10">
             <Pressable
               onPress={() => {
                 setEditor(null);
@@ -926,6 +926,7 @@ export default function RemindersScreen() {
             <Pressable
               onPress={saveModalReminder}
               className="bg-[#76C893] rounded-[24px] py-5 items-center shadow-sm"
+              style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
             >
               <Text className="text-white text-[20px] font-extrabold">
                 Save Reminder

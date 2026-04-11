@@ -2,7 +2,13 @@ import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
 } from "@/lib/deleteUserAccount";
-import { calcBmi, generateActiveWorkoutPlan, type PlanDuration } from "@/lib/workoutPlan";
+import {
+  bmiBandKey,
+  calcBmi,
+  pickOrGenerateWorkoutPlanForBand,
+  type PlanDuration,
+  workoutPlansByBmiGoalField,
+} from "@/lib/workoutPlan";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
@@ -123,27 +129,19 @@ export default function ProfileScreen() {
                 recommendedPlan: newKey,
               };
 
-              const duration = data?.planDuration as PlanDuration | undefined;
               const weight = Number(data?.weight ?? 0);
               const height = Number(data?.height ?? 0);
               const bmi = calcBmi(weight, height);
 
-              // If the user already had a plan for this goal, restore it (stable plan when switching back).
               const desiredDuration = data?.planDuration as PlanDuration | undefined;
-              const existingPlan =
-                desiredDuration && data?.workoutPlansByGoal?.[newKey]?.[desiredDuration]
-                  ? data.workoutPlansByGoal[newKey][desiredDuration]
-                  : null;
 
-              if (existingPlan) {
-                updates.activeWorkoutPlan = existingPlan;
-                updates.planDuration = existingPlan.duration;
-              } else if (duration && bmi) {
-                const plan = generateActiveWorkoutPlan({ duration, bmi, goal: newKey });
-                updates.planDuration = duration;
+              if (desiredDuration && bmi) {
+                const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, newKey, desiredDuration);
+                const band = bmiBandKey(bmi);
+                updates.planDuration = plan.duration;
                 updates.planDurationChosenAt = serverTimestamp();
                 updates.activeWorkoutPlan = plan;
-                updates[`workoutPlansByGoal.${newKey}.${duration}`] = plan;
+                updates[workoutPlansByBmiGoalField(band, newKey, plan.duration)] = plan;
               }
 
               await updateDoc(userRef, updates);
@@ -162,13 +160,23 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      router.replace("/login");
-    } catch (error) {
-      console.log("Logout failed:", error);
-    }
+  const handleLogout = () => {
+    Alert.alert("Log out?", "You will need to sign in again to use your account.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            router.replace("/login");
+          } catch (error) {
+            console.log("Logout failed:", error);
+            Alert.alert("Error", "Could not log out. Please try again.");
+          }
+        },
+      },
+    ]);
   };
 
   const closeDeleteModal = () => {
@@ -239,7 +247,7 @@ export default function ProfileScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingBottom: 120,
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
       >
@@ -374,7 +382,7 @@ export default function ProfileScreen() {
         onRequestClose={() => !savingGoal && setGoalModalVisible(false)}
       >
         <Pressable
-          className="flex-1 bg-black/50 justify-center px-5"
+          className="flex-1 bg-black/50 justify-center px-6"
           onPress={() => !savingGoal && setGoalModalVisible(false)}
         >
           <Pressable
@@ -470,7 +478,7 @@ export default function ProfileScreen() {
           className="flex-1"
         >
           <Pressable
-            className="flex-1 bg-black/50 justify-center px-5"
+            className="flex-1 bg-black/50 justify-center px-6"
             onPress={() => !deleteBusy && closeDeleteModal()}
           >
             <Pressable

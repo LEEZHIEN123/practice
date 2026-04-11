@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Image, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
@@ -177,7 +178,7 @@ export default function ProfileDetails() {
         className="flex-1"
         contentContainerStyle={{
           paddingBottom: bottomPad,
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
         keyboardShouldPersistTaps="handled"
@@ -201,7 +202,7 @@ export default function ProfileDetails() {
       <Text className="text-center text-3xl font-extrabold text-gray-900 mt-2">
         Tell us about yourself
       </Text>
-      <Text className="text-center text-gray-500 mt-3 text-base px-6">
+      <Text className="text-center text-gray-500 mt-3 text-base px-3">
         This helps us personalize your fitness{"\n"}journey and track progress accurately.
       </Text>
 

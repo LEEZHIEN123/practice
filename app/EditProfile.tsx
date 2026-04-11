@@ -3,12 +3,12 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
   Image,
   Alert,
   ScrollView,
   Modal,
 } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -381,7 +381,7 @@ export default function EditProfile() {
         className="flex-1 bg-[#eef2f1]"
         contentContainerStyle={{
           paddingBottom: insets.bottom + 84,
-          paddingHorizontal: 20,
+          paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
         showsVerticalScrollIndicator={false}
@@ -723,7 +723,7 @@ export default function EditProfile() {
       </ScrollView>
 
       <View
-        className="absolute left-0 right-0 bg-[#eef2f1] px-5 pt-3"
+        className="absolute left-0 right-0 bg-[#eef2f1] px-3 pt-3"
         style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
       >
         <Pressable
@@ -741,7 +741,7 @@ export default function EditProfile() {
 
       <Modal visible={editorVisible} animationType="slide" transparent={false}>
         <View className="flex-1 bg-black">
-          <View className="flex-row items-center justify-between px-5 pt-14 pb-4">
+          <View className="flex-row items-center justify-between px-3 pt-14 pb-4">
             <Pressable onPress={cancelEditor}>
               <Ionicons name="arrow-back" size={26} color="white" />
             </Pressable>
@@ -767,7 +767,7 @@ export default function EditProfile() {
             )}
           </View>
 
-          <View className="px-5 pb-10 pt-4 bg-[#111827] rounded-t-3xl">
+          <View className="px-3 pb-10 pt-4 bg-[#111827] rounded-t-3xl">
             <Text className="text-center text-gray-300 mb-5">
               {processingPhoto ? "Processing..." : "Photo tools"}
             </Text>

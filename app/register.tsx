@@ -3,12 +3,12 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
 } from "react-native";
+import { Pressable } from "@/components/Pressable";
 import { useState } from "react";
 import { useRouter } from "expo-router";
 import { useRegistration } from "../context/registrationContext";
@@ -65,7 +65,7 @@ export default function Register() {
       className="flex-1 bg-[#eef2f1]"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View className="flex-1 justify-center px-6">
+      <View className="flex-1 justify-center px-3">
          <View className="items-center mb-6">
                 <View className="w-28 h-28 bg-white rounded-full items-center justify-center shadow-lg">
                   <Ionicons name="person" size={50} color="#76C893" />
