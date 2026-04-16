@@ -52,3 +52,13 @@ export function localDateFromYmd(dayKey: string): Date {
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return new Date();
   return new Date(y, m - 1, d);
 }
+
+/** Whole calendar days from `earlierYmd` to `laterYmd` (YYYY-MM-DD, UTC date parts). */
+export function diffCalendarDays(earlierYmd: string, laterYmd: string): number {
+  const [y1, m1, d1] = earlierYmd.split("-").map((x) => parseInt(x, 10));
+  const [y2, m2, d2] = laterYmd.split("-").map((x) => parseInt(x, 10));
+  if (![y1, m1, d1, y2, m2, d2].every((n) => Number.isFinite(n))) return 0;
+  const t1 = Date.UTC(y1, m1 - 1, d1);
+  const t2 = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((t2 - t1) / 86400000);
+}

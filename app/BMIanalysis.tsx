@@ -1,9 +1,9 @@
+import { Pressable } from "@/components/Pressable";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -179,7 +179,7 @@ export default function BmiAnalysis() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <View className="flex-1 bg-[#f4fcf7]">
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
         {/* Header (same style as Contact Us) */}
         <View className="relative mb-6 h-12 justify-center">
@@ -262,7 +262,7 @@ export default function BmiAnalysis() {
               { key: "under", label: "UNDER", range: "< 18.5", color: "text-sky-600" },
               { key: "normal", label: "NORMAL", range: "18.5 – 24.9", color: "text-emerald-700" },
               { key: "over", label: "OVER", range: "25.0 – 29.9", color: "text-amber-700" },
-              { key: "obese", label: "OBESE", range: "> 30.0", color: "text-red-600" },
+              { key: "obese", label: "OBESE", range: ">= 30.0", color: "text-red-600" },
             ] as const
           ).map((row, idx) => {
             const active = bmiCategoryIdx === idx;
@@ -334,7 +334,7 @@ export default function BmiAnalysis() {
       </ScrollView>
 
       <View
-        className="absolute left-0 right-0 bg-[#eef2f1] px-3 pt-3"
+        className="absolute left-0 right-0 bg-[#f4fcf7] px-3 pt-3"
         style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
       >
         <Pressable

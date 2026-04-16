@@ -9,9 +9,9 @@ import {
   bmiBandKey,
   calcBmi,
   pickOrGenerateWorkoutPlanForBand,
+  workoutPlansByBmiGoalField,
   type ActiveWorkoutPlan,
   type PlanDuration,
-  workoutPlansByBmiGoalField,
 } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,21 +29,23 @@ function HomeSectionHeading({
   icon,
   tintClass,
   iconColor,
+  labelTextClassName,
 }: {
   label: string;
   icon: IoniconName;
   tintClass: string;
   iconColor: string;
+  labelTextClassName?: string;
 }) {
   return (
-    <View className="mt-6 flex-row items-center">
+    <View className="mt-4 flex-row items-center">
       <View
         className={`w-11 h-11 rounded-2xl items-center justify-center border border-white shadow-sm shadow-black/10 ${tintClass}`}
       >
         <Ionicons name={icon} size={21} color={iconColor} />
       </View>
       <View className="flex-1 ml-3">
-        <Text className="text-lg font-extrabold text-gray-900 tracking-[0.06em] mt-0.5">
+        <Text className={`${labelTextClassName ?? "text-lg"} font-extrabold text-gray-900 tracking-[0.06em] mt-0.5`}>
           {label}
         </Text>
       </View>
@@ -293,8 +295,8 @@ export default function HomeScreen() {
     return rounded.toLocaleString();
   };
 
-  /** Over budget: show |remaining| in center, label "Over". Donut uses orange (food) + green (exercise). */
-  const caloriesOverBudget = Boolean(intakeTarget && remainingCalories < 0);
+  /** Over budget (or exactly at/over): show |remaining| in center, label "Over". */
+  const caloriesOverBudget = Boolean(intakeTarget && remainingCalories <= 0);
   const caloriesCenterDisplay = !intakeTarget
     ? "—"
     : formatKcal(caloriesOverBudget ? Math.abs(remainingCalories) : remainingCalories);
@@ -395,19 +397,27 @@ export default function HomeScreen() {
           </View>
 
           {/* Calories: donut (orange food, green exercise) + Goal/Food/Exercise row + calculation */}
-          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100 shadow-sm shadow-black/5">
-            <Text className="text-2xl font-extrabold text-gray-900">Today Calorie</Text>
+          <View className="relative mt-4 bg-white rounded-3xl p-4 border border-gray-100 shadow-sm shadow-black/5">
+            <Text className="text-xl font-extrabold text-gray-900">Today Calorie</Text>
+
+            {caloriesOverBudget ? (
+              <View className="absolute top-3 right-3 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
+                <Text className="text-[10px] font-extrabold text-red-600">Over</Text>
+              </View>
+            ) : null}
 
             <View className="flex-row items-start mt-4">
-              <View className="relative w-[120px] h-[120px] items-center justify-center shrink-0">
-                <CaloriesDonut goal={intakeTarget} food={consumed} exercise={burned} size={120} strokeWidth={10} />
-                <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
-                  <Text className="text-3xl font-extrabold text-gray-900">{caloriesCenterDisplay}</Text>
-                  <Text className="text-sm text-gray-900 font-medium mt-0.5">{caloriesCenterLabel}</Text>
+              <View className="items-center shrink-0">
+                <View className="relative w-[120px] h-[120px] items-center justify-center">
+                  <CaloriesDonut goal={intakeTarget} food={consumed} exercise={burned} size={120} strokeWidth={10} />
+                  <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
+                    <Text className="text-3xl font-extrabold text-gray-900">{caloriesCenterDisplay}</Text>
+                    <Text className="text-sm text-gray-900 font-medium mt-0.5">{caloriesCenterLabel}</Text>
+                  </View>
                 </View>
               </View>
 
-              <View className="flex-1 ml-3 min-w-0">
+              <View className="flex-1 min-w-0">
                 <View className="flex-row justify-between">
                   <View className="flex-1 items-center px-0.5">
                     <Ionicons name="flag-outline" size={20} color="#9ca3af" />
@@ -433,12 +443,24 @@ export default function HomeScreen() {
                 </View>
 
                 <View className="mt-3 pt-3 border-t border-gray-100">
-                  <Text className="text-xs text-gray-500 leading-5">Remaining = Goal − Food + Exercise</Text>
-                  <Text className="text-sm text-gray-800 font-semibold mt-1 leading-5">
+                  <Text className="text-xs ml-4 text-gray-500 leading-5">Remaining = Goal − Food + Exercise</Text>
+                  <Text className="text-sm ml-4 text-gray-800 font-semibold mt-1 leading-5">
                     {intakeTarget
                       ? `${formatKcal(intakeTarget)} − ${formatKcal(consumed)} + ${formatKcal(burned)} = ${formatKcal(remainingCalories)} kcal`
                       : "—"}
                   </Text>
+
+                  {intakeTarget ? (
+                    caloriesOverBudget ? (
+                      <Text className="text-xs text-red-600 font-semibold mt-2 leading-5">
+                        You exceeded your daily calorie allowance.
+                      </Text>
+                    ) : (
+                      <Text className="text-xs text-emerald-700 font-semibold mt-2 ml-4 leading-5">
+                        You have {formatKcal(remainingCalories)} kcal remaining. You need to eat enough calories to achieve your goal.
+                      </Text>
+                    )
+                  ) : null}
                 </View>
               </View>
             </View>
@@ -450,6 +472,7 @@ export default function HomeScreen() {
             icon="flash-outline"
             tintClass="bg-[#eaf7f0]"
             iconColor="#52B69A"
+            labelTextClassName="text-base"
           />
           <ImageBackground
             source={require("../assets/images/Workout Plan.png")}
@@ -478,7 +501,7 @@ export default function HomeScreen() {
                   className="py-3.5 rounded-full items-center"
                 >
                   <Text className="text-white font-bold text-base">
-                    View Full Plan
+                    View Workout Plan
                   </Text>
                 </LinearGradient>
               </Pressable>
@@ -487,28 +510,44 @@ export default function HomeScreen() {
 
           {/* Meal Suggestions */}
           <HomeSectionHeading
-            label="MEAL SUGGESTIONS"
+            label="PERSONALISED NUTRITION GUIDANCE"
             icon="nutrition-outline"
             tintClass="bg-[#fff4e6]"
             iconColor="#c2410c"
+            labelTextClassName="text-base"
           />
-          <Pressable
-            onPress={() => router.push("/coming-soon?title=Meal%20Suggestions" as any)}
-            className="mt-2 bg-white rounded-3xl p-5 border border-gray-100 active:bg-gray-50 shadow-sm shadow-black/5"
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center flex-1 pr-3">
-                <View className="w-14 h-14 rounded-2xl bg-[#fff4e6] items-center justify-center">
+          <View className="mt-2 rounded-3xl overflow-hidden border border-[#fed7aa] shadow-sm shadow-black/5 bg-[#fff7ed]">
+            <View className="p-5">
+              <View className="flex-row items-center">
+                <View className="w-14 h-14 rounded-2xl bg-white items-center justify-center">
                   <Ionicons name="restaurant" size={26} color="#c2410c" />
                 </View>
                 <View className="ml-4 flex-1">
-                  <Text className="text-xl font-extrabold text-gray-900">Meal Suggestions</Text>
-                  <Text className="text-sm text-gray-500 mt-1">Coming soon</Text>
+                  <Text className="text-lg font-extrabold text-gray-900">Personalised Nutrition Guidance</Text>
+                  <Text className="text-sm text-gray-700 mt-1">
+                    Explore your personalised meal ideas and daily recipe suggestions.
+                  </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+
+              <View className="mt-5">
+                <Pressable
+                  className="rounded-full overflow-hidden"
+                  style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
+                  onPress={() => router.push("/meal-plan" as any)}
+                >
+                  <LinearGradient
+                    colors={["#f59e0b", "#f97316"]}
+                    className="py-3.5 rounded-full items-center"
+                  >
+                    <Text className="text-white font-bold text-base">
+                      View Nutrition Guidance
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
             </View>
-          </Pressable>
+          </View>
 
         </View>
       </ScrollView>
@@ -519,7 +558,7 @@ export default function HomeScreen() {
           <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
             <Text className="text-2xl font-extrabold text-gray-900">Choose your plan</Text>
             <Text className="text-gray-500 mt-2 leading-6">
-              Select a duration and we&apos;ll generate workouts based on your BMI and goal.
+              Select a duration and we weill generate a personalised workout plan for you.
             </Text>
 
             <View className="mt-5 gap-3">
@@ -529,7 +568,7 @@ export default function HomeScreen() {
                 className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
               >
                 <Text className="text-xl font-extrabold text-gray-900">One Week Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">7 days · auto-suggested workout types</Text>
+                <Text className="text-sm text-gray-500 mt-1">7 days · Short Term Schedule</Text>
               </Pressable>
 
               <Pressable
@@ -538,7 +577,7 @@ export default function HomeScreen() {
                 className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
               >
                 <Text className="text-xl font-extrabold text-gray-900">Biweekly Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">14 days · balanced rotation</Text>
+                <Text className="text-sm text-gray-500 mt-1">14 days · Medium Term Schedule</Text>
               </Pressable>
 
               <Pressable
@@ -547,7 +586,7 @@ export default function HomeScreen() {
                 className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
               >
                 <Text className="text-xl font-extrabold text-gray-900">Monthly Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">30 days · longer schedule</Text>
+                <Text className="text-sm text-gray-500 mt-1">30 days · Long Term Schedule</Text>
               </Pressable>
             </View>
 

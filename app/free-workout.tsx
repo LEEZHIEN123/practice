@@ -1,43 +1,43 @@
+import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
-  calcExerciseKcal,
-  getWorkoutDetail,
-  getWorkoutMet,
-  isCatalogWorkout,
-  type WorkoutType,
+    calcExerciseKcal,
+    getWorkoutDetail,
+    getWorkoutMet,
+    isCatalogWorkout,
+    type WorkoutType,
 } from "@/lib/workoutCatalog";
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
-import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
-import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import {
-  Timestamp,
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  increment,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
+    Timestamp,
+    addDoc,
+    collection,
+    doc,
+    getDoc,
+    increment,
+    limit,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    Modal,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";

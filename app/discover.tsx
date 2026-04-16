@@ -25,10 +25,6 @@ export default function DiscoverScreen() {
     return () => unsub();
   }, []);
 
-  const goSoon = (title: string) => {
-    router.push(`/coming-soon?title=${encodeURIComponent(title)}` as any);
-  };
-
   return (
     <View className="flex-1 bg-[#f3f4f3]">
       <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
@@ -82,7 +78,7 @@ export default function DiscoverScreen() {
           </Text>
 
           <Pressable
-            onPress={() => goSoon("All Nutrition")}
+            onPress={() => router.push("/all-nutrition" as any)}
             className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
           >
             <View className="flex-row items-center">
@@ -127,7 +123,7 @@ export default function DiscoverScreen() {
 
           <View className="flex-row justify-between">
             <Pressable
-              onPress={() => goSoon("Community")}
+              onPress={() => router.push("/community" as any)}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
@@ -143,7 +139,7 @@ export default function DiscoverScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => goSoon("AI Coach")}
+              onPress={() => router.push("/ai-coach" as any)}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
               <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">

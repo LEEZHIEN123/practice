@@ -1,4 +1,6 @@
+import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
   calcExerciseKcal,
   getWorkoutDetail,
@@ -6,12 +8,10 @@ import {
   plansEqual,
   sanitizeActiveWorkoutPlan,
 } from "@/lib/workoutCatalog";
-import { bmiBandKey, calcBmi, durationDays, generateActiveWorkoutPlan, workoutPlansByBmiGoalField } from "@/lib/workoutPlan";
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
-import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
-import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
-import { Image } from "expo-image";
+import { bmiBandKey, calcBmi, durationDays, generateActiveWorkoutPlan, workoutPlansByBmiGoalField } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
@@ -30,7 +30,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -234,10 +234,12 @@ function mapSessionDoc(
  * Heavy UI + tab state lives here so tab presses do not re-run expo-router hooks
  * (which can throw “Couldn't find a navigation context” when nested with React 19).
  */
-function DayWorkoutBody({ dayNum }: { dayNum: number }) {
+function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMaxDay: number }) {
   const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+
+  const canStartThisDay = dayNum <= unlockedMaxDay;
 
   const [plan, setPlan] = useState<ActiveWorkoutPlan | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -435,6 +437,7 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
   const startWorkoutInternal = async () => {
     const user = auth.currentUser;
     if (!user || !row) return;
+    if (!canStartThisDay) return;
 
     if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
 
@@ -469,6 +472,7 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
 
   const beginStart = () => {
     if (running) return;
+    if (!canStartThisDay) return;
     // if timer already started, treat as start
     setStartChoiceVisible(true);
   };
@@ -799,10 +803,16 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
           }
         }
       } else {
-        await updateDoc(userRef, {
-          activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
-          activePlanLastCompletedAt: serverTimestamp(),
-        } as any);
+        const uSnap = await getDoc(userRef);
+        const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
+        const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
+        const repeatDay1AfterProgress = Math.floor(dayNum) === 1 && prevOk;
+        if (!repeatDay1AfterProgress) {
+          await updateDoc(userRef, {
+            activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
+            activePlanLastCompletedAt: serverTimestamp(),
+          } as any);
+        }
       }
     } catch (e) {
       console.log("Failed to advance plan day:", e);
@@ -844,7 +854,7 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
           <Ionicons name="chevron-back" size={24} color="#111827" />
         </Pressable>
         <View className="flex-1">
-          <Text className="text-3xl font-extrabold text-gray-900">Day {dayNum} workout</Text>
+          <Text className="text-3xl font-extrabold text-gray-900">Day {dayNum} Workout</Text>
         </View>
       </View>
 
@@ -965,7 +975,9 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
       >
         <View className="flex-row items-center justify-between">
           <Pressable
+          disabled={!canStartThisDay && !running && !canResume}
             onPress={() => {
+            if (!canStartThisDay && !running && !canResume) return;
               if (!running) {
                 if (canResume) {
                   // Resume after "Stop"
@@ -987,7 +999,13 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
               }
               void pauseWorkout().then(() => setPauseMenuVisible(true));
             }}
-            className={`flex-1 py-3.5 rounded-full active:opacity-90 ${running ? "bg-red-600" : "bg-[#76C893]"}`}
+          className={`flex-1 py-3.5 rounded-full ${
+            !canStartThisDay && !running && !canResume
+              ? "bg-gray-300"
+              : running
+                ? "bg-red-600"
+                : "bg-[#76C893]"
+          } ${!canStartThisDay && !running && !canResume ? "" : "active:opacity-90"}`}
           >
             <Text className="text-white font-extrabold text-lg text-center">
               {running ? "Pause" : canResume ? "Resume" : "Start Workout"}
@@ -1015,6 +1033,7 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
             <View className="mt-5 gap-3">
               <Pressable
                 onPress={() => {
+                  if (!canStartThisDay) return;
                   setMode("countup");
                   setTargetSeconds(null);
                   modeRef.current = "countup";
@@ -1024,6 +1043,7 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
                   setStartChoiceVisible(false);
                   void startWithCountdown();
                 }}
+                disabled={!canStartThisDay}
                 className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
               >
                 <Text className="text-xl font-extrabold text-gray-900">Start from 0</Text>
@@ -1031,9 +1051,11 @@ function DayWorkoutBody({ dayNum }: { dayNum: number }) {
 
               <Pressable
                 onPress={() => {
+                  if (!canStartThisDay) return;
                   setStartChoiceVisible(false);
                   setTimerPickerVisible(true);
                 }}
+                disabled={!canStartThisDay}
                 className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
               >
                 <Text className="text-xl font-extrabold text-gray-900">Set a timer</Text>
@@ -1358,7 +1380,11 @@ function dayFromRouteParam(raw: string | string[] | undefined): number {
  * between days with router.push; the linking URL often stays stale and always showed day 1.
  */
 export default function DayWorkoutScreen() {
-  const params = useLocalSearchParams<{ day?: string | string[] }>();
+  const params = useLocalSearchParams<{ day?: string | string[]; unlockedMaxDay?: string | string[] }>();
   const dayNum = useMemo(() => dayFromRouteParam(params.day), [params.day]);
-  return <DayWorkoutBody dayNum={dayNum} />;
+  const unlockedMaxDay = useMemo(() => {
+    if (params.unlockedMaxDay == null) return dayNum;
+    return dayFromRouteParam(params.unlockedMaxDay);
+  }, [params.unlockedMaxDay, dayNum]);
+  return <DayWorkoutBody dayNum={dayNum} unlockedMaxDay={unlockedMaxDay} />;
 }

@@ -173,7 +173,7 @@ export default function ProfileDetails() {
   const bottomPad = Math.max(insets.bottom, 16) + 24;
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <View className="flex-1 bg-[#f4fcf7]">
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -187,9 +187,15 @@ export default function ProfileDetails() {
       {/* Header (same style as Contact Us) */}
       <View className="relative mb-6 h-12 justify-center">
         <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
+          onPress={() => {
+            try {
+              router.back();
+            } catch {
+              router.replace("/register");
+            }
+          }}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          className="absolute left-0 top-0 h-16 w-24 justify-center pl-2"
         >
           <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
             <Ionicons name="arrow-back" size={24} color="#111827" />

@@ -33,6 +33,17 @@ function isDiscoverWorkoutRecord(data: Record<string, unknown>): boolean {
   return (data as any)?.origin === "discover";
 }
 
+function toDateLike(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const maybe = (value as any)?.toDate?.();
+  if (maybe instanceof Date && !Number.isNaN(maybe.getTime())) return maybe;
+  return null;
+}
+
+function startOfCalendarDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 function durationLabel(d: ActiveWorkoutPlan["duration"]) {
   if (d === "week") return "One Week Plan";
   if (d === "biweekly") return "Biweekly Plan";
@@ -62,6 +73,9 @@ export default function WorkoutPlanScreen() {
   /** Plan day 1 + same exercise name as current schedule (any plan version — survives goal/BMI plan swap). */
   const [day1HitFromLogs, setDay1HitFromLogs] = useState(false);
   const [day1HitFromSessions, setDay1HitFromSessions] = useState(false);
+  /** Earliest completion day for Day 1 (used as stable anchor for "Today"). */
+  const [day1EarliestAtFromLogs, setDay1EarliestAtFromLogs] = useState<Date | null>(null);
+  const [day1EarliestAtFromSessions, setDay1EarliestAtFromSessions] = useState<Date | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setCalendarTick((n) => n + 1), 60_000);
@@ -73,12 +87,16 @@ export default function WorkoutPlanScreen() {
     if (!user || !plan?.schedule?.length) {
       setDay1HitFromLogs(false);
       setDay1HitFromSessions(false);
+      setDay1EarliestAtFromLogs(null);
+      setDay1EarliestAtFromSessions(null);
       return;
     }
     const day1Row = plan.schedule.find((r) => r.day === 1);
     if (!day1Row?.workout?.trim()) {
       setDay1HitFromLogs(false);
       setDay1HitFromSessions(false);
+      setDay1EarliestAtFromLogs(null);
+      setDay1EarliestAtFromSessions(null);
       return;
     }
     const wn = normalizeWorkoutName(day1Row.workout);
@@ -88,19 +106,27 @@ export default function WorkoutPlanScreen() {
 
     const unsubLogs = onSnapshot(qLogs, (snap) => {
       let hit = false;
+      let earliest: Date | null = null;
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         if (isDiscoverWorkoutRecord(data)) continue;
         const title = typeof data.title === "string" ? data.title : "";
         if (normalizeWorkoutName(title) === wn) {
           hit = true;
-          break;
+          const when =
+            toDateLike((data as any).createdAt) ??
+            toDateLike((data as any).endedAt) ??
+            toDateLike((data as any).startedAt) ??
+            toDateLike((data as any).updatedAt);
+          if (when && (!earliest || when.getTime() < earliest.getTime())) earliest = when;
         }
       }
       setDay1HitFromLogs(hit);
+      setDay1EarliestAtFromLogs(earliest);
     });
     const unsubSess = onSnapshot(qSess, (snap) => {
       let hit = false;
+      let earliest: Date | null = null;
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         if (isDiscoverWorkoutRecord(data)) continue;
@@ -108,10 +134,16 @@ export default function WorkoutPlanScreen() {
         const w = typeof (data as any).workout === "string" ? (data as any).workout : "";
         if (normalizeWorkoutName(w) === wn) {
           hit = true;
-          break;
+          const when =
+            toDateLike((data as any).completedAt) ??
+            toDateLike((data as any).endedAt) ??
+            toDateLike((data as any).startedAt) ??
+            toDateLike((data as any).updatedAt);
+          if (when && (!earliest || when.getTime() < earliest.getTime())) earliest = when;
         }
       }
       setDay1HitFromSessions(hit);
+      setDay1EarliestAtFromSessions(earliest);
     });
 
     return () => {
@@ -169,6 +201,13 @@ export default function WorkoutPlanScreen() {
   }, [goal, userBmi]);
 
   const hasWorkoutForPlanDay1 = day1HitFromLogs || day1HitFromSessions;
+  const earliestDay1CompletionAt = useMemo(() => {
+    const candidates = [day1EarliestAtFromLogs, day1EarliestAtFromSessions].filter(
+      (d): d is Date => d instanceof Date
+    );
+    if (!candidates.length) return null;
+    return candidates.reduce((min, cur) => (cur.getTime() < min.getTime() ? cur : min));
+  }, [day1EarliestAtFromLogs, day1EarliestAtFromSessions]);
 
   const todayPlanDay = useMemo(() => {
     if (!plan) return null;
@@ -191,6 +230,13 @@ export default function WorkoutPlanScreen() {
       return 1;
     }
 
+    if (earliestDay1CompletionAt) {
+      const todayStart = startOfCalendarDay(new Date());
+      const day1Start = startOfCalendarDay(earliestDay1CompletionAt);
+      const elapsedDays = Math.floor((todayStart.getTime() - day1Start.getTime()) / (24 * 60 * 60 * 1000));
+      return clampDay(Math.max(1, elapsedDays + 1));
+    }
+
     if (lastCompletedDay != null && lastCompletedAt != null) {
       const now = new Date();
       const sameCalendarDay =
@@ -207,7 +253,9 @@ export default function WorkoutPlanScreen() {
     if (hasWorkoutForPlanDay1) return Math.min(2, plan.schedule.length);
 
     return 1;
-  }, [plan, lastCompletedAt, lastCompletedDay, calendarTick, hasWorkoutForPlanDay1]);
+  }, [plan, lastCompletedAt, lastCompletedDay, calendarTick, hasWorkoutForPlanDay1, earliestDay1CompletionAt]);
+
+  const unlockedMaxDay = todayPlanDay ?? 1;
 
   const saveDuration = async (duration: PlanDuration) => {
     const user = auth.currentUser;
@@ -312,43 +360,87 @@ export default function WorkoutPlanScreen() {
 
             <Text className="text-2xl font-extrabold text-gray-900 mt-6 mb-3">Schedule</Text>
             <View className="gap-3">
-              {plan.schedule.map((row) => (
-                <View
-                  key={row.day}
-                  className={`bg-white rounded-3xl p-5 border ${
-                    todayPlanDay === row.day ? "border-red-300" : "border-gray-100"
-                  }`}
-                >
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <Text
-                        className={`text-lg font-extrabold ${
-                          todayPlanDay === row.day ? "text-red-600" : "text-gray-900"
-                        }`}
-                      >
-                        Day {row.day}
-                      </Text>
-                      {todayPlanDay === row.day ? (
-                        <View className="ml-2 px-2 py-1 rounded-full bg-red-50 border border-red-200">
-                          <Text className="text-[10px] font-extrabold text-red-600">TODAY</Text>
+              {plan.schedule.map((row) => {
+                const isLocked = row.day > unlockedMaxDay;
+                const cardClass = `bg-white rounded-3xl p-5 border ${
+                  todayPlanDay === row.day ? "border-red-300" : "border-gray-100"
+                }`;
+                const navToDay = () =>
+                  router.push(
+                    `/day-workout?day=${row.day}&unlockedMaxDay=${unlockedMaxDay}` as any
+                  );
+
+                if (isLocked) {
+                  return (
+                    <Pressable key={row.day} onPress={navToDay} className={cardClass}>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center">
+                          <Text
+                            className={`text-lg font-extrabold ${
+                              todayPlanDay === row.day ? "text-red-600" : "text-gray-900"
+                            }`}
+                          >
+                            Day {row.day}
+                          </Text>
+                          {todayPlanDay === row.day ? (
+                            <View className="ml-2 px-2 py-1 rounded-full bg-red-50 border border-red-200">
+                              <Text className="text-[10px] font-extrabold text-red-600">
+                                TODAY
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
-                      ) : null}
-                    </View>
-                    <Text className="text-sm font-extrabold text-[#52B69A]">{row.type}</Text>
-                  </View>
+                        <Text className="text-sm font-extrabold text-[#52B69A]">{row.type}</Text>
+                      </View>
 
-                  <View className="flex-row items-center justify-between mt-3">
-                    <Text className="text-gray-700 flex-1 pr-3">{row.workout}</Text>
-                    <Pressable
-                      onPress={() => router.push(`/day-workout?day=${row.day}` as any)}
-                      className="px-4 py-2 rounded-full bg-[#1e3a8a] active:opacity-90"
-                    >
-                      <Text className="text-white font-extrabold">Start</Text>
+                      <View className="flex-row items-center justify-between mt-3">
+                        <Text className="text-gray-700 flex-1 pr-3">{row.workout}</Text>
+                        <Pressable
+                        onPress={(e) => {
+                          // Prevent tap from bubbling to the outer locked-card Pressable.
+                          e.stopPropagation();
+                        }}
+                          className="px-4 py-2 rounded-full bg-gray-300 active:opacity-100"
+                        >
+                          <Text className="text-white font-extrabold">Start</Text>
+                        </Pressable>
+                      </View>
                     </Pressable>
-                  </View>
+                  );
+                }
 
-                </View>
-              ))}
+                return (
+                  <View
+                    key={row.day}
+                    className={cardClass}
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-row items-center">
+                        <Text
+                          className={`text-lg font-extrabold ${
+                            todayPlanDay === row.day ? "text-red-600" : "text-gray-900"
+                          }`}
+                        >
+                          Day {row.day}
+                        </Text>
+                        {todayPlanDay === row.day ? (
+                          <View className="ml-2 px-2 py-1 rounded-full bg-red-50 border border-red-200">
+                            <Text className="text-[10px] font-extrabold text-red-600">TODAY</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text className="text-sm font-extrabold text-[#52B69A]">{row.type}</Text>
+                    </View>
+
+                    <View className="flex-row items-center justify-between mt-3">
+                      <Text className="text-gray-700 flex-1 pr-3">{row.workout}</Text>
+                      <Pressable onPress={navToDay} className="px-4 py-2 rounded-full bg-[#1e3a8a] active:opacity-90">
+                        <Text className="text-white font-extrabold">Start</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </>
         )}

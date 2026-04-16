@@ -9,6 +9,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -103,6 +104,7 @@ export default function ProgressDetailsScreen() {
   const [weightRefreshKey, setWeightRefreshKey] = useState(0);
 
   const [allWeightRows, setAllWeightRows] = useState<WeightRow[]>([]);
+  const [currentWeightKg, setCurrentWeightKg] = useState<number>(0);
   const [weightSeries, setWeightSeries] = useState<number[]>(
     initialPeriod === "week" ? Array(7).fill(0) : initialPeriod === "month" ? Array(4).fill(0) : Array(12).fill(0)
   );
@@ -120,6 +122,7 @@ export default function ProgressDetailsScreen() {
   const [savingLog, setSavingLog] = useState(false);
   const [logDate, setLogDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const sanitizeDecimal = (t: string) => {
     const cleaned = t.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
@@ -136,6 +139,14 @@ export default function ProgressDetailsScreen() {
       if (!user) return;
 
       if (tab === "weight") {
+        const profileSnap = await getDoc(doc(db, "users", user.uid));
+        const profileData = profileSnap.exists() ? (profileSnap.data() as any) : {};
+        setCurrentWeightKg(
+          typeof profileData?.weight === "number" && Number.isFinite(profileData.weight)
+            ? profileData.weight
+            : 0
+        );
+
         const q = query(
           collection(db, "users", user.uid, "weightLogs"),
           orderBy("createdAt", "desc"),
@@ -195,9 +206,20 @@ export default function ProgressDetailsScreen() {
 
   const chartLabels = useMemo(() => {
     if (period === "week") return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    if (period === "month") return ["W1", "W2", "W3", "W4"];
+    if (period === "month") {
+      const y = anchor.getFullYear();
+      const m = anchor.getMonth();
+      const monthLastDay = new Date(y, m + 1, 0).getDate();
+      const ranges: [number, number][] = [
+        [1, Math.min(7, monthLastDay)],
+        [8, Math.min(14, monthLastDay)],
+        [15, Math.min(21, monthLastDay)],
+        [22, monthLastDay],
+      ];
+      return ranges.map(([s, e], i) => `W${i + 1} ${s}-${e}`);
+    }
     return ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
-  }, [period]);
+  }, [anchor, period]);
 
   const title = useMemo(() => {
     if (period === "week") {
@@ -209,6 +231,21 @@ export default function ProgressDetailsScreen() {
     if (period === "month") return `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, "0")}`;
     return String(anchor.getFullYear());
   }, [anchor, period]);
+
+  const periodWeightDeltaKg = useMemo(() => {
+    if (tab !== "weight" || !weightSeries.length) return 0;
+    const firstIdx = weightSeries.findIndex((v) => v > 0);
+    if (firstIdx === -1) return 0;
+    let lastIdx = -1;
+    for (let i = weightSeries.length - 1; i >= 0; i--) {
+      if (weightSeries[i] > 0) {
+        lastIdx = i;
+        break;
+      }
+    }
+    if (lastIdx === -1 || lastIdx === firstIdx) return 0;
+    return weightSeries[lastIdx] - weightSeries[firstIdx];
+  }, [tab, weightSeries]);
 
   useEffect(() => {
     if (tab !== "weight") return;
@@ -242,21 +279,30 @@ export default function ProgressDetailsScreen() {
 
     if (period === "month") {
       const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-      const buckets = [0, 0, 0, 0];
-      const counts = [0, 0, 0, 0];
+      const latestByWeek = new Map<number, { weight: number; createdAt: Date }>();
       for (const r of rows) {
         if (r.createdAt < monthStart) continue;
         if (r.createdAt.getMonth() !== anchor.getMonth() || r.createdAt.getFullYear() !== anchor.getFullYear()) continue;
         const dom = r.createdAt.getDate();
         const idx = Math.min(3, Math.floor((dom - 1) / 7));
-        buckets[idx] += r.weight;
-        counts[idx] += 1;
+        const prev = latestByWeek.get(idx);
+        if (!prev || r.createdAt.getTime() > prev.createdAt.getTime()) {
+          latestByWeek.set(idx, { weight: r.weight, createdAt: r.createdAt });
+        }
       }
-      const series = buckets.map((sum, i) => (counts[i] ? sum / counts[i] : 0));
+      const series = [0, 0, 0, 0].map((_, i) => latestByWeek.get(i)?.weight ?? 0);
       setWeightSeries(series);
+      const monthLastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+      const ranges: [number, number][] = [
+        [1, Math.min(7, monthLastDay)],
+        [8, Math.min(14, monthLastDay)],
+        [15, Math.min(21, monthLastDay)],
+        [22, monthLastDay],
+      ];
+      const fmtDmy = (day: number) => `${day}/${anchor.getMonth() + 1}/${anchor.getFullYear()}`;
       setWindowWeights(
         series.map((w, idx) => ({
-          label: `W${idx + 1}`,
+          label: `Week ${idx + 1} (${fmtDmy(ranges[idx][0])}-${fmtDmy(ranges[idx][1])})`,
           date: monthStart,
           weight: w,
         }))
@@ -277,7 +323,7 @@ export default function ProgressDetailsScreen() {
     setWeightSeries(series);
     setWindowWeights(
       series.map((w, idx) => ({
-        label: chartLabels[idx],
+        label: new Date(year, idx, 1).toLocaleDateString(undefined, { month: "long" }),
         date: new Date(year, idx, 1),
         weight: w,
       }))
@@ -398,9 +444,29 @@ export default function ProgressDetailsScreen() {
     return anchor.getFullYear() < now.getFullYear();
   }, [anchor, period]);
 
+  const weightBarTooltip = useMemo(() => {
+    if (tab !== "weight") return "";
+    if (hoverIdx == null) return "";
+    if (period === "week") {
+      const ws = startOfWeekMon(anchor);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + hoverIdx);
+      const v = weightSeries[hoverIdx] ?? 0;
+      const shortDate = d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      });
+      return `${shortDate}: ${v ? `${v.toFixed(1)} kg` : "—"}`;
+    }
+    const label = chartLabels[hoverIdx] ?? "";
+    const v = weightSeries[hoverIdx] ?? 0;
+    return `${label}: ${v ? `${v.toFixed(1)} kg` : "—"}`;
+  }, [anchor, chartLabels, hoverIdx, period, tab, weightSeries]);
+
   const openLogWeight = () => {
-    const base = windowWeights.find((w) => sameDayKey(w.date) === sameDayKey(new Date()))?.weight;
-    setLogWeightText(base && Number.isFinite(base) ? base.toFixed(1) : "");
+    const base = currentWeightKg > 0 ? currentWeightKg : 0;
+    setLogWeightText(base ? base.toFixed(1) : "");
     setLogDate(new Date());
     setLogVisible(true);
   };
@@ -459,7 +525,22 @@ export default function ProgressDetailsScreen() {
               <View className="flex-row items-center justify-between">
                 <View>
                   <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
-                  <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
+                  <View className="flex-row items-center mt-2">
+                    <Text className="text-lg font-extrabold text-gray-900">{title}</Text>
+                    <View
+                      className={`ml-2 px-2 py-1 rounded-full ${
+                        periodWeightDeltaKg < 0 ? "bg-red-50" : "bg-[#eaf7f0]"
+                      }`}
+                    >
+                      <Text
+                        className={`text-xs font-bold ${
+                          periodWeightDeltaKg < 0 ? "text-red-600" : "text-[#52B69A]"
+                        }`}
+                      >
+                        {`${periodWeightDeltaKg >= 0 ? "+" : ""}${periodWeightDeltaKg.toFixed(1)} kg`}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
                 <Pressable onPress={openLogWeight} className="px-4 py-2 rounded-full bg-[#76C893]">
                   <Text className="text-white font-extrabold">Log weight</Text>
@@ -495,6 +576,13 @@ export default function ProgressDetailsScreen() {
                 <View className="flex-1 mx-2">
                   <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
                     <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                    {weightBarTooltip ? (
+                      <View className="absolute top-2 left-2 right-2 items-center">
+                        <View className="px-3 py-1.5 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
+                          <Text className="text-[11px] font-bold text-[#2f855a]">{weightBarTooltip}</Text>
+                        </View>
+                      </View>
+                    ) : null}
                     <View className="flex-1 flex-row items-end px-3 pb-5">
                       {(() => {
                         const min = Math.min(...weightSeries);
@@ -503,12 +591,23 @@ export default function ProgressDetailsScreen() {
                         return weightSeries.map((v, idx) => {
                           const h = 14 + Math.round(((v - min) / span) * 130);
                           return (
-                            <View key={`wb-${idx}`} className="flex-1 items-center">
+                            <Pressable
+                              key={`wb-${idx}`}
+                              onPress={() => setHoverIdx((prev) => (prev === idx ? null : idx))}
+                              className="flex-1 items-center"
+                              hitSlop={10}
+                            >
                               <View
                                 style={{ height: h, width: 12, borderRadius: 999 }}
-                                className={v === 0 ? "bg-gray-300" : "bg-[#76C893]"}
+                                className={
+                                  idx === hoverIdx
+                                    ? "bg-[#2f855a]"
+                                    : v === 0
+                                      ? "bg-gray-300"
+                                      : "bg-[#76C893]"
+                                }
                               />
-                            </View>
+                            </Pressable>
                           );
                         });
                       })()}

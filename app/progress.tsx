@@ -531,7 +531,24 @@ export default function ProgressScreen() {
           setTodayLoggedWeight(null);
           const zeros = period === "week" ? 7 : period === "month" ? 4 : 12;
           setLatestLoggedWeight(0);
-          setWeightSeries(Array.from({ length: zeros }, () => 0));
+          if (weightKg > 0) {
+            const fallback = Array.from({ length: zeros }, () => 0);
+            if (period === "week") {
+              const weekStart = startOfWeekMon(new Date());
+              const idx = Math.floor((startOfDay(new Date()).getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+              if (idx >= 0 && idx < fallback.length) fallback[idx] = weightKg;
+            } else if (period === "month") {
+              const dayOfMonth = new Date().getDate();
+              const weekIdx = Math.min(3, Math.floor((dayOfMonth - 1) / 7));
+              fallback[weekIdx] = weightKg;
+            } else {
+              const monthIdx = new Date().getMonth();
+              fallback[monthIdx] = weightKg;
+            }
+            setWeightSeries(fallback);
+          } else {
+            setWeightSeries(Array.from({ length: zeros }, () => 0));
+          }
           return;
         }
 
@@ -555,6 +572,9 @@ export default function ProgressScreen() {
             const key = sameDayKey(r.createdAt);
             if (!latestByDay.has(key)) latestByDay.set(key, r.weight);
           }
+          if (!todayRow && weightKg > 0) {
+            latestByDay.set(todayKey, weightKg);
+          }
           setWeightSeries(keys.map((k) => latestByDay.get(k) ?? 0));
           return;
         }
@@ -573,6 +593,12 @@ export default function ProgressScreen() {
             buckets[weekIdx] += r.weight;
             counts[weekIdx] += 1;
           }
+          if (!todayRow && weightKg > 0) {
+            const dayOfMonth = now.getDate();
+            const weekIdx = Math.min(3, Math.floor((dayOfMonth - 1) / 7));
+            buckets[weekIdx] += weightKg;
+            counts[weekIdx] += 1;
+          }
           setWeightSeries(buckets.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
           return;
         }
@@ -587,6 +613,11 @@ export default function ProgressScreen() {
           sums[m] += r.weight;
           counts[m] += 1;
         }
+        if (!todayRow && weightKg > 0) {
+          const m = now.getMonth();
+          sums[m] += weightKg;
+          counts[m] += 1;
+        }
         setWeightSeries(sums.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
       } catch (e) {
         console.log("Failed to load weight series:", e);
@@ -599,7 +630,7 @@ export default function ProgressScreen() {
     };
 
     loadWeightSeries();
-  }, [period, tab, weightRefreshKey]);
+  }, [period, tab, weightRefreshKey, weightKg]);
 
   useEffect(() => {
     const loadWorkoutSeries = async () => {
@@ -747,30 +778,41 @@ export default function ProgressScreen() {
   }, [tab]);
 
   const metricValue = useMemo(() => {
-    const percentDelta = (series: number[]) => {
+    const currentBucketIndex = () => {
+      const now = new Date();
+      if (period === "week") {
+        return Math.min(6, Math.max(0, now.getDay() === 0 ? 6 : now.getDay() - 1));
+      }
+      if (period === "month") {
+        return Math.min(3, Math.floor((now.getDate() - 1) / 7));
+      }
+      return now.getMonth();
+    };
+
+    const kgDelta = (series: number[]) => {
       if (!series.length) return 0;
-      const firstIdx = series.findIndex((v) => v > 0);
-      let lastIdx = -1;
-      for (let i = series.length - 1; i >= 0; i--) {
+      const todayIdx = Math.min(series.length - 1, Math.max(0, currentBucketIndex()));
+      const firstIdx = series.findIndex((v, i) => i <= todayIdx && v > 0);
+      let compareIdx = -1;
+      for (let i = todayIdx; i >= 0; i--) {
         if (series[i] > 0) {
-          lastIdx = i;
+          compareIdx = i;
           break;
         }
       }
-      if (firstIdx === -1 || lastIdx === -1 || lastIdx === firstIdx) return 0;
+      if (firstIdx === -1 || compareIdx === -1 || compareIdx === firstIdx) return 0;
       const first = series[firstIdx];
-      const last = series[lastIdx];
-      if (!first) return 0;
-      return ((last - first) / first) * 100;
+      const last = series[compareIdx];
+      return last - first;
     };
-    const pct = tab === "weight" ? percentDelta(weightSeries) : 0;
+    const kg = tab === "weight" ? kgDelta(weightSeries) : 0;
 
     if (tab === "weight")
       return {
         main: effectiveWeightKg ? `${effectiveWeightKg.toFixed(1)} kg` : "0.0 kg",
         delta: hasWeightLogs
-          ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`
-          : "0.0%",
+          ? `${kg >= 0 ? "+" : ""}${kg.toFixed(1)} kg`
+          : "0.0 kg",
       };
     if (tab === "workout")
       return {
@@ -781,7 +823,7 @@ export default function ProgressScreen() {
       main: `${Math.round(consumedToday).toLocaleString()} kcal`,
       delta: `${consumedToday - consumedYesterday >= 0 ? "+" : ""}${Math.round(consumedToday - consumedYesterday).toLocaleString()}`,
     };
-  }, [burnedToday, burnedYesterday, consumedToday, consumedYesterday, tab, effectiveWeightKg, hasWeightLogs, weightSeries]);
+  }, [burnedToday, burnedYesterday, consumedToday, consumedYesterday, period, tab, effectiveWeightKg, hasWeightLogs, weightSeries]);
 
   const chartLabels = useMemo(() => {
     if (period === "week") return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -976,8 +1018,16 @@ export default function ProgressScreen() {
                 <Text className="text-3xl font-extrabold text-gray-900 shrink">
                   {metricValue.main}
                 </Text>
-                <View className="ml-3 px-2 py-1 rounded-full bg-[#eaf7f0] mb-1">
-                  <Text className="text-xs font-bold text-[#52B69A]">
+                <View
+                  className={`ml-3 px-2 py-1 rounded-full mb-1 ${
+                    metricValue.delta.trim().startsWith("-") ? "bg-red-50" : "bg-[#eaf7f0]"
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-bold ${
+                      metricValue.delta.trim().startsWith("-") ? "text-red-600" : "text-[#52B69A]"
+                    }`}
+                  >
                     {metricValue.delta}
                   </Text>
                 </View>

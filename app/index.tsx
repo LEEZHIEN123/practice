@@ -1,14 +1,14 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Pressable } from "@/components/Pressable";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Text } from "react-native";
-import { Pressable } from "@/components/Pressable";
+import { ActivityIndicator, Image, Text, View } from "react-native";
 import { auth } from "../firebaseConfig";
 
 export default function Home() {
   const router = useRouter();
+  const pathname = usePathname();
   const [checkingSession, setCheckingSession] = useState(true);
 
   const handleGetStarted = () => {
@@ -17,19 +17,19 @@ export default function Home() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
+      if (user && pathname === "/") {
         router.replace("/home");
         return;
       }
       setCheckingSession(false);
     });
     return unsub;
-  }, [router]);
+  }, [router, pathname]);
 
   if (checkingSession) {
     return (
       <LinearGradient
-        colors={["#f7fdf9", "#e6f4ee"]}
+        colors={["#f4fcf7", "#e3f6eb"]}
         className="flex-1 items-center justify-center px-3"
       >
         <ActivityIndicator size="large" color="#76C893" />
@@ -40,37 +40,28 @@ export default function Home() {
 
   return (
     <LinearGradient
-      colors={["#f7fdf9", "#e6f4ee"]}
+      colors={["#f4fcf7", "#e3f6eb"]}
       className="flex-1 items-center justify-center px-3"
     >
-      {/* Image */}
-      <Image
-        source={require("../assets/images/download.jpg")}
-        className="w-72 h-72 mb-8"
-        resizeMode="contain"
-      />
-
-      {/* Title */}
-      <Text className="text-4xl font-bold text-green-500 text-center mb-4">
-        Ready To Glow?
-      </Text>
-
-      {/* Subtitle */}
-      <Text className="text-lg text-gray-500 text-center mb-10">
-        Track your journey to achieve your fitness goal.
-      </Text>
-
-      {/* Custom Rounded Button */}
-      <Pressable
-        onPress={handleGetStarted}
-        className="px-20 bg-green-300 py-5 rounded-full items-center shadow-lg flex-row justify-center"
-      >
-        <Text className="text-green-700 text-xl font-semibold mr-2">
-          Get Started
+      <View className="w-full max-w-md items-center">
+        <Image
+          source={require("../assets/images/fitness logo.jpg")}
+          className="w-40 h-40 mb-6 rounded-2xl"
+          resizeMode="contain"
+        />
+        <Text className="text-3xl font-extrabold text-green-700 text-center leading-10">
+          Personalised Workout and Nutrition Guidance System
+        </Text>
+        <Text className="text-base text-gray-600 text-center mt-4 mb-10">
+          Track your journey to achieve your fitness goals.
         </Text>
 
-        <Ionicons name="arrow-forward" size={22} color="#15803d" />
-      </Pressable>
+        <Pressable onPress={handleGetStarted} className="rounded-full overflow-hidden">
+          <LinearGradient colors={["#76C893", "#52B69A"]} className="px-12 py-4 items-center rounded-2xl">
+            <Text className="text-white text-lg font-semibold">Get Started</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
     </LinearGradient>
   );
 }

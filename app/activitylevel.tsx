@@ -134,15 +134,15 @@ export default function ActivityLevel() {
 
   return (
     <View
-      className="flex-1 bg-[#eef2f1]"
+      className="flex-1 bg-[#f4fcf7]"
       style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}
     >
       {/* Header (same style as Contact Us) */}
       <View className="relative mb-6 h-12 justify-center">
         <Pressable
           onPress={() => router.back()}
-          hitSlop={12}
-          className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          className="absolute left-0 top-0 h-16 w-24 justify-center pl-2"
         >
           <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
             <Ionicons name="arrow-back" size={24} color="#111827" />
@@ -229,7 +229,7 @@ export default function ActivityLevel() {
           >
             <View className="flex-row items-center">
               <Text className="text-white text-lg font-semibold mr-2">
-                {saving ? "Saving..." : "Continue"}
+                {saving ? "Analysis.." : "Continue"}
               </Text>
               <Ionicons name="arrow-forward" size={20} color="white" />
             </View>

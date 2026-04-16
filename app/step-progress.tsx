@@ -1,12 +1,12 @@
+import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { formatCalendarDayKey } from "@/lib/calendarDay";
-import { getPedometerOrNull } from "@/lib/pedometerSafe";
-import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -391,6 +391,39 @@ export default function StepProgressScreen() {
         },
         { merge: true }
       );
+
+      // Make the UI update immediately after saving (without waiting for a refetch).
+      const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+      if (dayKey === todayKey) {
+        // Prevent the "today bar" patching effect from overwriting the manual value.
+        setTodayManualOverride(parsed);
+        setLiveTodayAuto(editDayAuto);
+      }
+
+      if (period === "week") {
+        const ws = startOfWeekMon(anchor);
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const idx = Math.floor((startOfDay(editModalDate).getTime() - startOfDay(ws).getTime()) / msPerDay);
+        if (idx >= 0 && idx <= 6) {
+          setStepSeries((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            next[idx] = parsed;
+            return next;
+          });
+          setWindowRows((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            const row = next[idx];
+            if (row) next[idx] = { ...row, steps: parsed };
+            return next;
+          });
+        }
+      } else {
+        // Month/year uses bucket sums; easiest safe way is refresh.
+        setSeriesRefresh((n) => n + 1);
+      }
+
       setEditOpen(false);
     } catch (e) {
       console.log("Failed to save steps:", e);
@@ -411,6 +444,37 @@ export default function StepProgressScreen() {
         { stepsManual: deleteField() },
         { merge: true }
       );
+
+      // Immediate UI update (manual removed -> revert to auto).
+      const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+      if (dayKey === todayKey) {
+        setTodayManualOverride(null);
+        setLiveTodayAuto(editDayAuto);
+      }
+
+      if (period === "week") {
+        const ws = startOfWeekMon(anchor);
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const idx = Math.floor((startOfDay(editModalDate).getTime() - startOfDay(ws).getTime()) / msPerDay);
+        if (idx >= 0 && idx <= 6) {
+          setStepSeries((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            next[idx] = editDayAuto;
+            return next;
+          });
+          setWindowRows((prev) => {
+            if (!prev.length) return prev;
+            const next = [...prev];
+            const row = next[idx];
+            if (row) next[idx] = { ...row, steps: editDayAuto };
+            return next;
+          });
+        }
+      } else {
+        setSeriesRefresh((n) => n + 1);
+      }
+
       setEditOpen(false);
     } catch (e) {
       console.log("Failed to reset steps:", e);

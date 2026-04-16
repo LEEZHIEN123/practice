@@ -1,24 +1,24 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Image,
-  Alert,
-  ScrollView,
-  Modal,
-} from "react-native";
 import { Pressable } from "@/components/Pressable";
-import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
+import { ImageEditor } from "expo-dynamic-image-crop";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { useEffect, useMemo, useState } from "react";
+import {
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db, storage } from "../firebaseConfig";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
-import { ImageEditor } from "expo-dynamic-image-crop";
 
 type ActivityKey =
   | "sedentary"
@@ -481,12 +481,18 @@ export default function EditProfile() {
           </View>
         </View>
 
-        <Text className="text-lg text-gray-700 mb-2">Bio</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-lg text-gray-700">Bio</Text>
+          <Text className="text-sm text-gray-500 font-semibold">
+            {Math.min(userBio.length, 200)}/200
+          </Text>
+        </View>
         <TextInput
           value={userBio}
-          onChangeText={setUserBio}
+          onChangeText={(t) => setUserBio(t.slice(0, 200))}
+          maxLength={200}
           className="bg-white rounded-xl px-4 py-3 mb-6 text-gray-700 min-h-[110px]"
-          placeholder="Write a short bio"
+          placeholder="Write your bio here"
           multiline
           textAlignVertical="top"
         />

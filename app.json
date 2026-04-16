@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "practice",
-    "slug": "practice",
+    "name": "Fitness App",
+    "slug": "Personalised Workout and Nutrition Guidance System",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/fitness logo.jpg",
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
     "infoPlist": {

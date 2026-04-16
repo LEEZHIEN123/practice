@@ -154,7 +154,8 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
         const { sound } = await Audio.Sound.createAsync(
           { uri: track.streamUrl },
           { shouldPlay: true, progressUpdateIntervalMillis: 250 },
-          onStatus
+          onStatus,
+          false
         );
         if (playReqRef.current !== reqId) {
           sound.unloadAsync().catch(() => {});

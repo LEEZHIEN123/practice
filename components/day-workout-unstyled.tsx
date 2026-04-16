@@ -102,8 +102,8 @@ export function WorkoutRecordPanel(props: {
     typeof subtitleOverride === "string" && subtitleOverride.length > 0
       ? subtitleOverride
       : embedded && typeof planDayNum === "number"
-        ? `Same per-workout kcal as Home (dailyStats). Only Day ${planDayNum} of your plan and this exercise — not other days or workouts.`
-        : "Same per-workout kcal as Home (dailyStats). Only this plan day and this workout.";
+        ? `Workout record for Day ${planDayNum} of your plan.`
+        : "Workout record for your completed workouts.";
 
   if (dayRecords.length === 0) {
     return React.createElement(

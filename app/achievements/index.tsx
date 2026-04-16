@@ -1,17 +1,17 @@
-import React, { useCallback, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { Pressable } from "@/components/Pressable";
-import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "@/firebaseConfig";
 import {
-  type AchievementCategory,
-  type AchievementFilter,
-  type AchievementRowModel,
-  type AchievementSectionModel,
-  loadAndSyncAchievements,
+    type AchievementCategory,
+    type AchievementFilter,
+    type AchievementRowModel,
+    type AchievementSectionModel,
+    loadAndSyncAchievements,
 } from "@/lib/achievements";
+import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const SECTION_META: Record<
   AchievementCategory,
@@ -94,6 +94,12 @@ export default function AchievementsScreen() {
 
   const visibleSections =
     sections?.filter((s) => filter === "all" || s.category === filter) ?? [];
+  const allRows = visibleSections.flatMap((s) => s.rows);
+  const activeAllSections = (sections ?? []).filter((s) => !s.comingSoon);
+  const completedVisible = activeAllSections.reduce((sum, s) => sum + s.completedCount, 0);
+  const totalVisible = activeAllSections.reduce((sum, s) => sum + s.totalCount, 0);
+  const progressPct =
+    totalVisible > 0 ? Math.round((completedVisible / totalVisible) * 100) : 0;
 
   return (
     <View className="flex-1 bg-[#eef2f1]">
@@ -104,17 +110,35 @@ export default function AchievementsScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <Pressable
-          onPress={() => router.back()}
-          className="w-12 h-12 rounded-full bg-white items-center justify-center mb-5"
-        >
-          <Ionicons name="chevron-back" size={28} color="#1f2937" />
-        </Pressable>
-
-        <Text className="text-3xl font-extrabold text-gray-900">Achievements</Text>
-        <Text className="text-base text-gray-500 mt-2 leading-6">
-          Progress is saved to your account and updates as you use the app.
-        </Text>
+        <View className="flex-row items-center mb-5">
+          <Pressable
+            onPress={() => router.back()}
+            className="w-12 h-12 rounded-full bg-white items-center justify-center mr-3"
+          >
+            <Ionicons name="chevron-back" size={28} color="#1f2937" />
+          </Pressable>
+          <Text className="text-3xl font-extrabold text-gray-900">Achievements</Text>
+        </View>
+        <View className="mt-3 bg-white border border-gray-200 rounded-2xl px-4 py-3.5">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-sm text-gray-500">Progress</Text>
+              <Text className="text-2xl font-extrabold text-gray-900 mt-0.5">{progressPct}%</Text>
+            </View>
+            <View className="items-end">
+              <Text className="text-sm text-gray-500">Done</Text>
+              <Text className="text-lg font-extrabold text-[#52B69A] mr-4">
+                {completedVisible}/{totalVisible}
+              </Text>
+            </View>
+          </View>
+          <View className="w-full h-2 rounded-full bg-gray-100 mt-3 overflow-hidden">
+            <View
+              className="h-2 rounded-full bg-[#76C893]"
+              style={{ width: `${Math.max(0, Math.min(progressPct, 100))}%` }}
+            />
+          </View>
+        </View>
 
         <ScrollView
           horizontal
@@ -175,6 +199,28 @@ export default function AchievementsScreen() {
               <Text className="text-base font-bold text-gray-800">Retry</Text>
             </Pressable>
           </View>
+        ) : filter === "all" ? (
+          <View className="mt-8 gap-3">
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center flex-1">
+                <View className="w-14 h-14 rounded-2xl items-center justify-center bg-[#eaf7f0]">
+                  <Ionicons name="trophy-outline" size={26} color="#52B69A" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-2xl font-extrabold text-gray-900">All Categories</Text>
+                  <Text className="text-base text-gray-500 mt-1">
+                    All of the achievements
+                  </Text>
+                </View>
+              </View>
+              <Text className="text-sm mr-4 font-bold text-[#76C893]">
+                {completedVisible} / {totalVisible}
+              </Text>
+            </View>
+            {allRows.map((row) => (
+              <AchievementRow key={row.id} row={row} />
+            ))}
+          </View>
         ) : (
           <View className="mt-8 gap-10">
             {visibleSections.map((section) => (
@@ -210,16 +256,21 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
             <Text className="text-sm font-bold text-gray-600">Coming soon</Text>
           </View>
         </View>
-        <View className="bg-white rounded-2xl px-5 py-8 border border-gray-200 items-center">
-          <Ionicons name="hourglass-outline" size={36} color="#9ca3af" />
-          <Text className="text-lg font-extrabold text-gray-800 mt-4 text-center">
-            Coming soon
-          </Text>
-          <Text className="text-base text-gray-500 mt-2 text-center leading-6">
-            {section.category === "meal"
-              ? "Meal achievements will track logging, goals, and nutrition milestones."
-              : "Community achievements will track challenges, sharing, and social goals."}
-          </Text>
+        <View className="gap-3">
+          {comingSoonRows(section.category).map((row) => (
+            <View key={row.title} className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-gray-200">
+              <View className={`w-10 h-10 rounded-xl items-center justify-center ${row.bgClass}`}>
+                <Ionicons name={row.icon} size={20} color={row.iconColor} />
+              </View>
+              <View className="ml-3 flex-1">
+                <Text className="text-base font-semibold text-gray-800">{row.title}</Text>
+                <Text className="text-sm text-gray-500 mt-0.5">{row.label}</Text>
+              </View>
+              <View className="px-2.5 py-1 rounded-full bg-gray-100">
+                <Text className="text-xs font-bold text-gray-500">SOON</Text>
+              </View>
+            </View>
+          ))}
         </View>
       </View>
     );
@@ -239,7 +290,7 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
             <Text className="text-base text-gray-500 mt-1">{meta.subtitle}</Text>
           </View>
         </View>
-        <Text className="text-sm font-bold text-[#76C893]">{summary}</Text>
+        <Text className="text-sm font-bold text-[#76C893] mr-4">{summary}</Text>
       </View>
       <View className="gap-3">
         {section.rows.map((row) => (
@@ -250,22 +301,73 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
   );
 }
 
+function comingSoonRows(category: AchievementCategory) {
+  if (category === "meal") {
+    return [
+      { title: "Meal Starter", label: "Log your first meal entry", icon: "restaurant-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Breakfast Builder", label: "Complete 5 breakfast logs", icon: "cafe-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Lunch Tracker", label: "Log 5 lunch meals", icon: "fast-food-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Dinner Planner", label: "Log 5 dinner meals", icon: "restaurant-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Healthy Balance", label: "Reach your balanced meal target", icon: "leaf-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Macro Watch", label: "Review your nutrition summary", icon: "stats-chart-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Nutrition Master", label: "Stay consistent across meal plans", icon: "medal-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+    ] as const;
+  }
+  return [
+    { title: "Welcome In", label: "Join your first community room", icon: "people-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "First Chat", label: "Send your first message", icon: "chatbubble-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Helpful Reply", label: "Reply to a community post", icon: "send-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Challenge Joiner", label: "Join a weekly challenge", icon: "trophy-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Supportive Member", label: "React to 10 messages", icon: "heart-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Active Voice", label: "Participate for 7 days", icon: "megaphone-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Community Champion", label: "Complete all social milestones", icon: "ribbon-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+  ] as const;
+}
+
+function achievementLogo(
+  id: string
+): { name: keyof typeof Ionicons.glyphMap; bgClass: string; color: string } {
+  const map: Record<string, { name: keyof typeof Ionicons.glyphMap; bgClass: string; color: string }> = {
+    wo_profile: { name: "person-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_goal: { name: "flag-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_plan_generated: { name: "document-text-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_plan_days: { name: "calendar-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_first_complete: { name: "play-circle-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_complete_10: { name: "fitness-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    wo_complete_25: { name: "trophy-outline", bgClass: "bg-[#eaf7f0]", color: "#52B69A" },
+    ml_water_first: { name: "water-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_water_5: { name: "water", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_water_20: { name: "flask-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_meal_reminder: { name: "notifications-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_water_reminder: { name: "alarm-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_repeat_days: { name: "repeat-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    ml_water_50: { name: "medal-outline", bgClass: "bg-[#fff4e6]", color: "#d97706" },
+    st_steps_first: { name: "walk-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_steps_3: { name: "footsteps-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_steps_7: { name: "fitness-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_steps_14: { name: "trophy-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_water_first: { name: "water-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_water_10: { name: "flask-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+    st_water_30: { name: "medal-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" },
+  };
+  if (map[id]) return map[id];
+  if (id.startsWith("cm_")) return { name: "people-outline", bgClass: "bg-[#eef2ff]", color: "#4f46e5" };
+  if (id.startsWith("st_")) return { name: "flame-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" };
+  return { name: "flame-outline", bgClass: "bg-[#fff7ed]", color: "#ea580c" };
+}
+
 function AchievementRow({ row }: { row: AchievementRowModel }) {
+  const logo = achievementLogo(row.id);
   if (row.variant === "done") {
     return (
       <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-gray-200">
-        <Ionicons
-          name={row.isComplete ? "checkmark-circle" : "ellipse-outline"}
-          size={22}
-          color={row.isComplete ? "#76C893" : "#d1d5db"}
-        />
-        <Text
-          className={`ml-3 flex-1 text-base leading-5 ${
-            row.isComplete ? "text-gray-800 font-semibold" : "text-gray-600"
-          }`}
-        >
-          {row.label}
-        </Text>
+        <View className={`w-10 h-10 rounded-xl items-center justify-center ${logo.bgClass}`}>
+          <Ionicons name={logo.name} size={20} color={logo.color} />
+        </View>
+        <View className="ml-3 flex-1">
+          <Text className="text-base font-semibold text-gray-800">{row.title ?? row.label}</Text>
+          <Text className="text-sm text-gray-600 mt-0.5">{row.label}</Text>
+        </View>
         {row.isComplete ? (
           <View className="px-2.5 py-1 rounded-full bg-[#eaf7f0]">
             <Text className="text-xs font-bold text-[#52B69A]">DONE</Text>
@@ -279,18 +381,13 @@ function AchievementRow({ row }: { row: AchievementRowModel }) {
 
   return (
     <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-gray-200">
-      <Ionicons
-        name={row.isComplete ? "checkmark-circle" : "ellipse-outline"}
-        size={22}
-        color={row.isComplete ? "#76C893" : "#d1d5db"}
-      />
-      <Text
-        className={`ml-3 flex-1 text-base leading-5 ${
-          row.isComplete ? "text-gray-800 font-semibold" : "text-gray-600"
-        }`}
-      >
-        {row.label}
-      </Text>
+      <View className={`w-10 h-10 rounded-xl items-center justify-center ${logo.bgClass}`}>
+        <Ionicons name={logo.name} size={20} color={logo.color} />
+      </View>
+      <View className="ml-3 flex-1">
+        <Text className="text-base font-semibold text-gray-800">{row.title ?? row.label}</Text>
+        <Text className="text-sm text-gray-600 mt-0.5">{row.label}</Text>
+      </View>
       <Text className="text-sm text-gray-400 font-semibold">{row.rightLabel}</Text>
     </View>
   );

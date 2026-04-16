@@ -43,6 +43,7 @@ export default function ProfileScreen() {
   const [recommendedGoalLabel, setRecommendedGoalLabel] = useState<GoalLabel | null>(null);
   const [gender, setGender] = useState<Gender>("male");
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [bmiValue, setBmiValue] = useState<number | null>(null);
 
   const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
@@ -75,10 +76,12 @@ export default function ProfileScreen() {
             ? data.bmi
             : calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
         if (typeof bmi === "number" && Number.isFinite(bmi)) {
+          setBmiValue(bmi);
           if (bmi < 18.5) setRecommendedGoalLabel("Gain Weight");
-          else if (bmi <= 24.5) setRecommendedGoalLabel("Maintain Weight");
+          else if (bmi <= 24.9) setRecommendedGoalLabel("Maintain Weight");
           else setRecommendedGoalLabel("Lose Weight");
         } else {
+          setBmiValue(null);
           setRecommendedGoalLabel(null);
         }
 
@@ -169,7 +172,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await signOut(auth);
-            router.replace("/login");
+            router.replace("/");
           } catch (error) {
             console.log("Logout failed:", error);
             Alert.alert("Error", "Could not log out. Please try again.");
@@ -401,7 +404,15 @@ export default function ProfileScreen() {
                   { label: "Lose Weight" as const, desc: "Target = TDEE - 500" },
                   { label: "Gain Weight" as const, desc: "Target = TDEE + 300" },
                 ] as const
-              ).map((o) => {
+              )
+                .filter((o) => {
+                  if (typeof bmiValue === "number") {
+                    if (bmiValue < 18.5 && o.label === "Lose Weight") return false;
+                    if (bmiValue > 24.9 && o.label === "Gain Weight") return false;
+                  }
+                  return true;
+                })
+                .map((o) => {
                 const active = goal === o.label;
                 const recommended = recommendedGoalLabel === o.label;
                 return (

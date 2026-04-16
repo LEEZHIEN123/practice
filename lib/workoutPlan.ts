@@ -25,7 +25,7 @@ export function calcBmi(weightKg: number, heightCm: number) {
 
 export function bmiBandKey(bmi: number): BmiBandKey {
   if (bmi < 18.5) return "under";
-  if (bmi <= 24.5) return "normal";
+  if (bmi <= 24.9) return "normal";
   return "over";
 }
 
@@ -80,13 +80,13 @@ export function suggestWorkoutTypes(bmi: number, goal: GoalKey): WorkoutType[] {
     if (goal === "maintain") return ["Strength", "Cardio", "Yoga"];
     return ["Yoga"];
   }
-  if (bmi <= 24.5) {
+  if (bmi <= 24.9) {
     if (goal === "gain") return ["Strength", "Yoga"];
     if (goal === "maintain") return ["Strength", "Cardio"];
-    // Lose weight, BMI 18.5–24.5: rotation Cardio → HIIT → Strength (product matrix).
+    // Lose weight, BMI 18.5–24.9: rotation Cardio → HIIT → Strength (product matrix).
     return ["Cardio", "HIIT", "Strength"];
   }
-  // bmi > 24.5 — lose weight: same three types, different rotation vs normal band → different generated plan.
+  // bmi > 24.9 — lose weight: same three types, different rotation vs normal band → different generated plan.
   if (goal === "lose") return ["Cardio", "Strength", "HIIT"];
   if (goal === "maintain") return ["Cardio"];
   return ["Strength"];
