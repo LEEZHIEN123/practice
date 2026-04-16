@@ -49,10 +49,10 @@ export default function Home() {
           className="w-40 h-40 mb-6 rounded-2xl"
           resizeMode="contain"
         />
-        <Text className="text-3xl font-extrabold text-green-700 text-center leading-10">
-          Personalised Workout and Nutrition Guidance System
+        <Text className="text-2xl font-extrabold text-green-700 text-center leading-10">
+          Personalised Workout and {"\n"} Nutrition Guidance System
         </Text>
-        <Text className="text-base text-gray-600 text-center mt-4 mb-10">
+        <Text className="text-lg text-gray-600 text-center mt-4 mb-10">
           Track your journey to achieve your fitness goals.
         </Text>
 

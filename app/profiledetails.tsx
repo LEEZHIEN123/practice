@@ -186,21 +186,6 @@ export default function ProfileDetails() {
       >
       {/* Header (same style as Contact Us) */}
       <View className="relative mb-6 h-12 justify-center">
-        <Pressable
-          onPress={() => {
-            try {
-              router.back();
-            } catch {
-              router.replace("/register");
-            }
-          }}
-          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-          className="absolute left-0 top-0 h-16 w-24 justify-center pl-2"
-        >
-          <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </View>
-        </Pressable>
         <Text className="text-center text-xl font-extrabold text-gray-900">Profile Details</Text>
       </View>
 

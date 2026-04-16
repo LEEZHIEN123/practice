@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useRegistration } from "../context/registrationContext";
 import { auth, db } from "../firebaseConfig";
@@ -84,40 +83,33 @@ export default function ActivityLevel() {
 
       setActivity({ activityLevel: picked.key, activityMultiplier: picked.multiplier });
 
-      // Create Auth account ONLY when onboarding is fully completed
-      const cred = await createUserWithEmailAndPassword(auth, account.email, account.password);
-      // Ensure Firestore sees a fresh auth token (avoids rare race with first write after signup)
-      await cred.user.getIdToken(true);
-
-      try {
-        await setDoc(
-          doc(db, "users", cred.user.uid),
-          {
-            name: account.name,
-            email: cred.user.email ?? account.email,
-            createdAt: Date.now(),
-            gender: profile.gender,
-            profileImage: null,
-            age: profile.age,
-            height: profile.height,
-            weight: profile.weight,
-            activityLevel: picked.key,
-            activityMultiplier: picked.multiplier,
-          },
-          { merge: true }
-        );
-      } catch (e) {
-        try {
-          await deleteUser(cred.user);
-        } catch {}
-        throw e;
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert("Session expired", "Please register again.");
+        router.replace("/register");
+        return;
       }
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          name: account.name,
+          email: user.email ?? account.email,
+          createdAt: Date.now(),
+          gender: profile.gender,
+          profileImage: null,
+          age: profile.age,
+          height: profile.height,
+          weight: profile.weight,
+          activityLevel: picked.key,
+          activityMultiplier: picked.multiplier,
+        },
+        { merge: true }
+      );
 
       router.push("/BMIanalysis");
     } catch (error: any) {
-      if (error?.code === "auth/email-already-in-use") {
-        Alert.alert("Email Exists", "This email is already registered.");
-      } else if (error?.code === "permission-denied") {
+      if (error?.code === "permission-denied") {
         Alert.alert(
           "Firestore: permission denied",
           "Your Firestore security rules are blocking saving the new profile. In Firebase Console → Firestore Database → Rules, publish the rules from the firestore.rules file in this project (or run: firebase deploy --only firestore:rules after firebase login)."

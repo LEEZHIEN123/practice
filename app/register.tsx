@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { useRegistration } from "../context/registrationContext";
+import { auth, db } from "../firebaseConfig";
 
 export default function Register() {
   const router = useRouter();
@@ -54,7 +57,7 @@ export default function Register() {
       setEmailError("Email is required.");
       ok = false;
     } else if (!isValidEmail(cleanEmail)) {
-      setEmailError("Please enter a valid email address.");
+      setEmailError("Please enter a valid email format (abc@gmail.com).");
       ok = false;
     } else {
       setEmailError("");
@@ -97,7 +100,26 @@ export default function Register() {
     try {
       setLoading(true);
 
-      // Start onboarding without registering (no Firebase writes yet)
+      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      await cred.user.getIdToken(true);
+
+      try {
+        await setDoc(
+          doc(db, "users", cred.user.uid),
+          {
+            name: name.trim(),
+            email: cred.user.email ?? cleanEmail,
+            createdAt: Date.now(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        try {
+          await deleteUser(cred.user);
+        } catch {}
+        throw e;
+      }
+
       reset();
       setAccount({
         name: name.trim(),
@@ -106,9 +128,17 @@ export default function Register() {
       });
 
       router.push("/profiledetails");
-      
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Registration failed.");
+      if (e?.code === "auth/email-already-in-use") {
+        Alert.alert("Email Exists", "This email is already registered.");
+      } else if (e?.code === "permission-denied") {
+        Alert.alert(
+          "Firestore: permission denied",
+          "Your account was created but your profile data could not be saved. Please check your Firestore rules."
+        );
+      } else {
+        Alert.alert("Error", e?.message ?? "Registration failed.");
+      }
     } finally {
       setLoading(false);
     }
@@ -132,21 +162,27 @@ export default function Register() {
               </View>
 
         <Text className="text-3xl font-bold text-center text-gray-800">Create Account</Text>
-        <Text className="text-center text-gray-500 mb-8">Join us to start your fitness journey!</Text>
+        <Text className="text-center text-lg text-gray-500 mb-8">Join us to start your fitness journey!</Text>
 
-        <Text className="text-gray-800 mb-2">Full Name</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-gray-800 ml-2">Full Name</Text>
+          <Text className="text-sm text-gray-500 font-semibold mr-2">
+            {Math.min(name.length, 14)}/14
+          </Text>
+        </View>
         <TextInput
           placeholder="Jane Doe"
           value={name}
           onChangeText={(v) => {
-            setName(v);
+            setName(v.slice(0, 14));
             if (nameError) setNameError("");
           }}
+          maxLength={14}
           className="mb-4 rounded-xl bg-white px-4 py-4 text-gray-700"
         />
-        {!!nameError && <Text className="text-red-500 text-xs -mt-3 mb-3">{nameError}</Text>}
+        {!!nameError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{nameError}</Text>}
 
-        <Text className="text-gray-800 mb-2">Email Address</Text>
+        <Text className="text-gray-800 mb-2 ml-2">Email Address</Text>
         <TextInput
           placeholder="jane@gmail.com"
           value={email}
@@ -158,10 +194,10 @@ export default function Register() {
           keyboardType="email-address"
           className="mb-4 rounded-xl bg-white px-4 py-4 text-gray-700"
         />
-        {!!emailError && <Text className="text-red-500 text-xs -mt-3 mb-3">{emailError}</Text>}
+        {!!emailError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{emailError}</Text>}
 
         <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-gray-800">Password</Text>
+          <Text className="text-gray-800 ml-2">Password</Text>
           <View className="flex-row items-center flex-1 justify-end ml-2">
             <Text className="text-xs text-gray-600 mr-1.5 text-right">{passwordRule}</Text>
             {passwordMeetsRule ? <Ionicons name="checkmark-circle" size={18} color="#76C893" /> : null}
@@ -185,9 +221,9 @@ export default function Register() {
             <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="gray" />
           </Pressable>
         </View>
-        {!!passwordError && <Text className="text-red-500 text-xs -mt-3 mb-3">{passwordError}</Text>}
+        {!!passwordError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{passwordError}</Text>}
 
-        <Text className="text-gray-800 mb-2">Confirm Password</Text>
+        <Text className="text-gray-800 mb-2 ml-2">Confirm Password</Text>
         <View className="relative mb-4">
           <TextInput
             placeholder="abc123"
@@ -210,7 +246,7 @@ export default function Register() {
             <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={22} color="gray" />
           </Pressable>
         </View>
-        {!!confirmPasswordError && <Text className="text-red-500 text-xs -mt-3 mb-4">{confirmPasswordError}</Text>}
+        {!!confirmPasswordError && <Text className="text-red-500 text-xs -mt-3 mb-4 ml-2">{confirmPasswordError}</Text>}
 
         <View className="flex-row items-start mb-2">
           <Pressable
@@ -222,7 +258,7 @@ export default function Register() {
             className="mr-3 mt-0.5"
           >
             <View
-              className={`w-6 h-6 rounded-md border-2 items-center justify-center ${
+              className={`w-6 h-6 ml-1 rounded-md border-2 items-center justify-center ${
                 acceptedPolicy ? "bg-[#76C893] border-[#76C893]" : "border-gray-400 bg-white"
               }`}
             >
@@ -231,17 +267,21 @@ export default function Register() {
           </Pressable>
           <Text className="flex-1 text-gray-600 text-sm leading-5">
             By continuing, I accept the{" "}
-            <Text className="text-[#76C893] font-semibold" onPress={() => router.push("/terms-of-service" as any)}>
-              Privacy
+            <Text
+              className="text-[#76C893] font-semibold"
+              onPress={() => {
+                setAcceptedPolicy(true);
+                if (policyError) setPolicyError("");
+                router.push("/terms-of-service" as any);
+              }}
+            >
+              Privacy and Terms of Use
             </Text>{" "}
-            and{" "}
-            <Text className="text-[#76C893] font-semibold" onPress={() => router.push("/terms-of-service" as any)}>
-              Term of Use
-            </Text>{" "}
-            of Personalised Workout and Nutrition Guidance System
+            of the Personalised Workout and Nutrition Guidance System.
+             
           </Text>
         </View>
-        {!!policyError && <Text className="text-red-500 text-xs mb-4">{policyError}</Text>}
+        {!!policyError && <Text className="text-red-500 text-xs mb-4 ml-2">{policyError}</Text>}
 
         <Pressable
           onPress={register}

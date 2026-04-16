@@ -24,11 +24,19 @@ export default function Login() {
   const [passwordError, setPasswordError] = useState("");
   const [forgotEmailError, setForgotEmailError] = useState("");
 
+  const isValidEmailFormat = (v: string) => {
+    // Simple, practical email format check (no RFC-perfect validation needed for UI).
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  };
+
   const validateLoginFields = () => {
     const cleanEmail = email.trim().toLowerCase();
     let ok = true;
     if (!cleanEmail) {
       setEmailError("Email is required.");
+      ok = false;
+    } else if (!isValidEmailFormat(cleanEmail)) {
+      setEmailError("Please enter a valid email format (abc@gmail.com).");
       ok = false;
     } else {
       setEmailError("");
@@ -53,7 +61,13 @@ export default function Login() {
       await signInWithEmailAndPassword(auth, cleanEmail, password);
       router.replace("/home");
     } catch (e: any) {
-      Alert.alert("Wrong email/password", "Please provide valid email and password.");
+      // Email format should already be validated above; treat the rest as wrong credentials.
+      const code: string | undefined = e?.code;
+      if (code === "auth/invalid-email") {
+        Alert.alert("Invalid email", "Please enter a valid email format (abc@gmail.com).");
+      } else {
+        Alert.alert("Wrong email/password", "please enter the correct email and password");
+      }
     } finally {
       setLoading(false);
     }
@@ -114,12 +128,12 @@ export default function Login() {
         Login
       </Text>
 
-      <Text className="text-center text-gray-500 mb-8">
-        Welcome back!{"\n"}Enter your email and password to login.
+      <Text className="text-center text-lg text-gray-500 mb-8">
+        Welcome back!{"\n"}Please enter your email and password to login.
       </Text>
     
       {/* Email */}
-      <Text className="text-gray-800 mb-2">Email</Text>
+      <Text className="text-gray-800 mb-2 ml-2">Email Address</Text>
       <View className="mb-5">
         <TextInput
           placeholder="hello123@gmail.com"
@@ -133,12 +147,12 @@ export default function Login() {
           keyboardType="email-address"
           className="rounded-xl bg-white px-4 py-4 text-gray-700"
         />
-        {!!emailError && <Text className="text-red-500 text-xs mt-1">{emailError}</Text>}
+        {!!emailError && <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>}
       </View>
 
       {/* Password Label + Forgot */}
       <View className="flex-row justify-between items-center mb-2">
-        <Text className="text-gray-800">Password</Text>
+        <Text className="text-gray-800 ml-2">Password</Text>
 
         <Pressable onPress={openForgotPassword} hitSlop={10}>
           <Text className="text-[#76C893] font-semibold">
@@ -174,7 +188,7 @@ export default function Login() {
             />
           </Pressable>
         </View>
-        {!!passwordError && <Text className="text-red-500 text-xs mt-1">{passwordError}</Text>}
+        {!!passwordError && <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>}
       </View>
 
       {/* Login Button */}
@@ -233,7 +247,7 @@ export default function Login() {
               keyboardType="email-address"
               className="mt-4 rounded-xl bg-[#f7faf8] px-4 py-4 text-gray-700 border border-gray-200"
             />
-            {!!forgotEmailError && <Text className="text-red-500 text-xs mt-2">{forgotEmailError}</Text>}
+            {!!forgotEmailError && <Text className="text-red-500 text-xs mt-2 ml-2">{forgotEmailError}</Text>}
 
             <Pressable
               onPress={handleForgotPassword}
