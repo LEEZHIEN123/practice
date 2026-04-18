@@ -1,5 +1,6 @@
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -55,6 +56,7 @@ export default function StepProgressScreen() {
   const [stepSeries, setStepSeries] = useState<number[]>(Array(7).fill(0));
   const [windowRows, setWindowRows] = useState<{ label: string; date: Date; steps: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stepHoverIdx, setStepHoverIdx] = useState<number | null>(null);
   const [seriesRefresh, setSeriesRefresh] = useState(0);
   const [liveTodayAuto, setLiveTodayAuto] = useState<number | null>(null);
   const [todayManualOverride, setTodayManualOverride] = useState<number | null>(null);
@@ -117,7 +119,13 @@ export default function StepProgressScreen() {
   useEffect(() => {
     const load = async () => {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        const len = period === "week" ? 7 : period === "month" ? 4 : 12;
+        setStepSeries(Array.from({ length: len }, () => 0));
+        setWindowRows([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         if (period === "week") {
@@ -145,20 +153,33 @@ export default function StepProgressScreen() {
           const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
           const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
           const buckets = [0, 0, 0, 0];
-          const d = new Date(monthStart);
-          while (d <= monthEnd) {
-            const k = formatCalendarDayKey(d, calendarTz);
-            const snap = await getDoc(doc(db, "users", user.uid, "dailyStats", k));
+          const days = Array.from({ length: monthEnd.getDate() }, (_, i) => new Date(anchor.getFullYear(), anchor.getMonth(), i + 1));
+          const snaps = await Promise.all(
+            days.map((d) => {
+              const k = formatCalendarDayKey(d, calendarTz);
+              return getDoc(doc(db, "users", user.uid, "dailyStats", k));
+            })
+          );
+          for (let i = 0; i < days.length; i++) {
+            const d = days[i];
+            const snap = snaps[i];
             const v = effectiveSteps(snap.exists() ? (snap.data() as any) : undefined);
             const dom = d.getDate();
             const idx = Math.min(3, Math.floor((dom - 1) / 7));
             buckets[idx] += v;
-            d.setDate(d.getDate() + 1);
           }
           setStepSeries(buckets);
+          const monthLastDay = monthEnd.getDate();
+          const ranges: [number, number][] = [
+            [1, Math.min(7, monthLastDay)],
+            [8, Math.min(14, monthLastDay)],
+            [15, Math.min(21, monthLastDay)],
+            [22, monthLastDay],
+          ];
+          const fmtDmy = (day: number) => `${day}/${anchor.getMonth() + 1}/${anchor.getFullYear()}`;
           setWindowRows(
             buckets.map((steps, idx) => ({
-              label: `W${idx + 1}`,
+              label: `Week ${idx + 1} (${fmtDmy(ranges[idx][0])}-${fmtDmy(ranges[idx][1])})`,
               date: monthStart,
               steps,
             }))
@@ -167,21 +188,26 @@ export default function StepProgressScreen() {
         }
 
         const year = anchor.getFullYear();
-        const sums = Array.from({ length: 12 }, () => 0);
+        const monthTotals = Array.from({ length: 12 }, () => 0);
         for (let m = 0; m < 12; m++) {
-          const last = new Date(year, m + 1, 0).getDate();
-          for (let day = 1; day <= last; day++) {
-            const d = new Date(year, m, day);
-            const k = formatCalendarDayKey(d, calendarTz);
-            const snap = await getDoc(doc(db, "users", user.uid, "dailyStats", k));
-            const v = effectiveSteps(snap.exists() ? (snap.data() as any) : undefined);
-            sums[m] += v;
-          }
+          // Year view: each bar/row is the total steps across the full month.
+          const lastDay = new Date(year, m + 1, 0).getDate();
+          const days = Array.from({ length: lastDay }, (_, i) => new Date(year, m, i + 1));
+          const snaps = await Promise.all(
+            days.map((d) => {
+              const k = formatCalendarDayKey(d, calendarTz);
+              return getDoc(doc(db, "users", user.uid, "dailyStats", k));
+            })
+          );
+          monthTotals[m] = snaps.reduce(
+            (sum, snap) => sum + effectiveSteps(snap.exists() ? (snap.data() as any) : undefined),
+            0
+          );
         }
-        setStepSeries(sums);
+        setStepSeries(monthTotals);
         setWindowRows(
-          sums.map((steps, idx) => ({
-            label: chartLabels[idx],
+          monthTotals.map((steps, idx) => ({
+            label: new Date(year, idx, 1).toLocaleDateString(undefined, { month: "long" }),
             date: new Date(year, idx, 1),
             steps,
           }))
@@ -366,6 +392,34 @@ export default function StepProgressScreen() {
     return anchor.getFullYear() < now.getFullYear();
   }, [anchor, period]);
 
+  const currentPeriodSlotIndex = useMemo(() => getCurrentPeriodSlotIndex(period, anchor), [period, anchor]);
+
+  const stepBarTooltip = useMemo(() => {
+    if (stepHoverIdx == null) return "";
+    const idx = stepHoverIdx;
+    const steps = stepSeries[idx] ?? 0;
+    if (period === "week") {
+      const ws = startOfWeekMon(anchor);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + idx);
+      const dateStr = d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      });
+      return `${dateStr}\n${steps.toLocaleString()} steps`;
+    }
+    if (period === "month") {
+      const label = chartLabels[idx] ?? "";
+      return `${label}\n${steps.toLocaleString()} steps`;
+    }
+    const monthTitle = new Date(anchor.getFullYear(), idx, 1).toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+    return `${monthTitle}\n${steps.toLocaleString()} steps`;
+  }, [anchor, chartLabels, period, stepHoverIdx, stepSeries]);
+
   const openEdit = () => {
     setEditModalDate(new Date());
     setEditOpen(true);
@@ -500,7 +554,7 @@ export default function StepProgressScreen() {
         <View className="bg-white rounded-3xl p-5 border border-gray-100">
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
+              <Text className="text-base tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
               <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
             </View>
             <Pressable onPress={openEdit} className="px-4 py-2 rounded-full bg-[#76C893]">
@@ -535,6 +589,15 @@ export default function StepProgressScreen() {
             <View className="flex-1 mx-2">
               <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
                 <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                {!loading && stepBarTooltip ? (
+                  <View className="absolute top-2 left-2 right-2 items-center px-1">
+                    <View className="px-3 py-2 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] max-w-full">
+                      <Text className="text-[11px] font-bold text-[#2f855a] text-center leading-5">
+                        {stepBarTooltip}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
                 {loading ? (
                   <View className="flex-1 items-center justify-center">
                     <Text className="text-gray-500 font-semibold">Loading…</Text>
@@ -547,13 +610,19 @@ export default function StepProgressScreen() {
                       const span = max - min || 1;
                       return stepSeries.map((v, idx) => {
                         const h = 14 + Math.round(((v - min) / span) * 130);
+                        const active = stepHoverIdx === idx;
                         return (
-                          <View key={`sb-${idx}`} className="flex-1 items-center">
+                          <Pressable
+                            key={`sb-${idx}`}
+                            onPress={() => setStepHoverIdx((prev) => (prev === idx ? null : idx))}
+                            className="flex-1 items-center"
+                            hitSlop={8}
+                          >
                             <View
-                              style={{ height: Math.max(h, 14), width: 12, borderRadius: 999 }}
-                              className={v === 0 ? "bg-gray-300" : "bg-[#76C893]"}
+                              style={{ height: Math.max(h, 14), width: active ? 14 : 12, borderRadius: 999 }}
+                              className={v === 0 ? "bg-gray-300" : active ? "bg-[#52B69A]" : "bg-[#76C893]"}
                             />
-                          </View>
+                          </Pressable>
                         );
                       });
                     })()}
@@ -562,11 +631,21 @@ export default function StepProgressScreen() {
               </View>
 
               <View className="flex-row mt-3 px-3">
-                {chartLabels.map((d, idx) => (
-                  <View key={`${d}-${idx}`} className="flex-1 items-center">
-                    <Text className="text-[10px] text-gray-500 font-bold">{d}</Text>
-                  </View>
-                ))}
+                {chartLabels.map((d, idx) => {
+                  const isCurrentLabel = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                  return (
+                    <View key={`${d}-${idx}`} className="flex-1 items-center">
+                      <Text
+                        className={`text-[10px] font-bold ${isCurrentLabel ? "text-red-600" : "text-gray-500"}`}
+                      >
+                        {d}
+                      </Text>
+                      {isCurrentLabel ? (
+                        <Text className="text-[9px] font-extrabold text-red-600 mt-0.5">Current</Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             </View>
 
@@ -583,25 +662,35 @@ export default function StepProgressScreen() {
         </View>
 
         <View className="mt-5 bg-white rounded-3xl p-5 pb-6 border border-gray-100">
-          <Text className="text-[10px] tracking-widest text-gray-900 font-extrabold">DAILY STEPS</Text>
-          <Text className="text-sm text-gray-500 mt-2">Steps reset each day. Auto tracking syncs to your account.</Text>
+          <Text className="text-base tracking-widest text-gray-900 font-extrabold">STEP RECORD</Text>
+          <Text className="text-sm text-gray-500 mt-2">Steps reset each day.</Text>
           <View className="mt-4 gap-3">
             {windowRows.length === 0 ? (
               <Text className="text-gray-500">No step data yet.</Text>
             ) : (
-              windowRows.map((r, idx) => (
-                <View
-                  key={`${r.date.getTime()}-${idx}`}
-                  className="flex-row items-center justify-between bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200"
-                >
-                  <Text className="text-base font-bold text-gray-700">
-                    {period === "week" ? formatLongDate(r.date) : r.label}
-                  </Text>
-                  <Text className="text-base font-extrabold text-gray-900">
-                    {r.steps ? `${r.steps.toLocaleString()} steps` : "—"}
-                  </Text>
-                </View>
-              ))
+              windowRows.map((r, idx) => {
+                const isCurrentRow = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                return (
+                  <View
+                    key={`${r.date.getTime()}-${idx}`}
+                    className={`flex-row items-center justify-between rounded-2xl px-4 py-4 bg-[#f3f4f3] ${
+                      isCurrentRow ? "border-2 border-red-500" : "border border-gray-200"
+                    }`}
+                  >
+                    <View className="flex-row items-center flex-1 flex-wrap pr-2">
+                      <Text className="text-base font-bold text-gray-700">
+                        {period === "week" ? formatLongDate(r.date) : r.label}
+                      </Text>
+                      {isCurrentRow ? (
+                        <Text className="ml-2 text-xs font-extrabold text-red-600">Current</Text>
+                      ) : null}
+                    </View>
+                    <Text className="text-base font-extrabold text-gray-900">
+                      {r.steps ? `${r.steps.toLocaleString()} steps` : "—"}
+                    </Text>
+                  </View>
+                );
+              })
             )}
           </View>
         </View>

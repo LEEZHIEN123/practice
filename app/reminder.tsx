@@ -5,14 +5,14 @@ import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -797,7 +797,7 @@ export default function RemindersScreen() {
             </Text>
 
            <View className="border border-[#b7ead1] rounded-[26px] px-4 py-6 mb-6">
-              <Text className="text-[18px] font-extrabold text-[#0f172a] mb-3">NAME</Text>
+              <Text className="text-[23px] font-extrabold text-[#0f172a] mb-3">Name</Text>
               <View className="bg-white rounded-2xl border border-gray-200 px-4 py-3 mb-6">
                 <TextInput
                   value={editor?.name ?? ""}
@@ -886,8 +886,8 @@ export default function RemindersScreen() {
   </View>
 </View>
 
-            <Text className="text-[18px] font-extrabold text-[#0f172a] mb-5">
-              REPEAT
+            <Text className="text-[23px] ml-2 font-extrabold text-xl text-[#0f172a] mb-5">
+              Repeat
             </Text>
 
             <View className="flex-row justify-between mb-10">

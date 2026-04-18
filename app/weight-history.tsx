@@ -1,3 +1,4 @@
+import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
@@ -157,6 +158,8 @@ export default function WeightHistoryScreen() {
     return `${p >= 0 ? "+" : ""}${p.toFixed(1)}%`;
   }, [hasAny, series]);
 
+  const currentPeriodSlotIndex = useMemo(() => getCurrentPeriodSlotIndex(period, anchor), [period, anchor]);
+
   const goPrev = () => {
     const d = new Date(anchor);
     if (period === "week") d.setDate(d.getDate() - 7);
@@ -226,11 +229,19 @@ export default function WeightHistoryScreen() {
               </View>
             </View>
             <View className="flex-row justify-between mt-3 px-1">
-              {labels.map((d, idx) => (
-                <Text key={`${d}-${idx}`} className="text-[10px] text-gray-400 font-bold">
-                  {d}
-                </Text>
-              ))}
+              {labels.map((d, idx) => {
+                const isCurrentLabel = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                return (
+                  <View key={`${d}-${idx}`} className="flex-1 items-center">
+                    <Text className={`text-[10px] font-bold ${isCurrentLabel ? "text-red-600" : "text-gray-400"}`}>
+                      {d}
+                    </Text>
+                    {isCurrentLabel ? (
+                      <Text className="text-[9px] font-extrabold text-red-600 mt-0.5">Current</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
             </View>
           </View>
 

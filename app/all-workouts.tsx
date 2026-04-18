@@ -14,6 +14,16 @@ function typeIonIcon(type: WorkoutType): keyof typeof Ionicons.glyphMap {
   return "barbell-outline";
 }
 
+function workoutTypeCardLabel(type: WorkoutType): string {
+  if (type === "HIIT") return "HIIT (High-Intensity\nInterval Training)";
+  return type;
+}
+
+function workoutTypeHeaderLabel(type: WorkoutType): string {
+  if (type === "HIIT") return "HIIT (High-Intensity Interval Training)";
+  return type;
+}
+
 export default function AllWorkoutsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -37,7 +47,7 @@ export default function AllWorkoutsScreen() {
           </Pressable>
           <View className="flex-1 min-w-0">
             <Text className="text-lg font-extrabold text-gray-500 tracking-wide">ALL WORKOUTS</Text>
-            <Text className="text-2xl font-extrabold text-gray-900 mt-0.5">{selected}</Text>
+            <Text className="text-2xl font-extrabold text-gray-900 mt-0.5">{workoutTypeHeaderLabel(selected)}</Text>
           </View>
         </View>
 
@@ -52,11 +62,16 @@ export default function AllWorkoutsScreen() {
                   `/free-workout?type=${encodeURIComponent(selected)}&name=${encodeURIComponent(item)}` as any
                 )
               }
-              className="bg-[#bdeccf] rounded-[28px] p-6 mb-4 flex-row items-center justify-between active:opacity-90"
+              className="bg-[#bdeccf] rounded-[28px] p-6 mb-3 flex-row items-center justify-between active:opacity-90"
             >
-              <Text className="text-xl font-extrabold text-gray-900 flex-1 pr-3" numberOfLines={3}>
-                {item}
-              </Text>
+              <View className="flex-1 pr-3">
+                <Text className="text-xl font-extrabold text-gray-900" numberOfLines={3}>
+                  {item}
+                </Text>
+                <Text className="text-base font-semibold text-gray-600 mt-1">
+                  MET: {WORKOUT_DETAILS[selected][item].met}
+                </Text>
+              </View>
               <Ionicons name="chevron-forward" size={28} color="#76C893" />
             </Pressable>
           )}
@@ -79,9 +94,8 @@ export default function AllWorkoutsScreen() {
       </View>
 
       <View className="px-3 pb-8">
-        <Text className="text-gray-600 font-semibold mb-4 leading-6">
-          Choose a workout type, then pick an exercise to start. Discover workouts count toward today’s burn on Home and
-          Progress, and stay separate from your plan days.
+        <Text className="text-gray-600 ml-2 font-extrabold text-lg mb-4 leading-6">
+          Choose any workout type from the below lists, then pick an exercise to start.  
         </Text>
 
         {TYPES.map((t) => (
@@ -94,7 +108,7 @@ export default function AllWorkoutsScreen() {
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
                 <Ionicons name={typeIonIcon(t)} size={24} color="#76C893" />
               </View>
-              <Text className="text-2xl font-extrabold text-gray-900">{t}</Text>
+                <Text className="text-2xl font-extrabold text-gray-900">{workoutTypeCardLabel(t)}</Text>
             </View>
             <Ionicons name="chevron-forward" size={28} color="#76C893" />
           </Pressable>

@@ -1,11 +1,11 @@
 import { Pressable } from "@/components/Pressable";
 import { auth } from "@/firebaseConfig";
 import {
-    type AchievementCategory,
-    type AchievementFilter,
-    type AchievementRowModel,
-    type AchievementSectionModel,
-    loadAndSyncAchievements,
+  type AchievementCategory,
+  type AchievementFilter,
+  type AchievementRowModel,
+  type AchievementSectionModel,
+  loadAndSyncAchievements,
 } from "@/lib/achievements";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -122,7 +122,7 @@ export default function AchievementsScreen() {
         <View className="mt-3 bg-white border border-gray-200 rounded-2xl px-4 py-3.5">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-3">
-              <Text className="text-sm text-gray-500">Progress</Text>
+              <Text className="text-sm text-gray-500">Achievement Progress</Text>
               <Text className="text-2xl font-extrabold text-gray-900 mt-0.5">{progressPct}%</Text>
             </View>
             <View className="items-end">

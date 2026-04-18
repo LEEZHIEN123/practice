@@ -367,7 +367,7 @@ export default function WaterIntakeScreen() {
         </View>
 
         <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-10 border border-gray-100">
-          <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">RECENT WATER INTAKE</Text>
+          <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">WATER INTAKE RECORD</Text>
           <Text className="text-xs text-gray-500 mt-1">
             History includes today and previous days. Filter by day or pick a date.
           </Text>

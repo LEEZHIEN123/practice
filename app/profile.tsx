@@ -392,7 +392,7 @@ export default function ProfileScreen() {
             className="bg-white rounded-3xl p-6"
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="text-xl font-extrabold text-gray-900">Choose your goal</Text>
+            <Text className="text-xl font-extrabold text-gray-900">Edit your goal</Text>
             <Text className="text-gray-500 mt-2">
               This will update your daily calorie target on the Home page.
             </Text>

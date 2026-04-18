@@ -2,11 +2,11 @@ import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
-    calcExerciseKcal,
-    getWorkoutDetail,
-    getWorkoutMet,
-    isCatalogWorkout,
-    type WorkoutType,
+  calcExerciseKcal,
+  getWorkoutDetail,
+  getWorkoutMet,
+  isCatalogWorkout,
+  type WorkoutType,
 } from "@/lib/workoutCatalog";
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,29 +15,29 @@ import { router, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import {
-    Timestamp,
-    addDoc,
-    collection,
-    doc,
-    getDoc,
-    increment,
-    limit,
-    onSnapshot,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where,
+  Timestamp,
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  increment,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -814,7 +814,7 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
                 ) : (
                   <WorkoutRecordPanel
                     embedded
-                    subtitleOverride="Discover workouts only — same kcal as Home (dailyStats). Separate from your plan Day workouts."
+                    
                     dayRecords={dayRecords}
                     totalRecordKcal={totalRecordKcal}
                     accentGreen={ACCENT_GREEN}

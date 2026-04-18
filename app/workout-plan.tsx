@@ -1,26 +1,26 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { plansEqual, sanitizeActiveWorkoutPlan, type WorkoutType } from "@/lib/workoutCatalog";
 import {
-  bmiBandKey,
-  calcBmi,
-  pickOrGenerateWorkoutPlanForBand,
-  type ActiveWorkoutPlan,
-  type PlanDuration,
-  workoutPlansByBmiGoalField,
+    bmiBandKey,
+    calcBmi,
+    pickOrGenerateWorkoutPlanForBand,
+    workoutPlansByBmiGoalField,
+    type ActiveWorkoutPlan,
+    type PlanDuration,
 } from "@/lib/workoutPlan";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import {
-  collection,
-  doc,
-  getDoc,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
+    collection,
+    doc,
+    getDoc,
+    limit,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    updateDoc,
+    where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";

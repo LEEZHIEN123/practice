@@ -7,15 +7,12 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
-import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
   doc,
-  getDoc,
-  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -25,12 +22,14 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
+
+type WorkoutLogRowProgress = { burnedKcal: number; createdAt: Date; dayKey: string };
 
 const localStepDraftKey = (dateKey: string) => `daily-steps-draft:${dateKey}`;
 
@@ -61,13 +60,13 @@ export default function ProgressScreen() {
   const [savingLog, setSavingLog] = useState(false);
   const [logDate, setLogDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [weightRefreshKey, setWeightRefreshKey] = useState(0);
-  /** Skip the first focus so we don't double-fetch on mount; refetch when returning (e.g. from weight progress). */
-  const progressWeightFocusSkipRef = useRef(true);
+  /** Raw weight logs for the Progress weight chart + current metric (kept in sync via onSnapshot). */
+  const [weightProgressLogRows, setWeightProgressLogRows] = useState<
+    { weight: number; createdAt: Date }[]
+  >([]);
   const [dayTick, setDayTick] = useState(0);
   const [weightSeries, setWeightSeries] = useState<number[]>([]);
-  const [workoutSeries, setWorkoutSeries] = useState<number[]>([]);
-  const [workoutRefreshKey, setWorkoutRefreshKey] = useState(0);
+  const [workoutLogRows, setWorkoutLogRows] = useState<WorkoutLogRowProgress[]>([]);
   const [hasWeightLogs, setHasWeightLogs] = useState(false);
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -190,35 +189,21 @@ export default function ProgressScreen() {
   }, [calendarTz]);
 
   useEffect(() => {
-    const load = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        const data = snap.exists() ? snap.data() : {};
-
-        const h = typeof data.height === "number" ? data.height : 0;
-        const w = typeof data.weight === "number" ? data.weight : 0;
-
-        setHeightCm(h);
-        setWeightKg(w);
-      } catch (e) {
-        console.log("Failed to load progress:", e);
-      }
-    };
-
-    load();
-  }, [weightRefreshKey]);
-
-  useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
     const unsub = onSnapshot(
       doc(db, "users", user.uid),
       (snap) => {
         if (!snap.exists()) return;
-        const data = snap.data() as { profileImage?: string };
+        const data = snap.data() as {
+          profileImage?: string;
+          height?: number;
+          weight?: number;
+        };
+        const h = typeof data.height === "number" ? data.height : 0;
+        const w = typeof data.weight === "number" ? data.weight : 0;
+        setHeightCm(h);
+        setWeightKg(w);
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
       },
@@ -483,46 +468,52 @@ export default function ProgressScreen() {
     };
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (progressWeightFocusSkipRef.current) {
-        progressWeightFocusSkipRef.current = false;
-        return;
-      }
-      setWeightRefreshKey((k) => k + 1);
-      setWorkoutRefreshKey((k) => k + 1);
-    }, []),
-  );
-
   useEffect(() => {
     setHoverIdx(null);
   }, [tab]);
 
   useEffect(() => {
-    const loadWeightSeries = async () => {
-      if (tab !== "weight") return;
-      const user = auth.currentUser;
-      if (!user) return;
+    if (tab !== "weight") return;
+    const user = auth.currentUser;
+    if (!user) {
+      setWeightProgressLogRows([]);
+      return;
+    }
 
-      try {
-        // Pull a reasonable window; we'll bucket client-side per period.
-        const q = query(
-          collection(db, "users", user.uid, "weightLogs"),
-          orderBy("createdAt", "desc"),
-          limit(400)
-        );
-        const snap = await getDocs(q);
+    const q = query(
+      collection(db, "users", user.uid, "weightLogs"),
+      orderBy("createdAt", "desc"),
+      limit(400)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
         const rows = snap.docs
           .map((d) => d.data() as any)
           .map((row) => ({
             weight: typeof row.weight === "number" ? row.weight : null,
-            // Prefer explicit logDate (selected by user); fallback to createdAt for older docs.
             createdAt: getCreatedAtDate(row.logDate ?? row.createdAt),
           }))
           .filter((r) => typeof r.weight === "number" && r.createdAt instanceof Date) as {
-          weight: number;
-          createdAt: Date;
-        }[];
+            weight: number;
+            createdAt: Date;
+          }[];
+        setWeightProgressLogRows(rows);
+      },
+      (e) => {
+        console.log("weightLogs snapshot error:", e);
+        setWeightProgressLogRows([]);
+      }
+    );
+    return () => unsub();
+  }, [tab]);
+
+  useEffect(() => {
+    const applyWeightProgressLogs = () => {
+      if (tab !== "weight") return;
+
+      try {
+        const rows = weightProgressLogRows;
 
         const any = rows.length > 0;
         setHasWeightLogs(any);
@@ -620,7 +611,7 @@ export default function ProgressScreen() {
         }
         setWeightSeries(sums.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
       } catch (e) {
-        console.log("Failed to load weight series:", e);
+        console.log("Failed to compute weight series:", e);
         setTodayLoggedWeight(null);
         const zeros = period === "week" ? 7 : period === "month" ? 4 : 12;
         setHasWeightLogs(false);
@@ -629,24 +620,24 @@ export default function ProgressScreen() {
       }
     };
 
-    loadWeightSeries();
-  }, [period, tab, weightRefreshKey, weightKg]);
+    applyWeightProgressLogs();
+  }, [period, tab, weightKg, weightProgressLogRows]);
 
   useEffect(() => {
-    const loadWorkoutSeries = async () => {
-      if (tab !== "workout") return;
-      const user = auth.currentUser;
-      if (!user) return;
-
-      const zeros = (n: number) => Array.from({ length: n }, () => 0);
-
-      try {
-        const q = query(
-          collection(db, "users", user.uid, "workoutLogs"),
-          orderBy("createdAt", "desc"),
-          limit(400),
-        );
-        const snap = await getDocs(q);
+    if (tab !== "workout") return;
+    const user = auth.currentUser;
+    if (!user) {
+      setWorkoutLogRows([]);
+      return;
+    }
+    const q = query(
+      collection(db, "users", user.uid, "workoutLogs"),
+      orderBy("createdAt", "desc"),
+      limit(400)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
         const rows = snap.docs
           .map((d) => {
             const data = d.data() as any;
@@ -659,54 +650,103 @@ export default function ProgressScreen() {
               dayKey: formatCalendarDayKey(createdAt, calendarTz),
             };
           })
-          .filter((r): r is { burnedKcal: number; createdAt: Date; dayKey: string } => r != null && r.burnedKcal > 0);
+          .filter((r): r is WorkoutLogRowProgress => r != null && r.burnedKcal > 0);
+        setWorkoutLogRows(rows);
+      },
+      () => setWorkoutLogRows([])
+    );
+    return () => unsub();
+  }, [tab, calendarTz]);
 
-        const now = new Date();
+  const workoutSeries = useMemo((): number[] => {
+    if (tab !== "workout") return [];
+    const rows = workoutLogRows;
+    const now = new Date();
+    const zeros = (n: number) => Array.from({ length: n }, () => 0);
 
-        if (period === "week") {
-          const weekStart = startOfWeekMon(now);
-          const sums = Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(weekStart);
-            d.setDate(d.getDate() + i);
-            const key = formatCalendarDayKey(d, calendarTz);
-            return rows.filter((r) => r.dayKey === key).reduce((s, r) => s + r.burnedKcal, 0);
-          });
-          setWorkoutSeries(sums);
-          return;
-        }
-
-        if (period === "month") {
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-          const buckets = [0, 0, 0, 0];
-          for (const r of rows) {
-            if (r.createdAt < monthStart) continue;
-            if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear())
-              continue;
-            const dom = r.createdAt.getDate();
-            const idx = Math.min(3, Math.floor((dom - 1) / 7));
-            buckets[idx] += r.burnedKcal;
-          }
-          setWorkoutSeries(buckets);
-          return;
-        }
-
-        const year = now.getFullYear();
-        const sums = zeros(12);
-        for (const r of rows) {
-          if (r.createdAt.getFullYear() !== year) continue;
-          sums[r.createdAt.getMonth()] += r.burnedKcal;
-        }
-        setWorkoutSeries(sums);
-      } catch (e) {
-        console.log("Failed to load workout series:", e);
-        setWorkoutSeries(zeros(period === "week" ? 7 : period === "month" ? 4 : 12));
+    if (period === "week") {
+      const weekStart = startOfWeekMon(now);
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + i);
+        const key = formatCalendarDayKey(d, calendarTz);
+        return rows.filter((r) => r.dayKey === key).reduce((s, r) => s + r.burnedKcal, 0);
+      });
+    }
+    if (period === "month") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const buckets = [0, 0, 0, 0];
+      for (const r of rows) {
+        if (r.createdAt < monthStart) continue;
+        if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear()) continue;
+        const dom = r.createdAt.getDate();
+        const idx = Math.min(3, Math.floor((dom - 1) / 7));
+        buckets[idx] += r.burnedKcal;
       }
+      return buckets;
+    }
+    const year = now.getFullYear();
+    const sums = zeros(12);
+    for (const r of rows) {
+      if (r.createdAt.getFullYear() !== year) continue;
+      sums[r.createdAt.getMonth()] += r.burnedKcal;
+    }
+    return sums;
+  }, [calendarTz, period, tab, workoutLogRows]);
+
+  /** Headline + delta for workout: all periods use summed burns vs previous matching period. */
+  const workoutHeadlineMetric = useMemo(() => {
+    if (tab !== "workout") return { main: "", delta: "" };
+    const now = new Date();
+    if (period === "week") {
+      const total = workoutSeries.reduce((s, v) => s + (v || 0), 0);
+      const weekStart = startOfWeekMon(now);
+      const prevWeekStart = new Date(weekStart);
+      prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+      const prevTotal = workoutLogRows
+        .filter((r) => r.createdAt >= prevWeekStart && r.createdAt < weekStart)
+        .reduce((s, r) => s + r.burnedKcal, 0);
+      const delta = total - prevTotal;
+      return {
+        main: `${Math.round(total).toLocaleString()} kcal`,
+        delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
+      };
+    }
+    const total = workoutSeries.reduce((s, v) => s + (v || 0), 0);
+    if (period === "month") {
+      const py = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const pm = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevTotal = workoutLogRows
+        .filter((r) => r.createdAt.getFullYear() === py && r.createdAt.getMonth() === pm)
+        .reduce((s, r) => s + r.burnedKcal, 0);
+      const delta = total - prevTotal;
+      return {
+        main: `${Math.round(total).toLocaleString()} kcal`,
+        delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
+      };
+    }
+    const y = now.getFullYear();
+    const prevTotal = workoutLogRows.filter((r) => r.createdAt.getFullYear() === y - 1).reduce((s, r) => s + r.burnedKcal, 0);
+    const delta = total - prevTotal;
+    return {
+      main: `${Math.round(total).toLocaleString()} kcal`,
+      delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
     };
+  }, [period, tab, workoutLogRows, workoutSeries]);
 
-    void loadWorkoutSeries();
-  }, [calendarTz, period, tab, workoutRefreshKey]);
+  /** Under THIS WEEK: show today’s burn from logs (same bucketing as the chart). */
+  const workoutWeekTodayKcal = useMemo(() => {
+    if (tab !== "workout" || period !== "week") return null;
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const todayKcal = workoutLogRows
+      .filter((r) => r.dayKey === todayKey)
+      .reduce((s, r) => s + r.burnedKcal, 0);
+    return Math.round(todayKcal).toLocaleString();
+  }, [calendarTz, period, tab, workoutLogRows]);
 
+  /** Profile `weight` (Edit Profile, home, etc.) is the live “current weight” and should drive the headline. */
   const effectiveWeightKg = useMemo(() => {
+    if (weightKg > 0) return weightKg;
     if (todayLoggedWeight != null) return todayLoggedWeight;
     if (hasWeightLogs && latestLoggedWeight) return latestLoggedWeight;
     return weightKg;
@@ -773,9 +813,10 @@ export default function ProgressScreen() {
 
   const metricLabel = useMemo(() => {
     if (tab === "weight") return "CURRENT METRIC";
-    if (tab === "workout") return period === "week" ? "THIS WEEK" : period === "month" ? "THIS MONTH" : "THIS YEAR";
-    return period === "week" ? "THIS WEEK" : period === "month" ? "THIS MONTH" : "THIS YEAR";
-  }, [tab]);
+    if (tab === "workout")
+      return period === "week" ? "THIS WEEK BURNED" : period === "month" ? "THIS MONTH BURNED" : "THIS YEAR BURNED";
+    return period === "week" ? "THIS WEEK CONSUMED" : period === "month" ? "THIS MONTH CONSUMED" : "THIS YEAR CONSUMED";
+  }, [tab, period]);
 
   const metricValue = useMemo(() => {
     const currentBucketIndex = () => {
@@ -814,16 +855,23 @@ export default function ProgressScreen() {
           ? `${kg >= 0 ? "+" : ""}${kg.toFixed(1)} kg`
           : "0.0 kg",
       };
-    if (tab === "workout")
-      return {
-        main: `${Math.round(burnedToday).toLocaleString()} kcal`,
-        delta: `${burnedToday - burnedYesterday >= 0 ? "+" : ""}${Math.round(burnedToday - burnedYesterday).toLocaleString()}`,
-      };
+    if (tab === "workout") return workoutHeadlineMetric;
     return {
       main: `${Math.round(consumedToday).toLocaleString()} kcal`,
       delta: `${consumedToday - consumedYesterday >= 0 ? "+" : ""}${Math.round(consumedToday - consumedYesterday).toLocaleString()}`,
     };
-  }, [burnedToday, burnedYesterday, consumedToday, consumedYesterday, period, tab, effectiveWeightKg, hasWeightLogs, weightSeries]);
+  }, [
+    burnedToday,
+    burnedYesterday,
+    consumedToday,
+    consumedYesterday,
+    period,
+    tab,
+    effectiveWeightKg,
+    hasWeightLogs,
+    weightSeries,
+    workoutHeadlineMetric,
+  ]);
 
   const chartLabels = useMemo(() => {
     if (period === "week") return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -914,7 +962,6 @@ export default function ProgressScreen() {
       setHasWeightLogs(true);
       // Reflect the just-saved log immediately in the headline metric.
       setLatestLoggedWeight(nextW);
-      setWeightRefreshKey((k) => k + 1);
       setLogVisible(false);
     } catch (e) {
       console.log("Failed to log weight:", e);
@@ -1032,6 +1079,11 @@ export default function ProgressScreen() {
                   </Text>
                 </View>
               </View>
+              {workoutWeekTodayKcal ? (
+                <Text className="text-base font-semibold text-gray-500 mt-1.5">
+                  Today burned <Text className="text-lg font-extrabold text-[#52B69A]">{workoutWeekTodayKcal}</Text> kcal
+                </Text>
+              ) : null}
             </View>
 
             <View className="items-end">
@@ -1044,7 +1096,7 @@ export default function ProgressScreen() {
                 </Pressable>
               ) : (
                 <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
-                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates daily</Text>
+                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates</Text>
                 </View>
               )}
               <Pressable onPress={openDetails} className="mt-2 active:opacity-80">

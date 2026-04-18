@@ -1,7 +1,7 @@
+import { Pressable } from "@/components/Pressable";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
-import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const PROMPTS = [
@@ -26,7 +26,7 @@ export default function AICoachScreen() {
           >
             <Ionicons name="chevron-back" size={24} color="#111827" />
           </Pressable>
-          <Text className="text-2xl font-extrabold text-gray-900 flex-1">AI Coach</Text>
+          <Text className="text-2xl font-extrabold text-gray-900 flex-1">AI Chatbot</Text>
         </View>
 
         <View className="bg-white rounded-[28px] p-5 border border-gray-200">

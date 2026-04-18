@@ -1,7 +1,7 @@
+import { Pressable } from "@/components/Pressable";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
-import { Pressable } from "@/components/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const DAYS = [
@@ -113,7 +113,7 @@ export default function MealPlanScreen() {
         <View className="bg-[#fff7ed] rounded-3xl p-5 border border-[#fed7aa]">
           <Text className="text-2xl font-extrabold text-gray-900">Personalised Nutrition Guidance</Text>
           <Text className="text-sm text-gray-600 mt-2 leading-6">
-            Choose one meal from each breakfast, lunch and dinner group. Recipes and calories are preview-only for now.
+            Choose one meal from each breakfast, lunch and dinner group.
           </Text>
         </View>
 

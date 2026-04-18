@@ -95,7 +95,7 @@ export default function Login() {
       setForgotVisible(false);
       Alert.alert(
         "Reset Email Sent",
-        "We sent a password reset link to your email. Please check Inbox, Spam, and Promotions."
+        `We sent a password reset link to ${cleanEmail}. Please check Inbox, Spam, and Promotions.`
       );
     } catch (error: any) {
       const code = error?.code;

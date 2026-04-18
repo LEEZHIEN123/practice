@@ -19,7 +19,7 @@ import { useRouter } from "expo-router";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Image, ImageBackground, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -71,6 +71,7 @@ export default function HomeScreen() {
   const [activityMultiplier, setActivityMultiplier] = useState<number>(1.2);
   const [recommendedPlan, setRecommendedPlan] = useState<"gain" | "maintain" | "lose" | null>(null);
   const [planDuration, setPlanDuration] = useState<PlanDuration | null>(null);
+  const [pendingDuration, setPendingDuration] = useState<PlanDuration>("week");
   const [planPickerVisible, setPlanPickerVisible] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [consumedToday, setConsumedToday] = useState(0);
@@ -183,8 +184,10 @@ export default function HomeScreen() {
         if (typeof data?.activityMultiplier === "number") setActivityMultiplier(data.activityMultiplier);
         if (data?.recommendedPlan === "gain" || data?.recommendedPlan === "maintain" || data?.recommendedPlan === "lose")
           setRecommendedPlan(data.recommendedPlan);
-        if (data?.planDuration === "week" || data?.planDuration === "biweekly" || data?.planDuration === "monthly")
+        if (data?.planDuration === "week" || data?.planDuration === "biweekly" || data?.planDuration === "monthly") {
           setPlanDuration(data.planDuration);
+          setPendingDuration(data.planDuration);
+        }
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
 
@@ -558,14 +561,16 @@ export default function HomeScreen() {
           <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
             <Text className="text-2xl font-extrabold text-gray-900">Choose your plan</Text>
             <Text className="text-gray-500 mt-2 leading-6">
-              Select a duration and we weill generate a personalised workout plan for you.
+              Select a duration and we will generate a personalised workout plan for you.
             </Text>
 
             <View className="mt-5 gap-3">
               <Pressable
                 disabled={savingPlan}
-                onPress={() => void chooseDurationAndSave("week")}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                onPress={() => setPendingDuration("week")}
+                className={`rounded-3xl p-5 border active:opacity-90 ${
+                  pendingDuration === "week" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
+                }`}
               >
                 <Text className="text-xl font-extrabold text-gray-900">One Week Plan</Text>
                 <Text className="text-sm text-gray-500 mt-1">7 days · Short Term Schedule</Text>
@@ -573,8 +578,10 @@ export default function HomeScreen() {
 
               <Pressable
                 disabled={savingPlan}
-                onPress={() => void chooseDurationAndSave("biweekly")}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                onPress={() => setPendingDuration("biweekly")}
+                className={`rounded-3xl p-5 border active:opacity-90 ${
+                  pendingDuration === "biweekly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
+                }`}
               >
                 <Text className="text-xl font-extrabold text-gray-900">Biweekly Plan</Text>
                 <Text className="text-sm text-gray-500 mt-1">14 days · Medium Term Schedule</Text>
@@ -582,13 +589,32 @@ export default function HomeScreen() {
 
               <Pressable
                 disabled={savingPlan}
-                onPress={() => void chooseDurationAndSave("monthly")}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                onPress={() => setPendingDuration("monthly")}
+                className={`rounded-3xl p-5 border active:opacity-90 ${
+                  pendingDuration === "monthly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
+                }`}
               >
                 <Text className="text-xl font-extrabold text-gray-900">Monthly Plan</Text>
                 <Text className="text-sm text-gray-500 mt-1">30 days · Long Term Schedule</Text>
               </Pressable>
             </View>
+
+            <Pressable
+              disabled={savingPlan}
+              onPress={() => void chooseDurationAndSave(pendingDuration)}
+              className={`mt-5 rounded-full overflow-hidden ${savingPlan ? "opacity-60" : "opacity-100"}`}
+            >
+              <LinearGradient
+                colors={["#76C893", "#52B69A"]}
+                className="py-4 items-center rounded-2xl"
+              >
+                {savingPlan ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text className="text-white text-lg font-semibold">Continue</Text>
+                )}
+              </LinearGradient>
+            </Pressable>
 
             <Pressable
               disabled={savingPlan}

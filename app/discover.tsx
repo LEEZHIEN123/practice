@@ -133,8 +133,8 @@ export default function DiscoverScreen() {
               <Text className="text-white text-2xl font-extrabold">
                 Community
               </Text>
-              <Text className="text-[#d9f4e2] text-sm font-bold tracking-[2px] mt-2">
-                JOIN CHAT
+              <Text className="text-[#d9f4e2] text-lg font-bold tracking-[2px] mt-2">
+                 Share Anything &{"\n"}  Connect Others
               </Text>
             </Pressable>
 
@@ -153,8 +153,8 @@ export default function DiscoverScreen() {
               <Text className="text-white text-2xl font-extrabold">
                 AI Coach
               </Text>
-              <Text className="text-[#d9f4e2] text-sm font-bold tracking-[2px] mt-2">
-                GET ADVICE
+              <Text className="text-[#d9f4e2] text-lg font-bold tracking-[2px] mt-2">
+                Any Questions? {"\n"}      Ask Me!
               </Text>
             </Pressable>
           </View>

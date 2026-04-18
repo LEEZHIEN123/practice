@@ -41,7 +41,7 @@ function getPlan(bmi: number): {
       recommendationSubtitle: "Stay within a healthy BMI range",
       description:
         "A BMI of {BMI} is within the ideal range.\n" +
-        "Maintaining your current habits (balanced meals + regular activity) helps keep you healthy.",
+        "Having the balanced meals and regular activity helps keep you healthy.",
     };
   }
 
@@ -53,7 +53,7 @@ function getPlan(bmi: number): {
     recommendationSubtitle: "Achieve a healthier BMI range",
     description:
       "A BMI of {BMI} is above the ideal range.\n" +
-      "Reducing your weight by 5–10% can significantly lower health risks such as blood pressure and heart strain.",
+      "Reducing your weight can significantly reduce the risk of chronic illnesses and improve your quality of life.",
   };
 }
 

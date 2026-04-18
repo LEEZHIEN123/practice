@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Image, ScrollView, Text, TextInput, View } from "react-native";
 import { Pressable } from "@/components/Pressable";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useRegistration } from "../context/registrationContext";
+import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Image, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRegistration } from "../context/registrationContext";
 
 type Gender = "male" | "female";
 
@@ -111,7 +111,6 @@ export default function ProfileDetails() {
       }
 
       if (!ok) {
-        Alert.alert("Invalid details", "Please correct the highlighted fields before continuing.");
         return;
       }
 

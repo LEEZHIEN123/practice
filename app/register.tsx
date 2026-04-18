@@ -3,9 +3,9 @@ import { Pressable } from "@/components/Pressable";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -84,7 +84,7 @@ export default function Register() {
     }
 
     if (!acceptedPolicy) {
-      setPolicyError("You must accept the Privacy Policy and Terms of Use.");
+      setPolicyError("You must accept the Terms of Service.");
       ok = false;
     } else {
       setPolicyError("");
@@ -275,7 +275,7 @@ export default function Register() {
                 router.push("/terms-of-service" as any);
               }}
             >
-              Privacy and Terms of Use
+              Terms of Service
             </Text>{" "}
             of the Personalised Workout and Nutrition Guidance System.
              

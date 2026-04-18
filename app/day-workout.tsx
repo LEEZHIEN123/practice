@@ -77,6 +77,11 @@ function typeColor(type: string) {
   return "#1e3a8a";
 }
 
+function workoutTypeFullLabel(type: string) {
+  if (type.toLowerCase() === "hiit") return "HIIT (High-Intensity Interval Training)";
+  return type;
+}
+
 /** Main timer + countdown digits (user-requested red, not workout-type accent). */
 const TIMER_RED = "#dc2626";
 
@@ -870,7 +875,7 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               <View className="flex-1 pr-3 min-w-0">
                 <Text className="text-base font-extrabold text-gray-900 tracking-wide">WORKOUT TYPE</Text>
                 <Text className="text-xl font-extrabold mt-2" style={{ color: "#2563eb" }}>
-                  {row?.type ?? "—"}
+                  {row?.type ? workoutTypeFullLabel(row.type) : "—"}
                 </Text>
               </View>
               <View className="items-center shrink-0 justify-center">
@@ -1239,12 +1244,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               </Pressable>
             </View>
 
-            <Pressable
-              onPress={() => setPauseMenuVisible(false)}
-              className="mt-5 py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
-            >
-              <Text className="text-gray-800 font-extrabold">Close</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>
