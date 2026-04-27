@@ -151,7 +151,7 @@ export default function DiscoverScreen() {
               </View>
 
               <Text className="text-white text-2xl font-extrabold">
-                AI Coach
+                AI Chatbot
               </Text>
               <Text className="text-[#d9f4e2] text-lg font-bold tracking-[2px] mt-2">
                 Any Questions? {"\n"}      Ask Me!

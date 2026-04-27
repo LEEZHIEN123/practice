@@ -9,7 +9,7 @@ import {
   sanitizeActiveWorkoutPlan,
 } from "@/lib/workoutCatalog";
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
-import { bmiBandKey, calcBmi, durationDays, generateActiveWorkoutPlan, workoutPlansByBmiGoalField } from "@/lib/workoutPlan";
+import { durationDays } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
@@ -266,8 +266,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const [workoutSessionRows, setWorkoutSessionRows] = useState<DayRecordRow[]>([]);
   const [contentTab, setContentTab] = useState<"instruction" | "record">("instruction");
   const [canResume, setCanResume] = useState(false);
-  const [planCycleCompleteVisible, setPlanCycleCompleteVisible] = useState(false);
-  const [planCycleCompleteLabel, setPlanCycleCompleteLabel] = useState("");
   const autoCompleteFiredRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const sessionStartedAtMsRef = useRef<number | null>(null);
@@ -600,7 +598,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const completeWorkout = async (): Promise<boolean> => {
     const user = auth.currentUser;
     if (!user) return false;
-    let didRegeneratePlanCycle = false;
     const endedAtClient = new Date();
     await pauseWorkout();
 
@@ -757,56 +754,18 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     setSessionId(null);
     setContentTab("record");
 
-    // Mark completion, or roll to a new plan after the final day of week / biweekly / monthly.
+    // Mark completion progress; final plan rollover happens on the next calendar day in workout-plan.
     try {
       const userRef = doc(db, "users", user.uid);
       const dur = plan?.duration;
       const totalPlanDays =
         dur === "week" || dur === "biweekly" || dur === "monthly" ? durationDays(dur) : 0;
-      const finishingFullPlan = Boolean(plan && totalPlanDays > 0 && dayNum === totalPlanDays);
-
-      if (finishingFullPlan && plan) {
-        const uSnap = await getDoc(userRef);
-        const uData = uSnap.data() as any;
-        const stored = uData?.activeWorkoutPlan as ActiveWorkoutPlan | null;
-        const samePlan =
-          Boolean(stored?.createdAt && plan.createdAt && stored.createdAt === plan.createdAt);
-
-        if (samePlan) {
-          const weight = Number(uData?.weight ?? 0);
-          const height = Number(uData?.height ?? 0);
-          let bmi = calcBmi(weight, height);
-          if (bmi == null && typeof plan.bmi === "number" && Number.isFinite(plan.bmi)) {
-            bmi = plan.bmi;
-          }
-          const goal =
-            plan.goal === "gain" || plan.goal === "maintain" || plan.goal === "lose"
-              ? plan.goal
-              : uData?.recommendedPlan === "gain" ||
-                  uData?.recommendedPlan === "maintain" ||
-                  uData?.recommendedPlan === "lose"
-                ? uData.recommendedPlan
-                : null;
-
-          if (bmi != null && goal && dur) {
-            const next = generateActiveWorkoutPlan({ duration: dur, bmi, goal });
-            const band = bmiBandKey(bmi);
-            await updateDoc(userRef, {
-              activeWorkoutPlan: next,
-              [workoutPlansByBmiGoalField(band, goal, dur)]: next,
-              activePlanLastCompletedDay: null,
-              activePlanLastCompletedAt: null,
-            } as any);
-            setPlanCycleCompleteLabel(planDurationCompletionLabel(dur));
-            setPlanCycleCompleteVisible(true);
-            didRegeneratePlanCycle = true;
-          } else {
-            await updateDoc(userRef, {
-              activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
-              activePlanLastCompletedAt: serverTimestamp(),
-            } as any);
-          }
-        }
+      const finishingKnownPlanDay = Boolean(totalPlanDays > 0 && dayNum <= totalPlanDays);
+      if (finishingKnownPlanDay) {
+        await updateDoc(userRef, {
+          activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
+          activePlanLastCompletedAt: serverTimestamp(),
+        } as any);
       } else {
         const uSnap = await getDoc(userRef);
         const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
@@ -834,7 +793,7 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     modeRef.current = "countup";
     targetSecondsRef.current = null;
     setCanResume(false);
-    return didRegeneratePlanCycle;
+    return false;
   };
 
   const accent = row ? typeColor(row.type) : "#1e3a8a";
@@ -1326,43 +1285,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
         </View>
       </Modal>
 
-      <Modal
-        visible={planCycleCompleteVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setPlanCycleCompleteVisible(false);
-          router.replace("/workout-plan" as any);
-        }}
-      >
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <View className="items-center mb-2">
-              <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center border border-emerald-200">
-                <Ionicons name="checkmark-circle" size={40} color="#059669" />
-              </View>
-            </View>
-            <Text className="text-2xl font-extrabold text-gray-900 text-center">Plan complete</Text>
-            <Text className="text-gray-600 mt-3 leading-6 text-center">
-              You finished your {planCycleCompleteLabel || "full"} workout plan. A new plan has been generated so you can
-              keep going.
-            </Text>
-
-            <View className="mt-6 gap-3">
-              <Pressable
-                onPress={() => {
-                  setPlanCycleCompleteVisible(false);
-                  router.replace("/workout-plan" as any);
-                }}
-                className="py-4 rounded-full items-center active:opacity-90"
-                style={{ backgroundColor: ACCENT_GREEN }}
-              >
-                <Text className="text-white text-lg font-extrabold">View new plan</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

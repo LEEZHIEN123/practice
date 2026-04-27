@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
@@ -60,6 +60,9 @@ export default function StepProgressScreen() {
   const [seriesRefresh, setSeriesRefresh] = useState(0);
   const [liveTodayAuto, setLiveTodayAuto] = useState<number | null>(null);
   const [todayManualOverride, setTodayManualOverride] = useState<number | null>(null);
+  const [screenFocused, setScreenFocused] = useState(false);
+  const liveSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLiveSyncedRef = useRef(0);
 
   const [editOpen, setEditOpen] = useState(false);
   const [stepText, setStepText] = useState("");
@@ -243,6 +246,7 @@ export default function StepProgressScreen() {
             : 0;
         setTodayManualOverride(manual);
         setLiveTodayAuto(auto);
+        lastLiveSyncedRef.current = Math.max(lastLiveSyncedRef.current, auto);
       },
       () => {
         setTodayManualOverride(null);
@@ -253,6 +257,7 @@ export default function StepProgressScreen() {
 
   // Real-time steps for "today" (only affects the currently-visible window/bucket).
   useEffect(() => {
+    if (!screenFocused) return;
     let mounted = true;
     let pedSub: { remove: () => void } | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -308,7 +313,7 @@ export default function StepProgressScreen() {
       pedSub?.remove();
       if (timer) clearInterval(timer);
     };
-  }, [period]);
+  }, [period, screenFocused]);
 
   // Patch today's bar/row with live value (week view only, and only if there's no manual override).
   useEffect(() => {
@@ -342,20 +347,45 @@ export default function StepProgressScreen() {
     if (liveTodayAuto == null) return;
     const user = auth.currentUser;
     if (!user) return;
+    if (liveTodayAuto <= lastLiveSyncedRef.current) return;
     const dayKey = formatCalendarDayKey(new Date(), calendarTz);
-    void setDoc(
-      doc(db, "users", user.uid, "dailyStats", dayKey),
-      {
-        stepsAuto: Math.max(0, Math.round(liveTodayAuto)),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+
+    if (liveSyncTimerRef.current) clearTimeout(liveSyncTimerRef.current);
+    liveSyncTimerRef.current = setTimeout(() => {
+      const next = Math.max(0, Math.round(liveTodayAuto));
+      void setDoc(
+        doc(db, "users", user.uid, "dailyStats", dayKey),
+        {
+          stepsAuto: next,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+        .then(() => {
+          lastLiveSyncedRef.current = Math.max(lastLiveSyncedRef.current, next);
+        })
+        .catch((e) => {
+          console.log("Failed to sync step progress live steps:", e);
+        })
+        .finally(() => {
+          liveSyncTimerRef.current = null;
+        });
+    }, 2000);
   }, [calendarTz, liveTodayAuto, period, todayManualOverride]);
+
+  useEffect(() => {
+    return () => {
+      if (liveSyncTimerRef.current) clearTimeout(liveSyncTimerRef.current);
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
+      setScreenFocused(true);
       setSeriesRefresh((n) => n + 1);
+      return () => {
+        setScreenFocused(false);
+      };
     }, [])
   );
 

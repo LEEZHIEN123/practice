@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Fitness App",
-    "slug": "Personalised Workout and Nutrition Guidance System",
+    "slug": "Personalised Workout and Nutrition Guidance Application",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/fitness logo.jpg",

@@ -440,7 +440,7 @@ Optional: Use a bolster or pillow under your chest or head for support.`,
 7. Gradually slow down before stopping.`,
     },
     "Battle ropes": {
-      met: 11,
+      met: 7.5,
       instruction: `1. Stand with feet shoulder-width apart, knees slightly bent.
 2. Hold a rope in each hand with a firm grip.
 3. Perform alternating waves, slams, or circles with the ropes.
@@ -515,8 +515,8 @@ Optional: Use a bolster or pillow under your chest or head for support.`,
 4. Push yourself back up by straightening your arms and returning to the starting plank position, while maintaining proper body alignment.
 5. Repeat the push-up for the desired number of repetitions, maintaining proper form throughout the exercise.`,
     },
-    Lunge: {
-      met: 3,
+    "Barbell Lunge": {
+      met: 5.0,
       instruction: `1. Stand tall, feet hip-width apart.
 2. Step one leg forward, bending both knees to ~90 degrees.
 3. Keep front knee above ankle, back knee hovering above floor.
@@ -559,7 +559,7 @@ Optional: Use a bolster or pillow under your chest or head for support.`,
 5. Repeat for the desired number of repetitions.`,
     },
     "Bulgarian split squat": {
-      met: 3.5,
+      met: 5.0,
       instruction: `1. Stand with your back facing the chair and place your left foot on the seat of the chair.
 2. Step your right foot forward and lower your body down into a lunge position, keeping your left foot elevated on the chair.
 3. Make sure your right knee is directly above your ankle and your left knee is hovering just above the chair.
@@ -567,7 +567,7 @@ Optional: Use a bolster or pillow under your chest or head for support.`,
 5. Repeat for the desired number of reps on one side before switching to the other side.`,
     },
     "Leg press": {
-      met: 3.5,
+      met: 6.0,
       instruction: `1. Sit on the seat with your back against the backrest and your feet resting flat on the platform. Your knees should be bent at a 90-degree angle.
 2. Add weight plates to the machine according to your desired intensity level. Start with a weight that you can comfortably handle and gradually increase it as you progress.
 3. Position your feet hip-width apart on the platform, with toes pointing forward or slightly outward. Ensure your feet are placed firmly and securely on the platform.

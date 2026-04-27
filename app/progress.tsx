@@ -7,22 +7,22 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  addDoc,
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
+    addDoc,
+    collection,
+    doc,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    Timestamp,
+    updateDoc,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
@@ -71,6 +71,16 @@ export default function ProgressScreen() {
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [screenFocused, setScreenFocused] = useState(false);
+  const stepsSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSyncedStepsRef = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, [])
+  );
+
 
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const sameDayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -135,22 +145,49 @@ export default function ProgressScreen() {
   }, []);
 
   useEffect(() => {
+    if (!stepsHydrated) return;
+    lastSyncedStepsRef.current = Math.max(lastSyncedStepsRef.current, Math.max(0, Math.round(stepsAutoDb)));
+  }, [stepsAutoDb, stepsHydrated]);
+
+  useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
     if (!stepsHydrated) return;
+
     const key = formatCalendarDayKey(new Date(), calendarTz);
     const liveSteps = Math.max(0, Math.round(stepsToday));
     const savedSteps = Math.max(0, Math.round(stepsAutoDb));
     const nextSteps = Math.max(liveSteps, savedSteps);
-    void setDoc(
-      doc(db, "users", user.uid, "dailyStats", key),
-      {
-        stepsAuto: nextSteps,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+
+    if (nextSteps <= lastSyncedStepsRef.current) return;
+    if (stepsSyncTimerRef.current) clearTimeout(stepsSyncTimerRef.current);
+
+    stepsSyncTimerRef.current = setTimeout(() => {
+      void setDoc(
+        doc(db, "users", user.uid, "dailyStats", key),
+        {
+          stepsAuto: nextSteps,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+        .then(() => {
+          lastSyncedStepsRef.current = Math.max(lastSyncedStepsRef.current, nextSteps);
+        })
+        .catch((e) => {
+          console.log("Failed to sync live steps:", e);
+        })
+        .finally(() => {
+          stepsSyncTimerRef.current = null;
+        });
+    }, 2000);
   }, [calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
+
+  useEffect(() => {
+    return () => {
+      if (stepsSyncTimerRef.current) clearTimeout(stepsSyncTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!stepsHydrated) return;
@@ -308,6 +345,7 @@ export default function ProgressScreen() {
   }, [calendarTz, dayTick]);
 
   useEffect(() => {
+    if (!screenFocused) return;
     let timer: ReturnType<typeof setInterval> | null = null;
     let pedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let accelSub: { remove: () => void } | null = null;
@@ -466,7 +504,7 @@ export default function ProgressScreen() {
       pedSub?.remove();
       accelSub?.remove();
     };
-  }, []);
+  }, [screenFocused]);
 
   useEffect(() => {
     setHoverIdx(null);

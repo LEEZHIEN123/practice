@@ -2,6 +2,8 @@ import { plansEqual, sanitizeActiveWorkoutPlan, type WorkoutType } from "@/lib/w
 import {
     bmiBandKey,
     calcBmi,
+    durationDays,
+    generateActiveWorkoutPlan,
     pickOrGenerateWorkoutPlanForBand,
     workoutPlansByBmiGoalField,
     type ActiveWorkoutPlan,
@@ -20,7 +22,7 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -76,6 +78,7 @@ export default function WorkoutPlanScreen() {
   /** Earliest completion day for Day 1 (used as stable anchor for "Today"). */
   const [day1EarliestAtFromLogs, setDay1EarliestAtFromLogs] = useState<Date | null>(null);
   const [day1EarliestAtFromSessions, setDay1EarliestAtFromSessions] = useState<Date | null>(null);
+  const rolloverInFlightRef = useRef(false);
 
   useEffect(() => {
     const id = setInterval(() => setCalendarTick((n) => n + 1), 60_000);
@@ -100,6 +103,9 @@ export default function WorkoutPlanScreen() {
       return;
     }
     const wn = normalizeWorkoutName(day1Row.workout);
+    const expectedPlanCreatedAt = typeof plan.createdAt === "string" && plan.createdAt.trim().length > 0
+      ? plan.createdAt
+      : null;
 
     const qLogs = query(collection(db, "users", user.uid, "workoutLogs"), where("day", "==", 1), limit(80));
     const qSess = query(collection(db, "users", user.uid, "workoutSessions"), where("day", "==", 1), limit(80));
@@ -110,6 +116,10 @@ export default function WorkoutPlanScreen() {
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         if (isDiscoverWorkoutRecord(data)) continue;
+        if (expectedPlanCreatedAt) {
+          const docPlanCreatedAt = typeof (data as any).planCreatedAt === "string" ? (data as any).planCreatedAt : null;
+          if (docPlanCreatedAt !== expectedPlanCreatedAt) continue;
+        }
         const title = typeof data.title === "string" ? data.title : "";
         if (normalizeWorkoutName(title) === wn) {
           hit = true;
@@ -130,6 +140,10 @@ export default function WorkoutPlanScreen() {
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         if (isDiscoverWorkoutRecord(data)) continue;
+        if (expectedPlanCreatedAt) {
+          const docPlanCreatedAt = typeof (data as any).planCreatedAt === "string" ? (data as any).planCreatedAt : null;
+          if (docPlanCreatedAt !== expectedPlanCreatedAt) continue;
+        }
         if ((data as any).status !== "completed") continue;
         const w = typeof (data as any).workout === "string" ? (data as any).workout : "";
         if (normalizeWorkoutName(w) === wn) {
@@ -191,6 +205,46 @@ export default function WorkoutPlanScreen() {
     );
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !plan || !lastCompletedAt || lastCompletedDay == null) return;
+    if (rolloverInFlightRef.current) return;
+
+    const totalPlanDays = durationDays(plan.duration);
+    const completedLastDay = Math.floor(lastCompletedDay) >= totalPlanDays;
+    if (!completedLastDay) return;
+
+    const todayStart = startOfCalendarDay(new Date());
+    const completedDayStart = startOfCalendarDay(lastCompletedAt);
+    const isNextCalendarDay = todayStart.getTime() > completedDayStart.getTime();
+    if (!isNextCalendarDay) return;
+
+    const resolvedGoal =
+      plan.goal === "gain" || plan.goal === "maintain" || plan.goal === "lose"
+        ? plan.goal
+        : goal;
+    if (userBmi == null || !resolvedGoal) return;
+
+    rolloverInFlightRef.current = true;
+    (async () => {
+      try {
+        const next = generateActiveWorkoutPlan({ duration: plan.duration, bmi: userBmi, goal: resolvedGoal });
+        const band = bmiBandKey(userBmi);
+        await updateDoc(doc(db, "users", user.uid), {
+          activeWorkoutPlan: next,
+          [workoutPlansByBmiGoalField(band, resolvedGoal, plan.duration)]: next,
+          activePlanLastCompletedDay: null,
+          activePlanLastCompletedAt: null,
+        } as any);
+        Alert.alert("Plan complete", "Great job finishing your plan. A new plan is now ready for this cycle.");
+      } catch (e) {
+        console.log("Failed to roll over completed plan:", e);
+      } finally {
+        rolloverInFlightRef.current = false;
+      }
+    })();
+  }, [plan, lastCompletedAt, lastCompletedDay, userBmi, goal, calendarTick]);
 
   const metaLine = useMemo(() => {
     const bmiLine = userBmi != null ? `BMI: ${Math.round(userBmi * 10) / 10}` : "";

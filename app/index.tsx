@@ -50,7 +50,7 @@ export default function Home() {
           resizeMode="contain"
         />
         <Text className="text-2xl font-extrabold text-green-700 text-center leading-10">
-          Personalised Workout and {"\n"} Nutrition Guidance System
+          Personalised Workout and {"\n"} Nutrition Guidance Application
         </Text>
         <Text className="text-lg text-gray-600 text-center mt-4 mb-10">
           Track your journey to achieve your fitness goals.

@@ -58,7 +58,7 @@ const WORKOUT_INSTRUCTION_IMAGES: Record<string, ImageSourcePropType> = {
   Deadlift: require("../assets/images/deadlift.webp"),
   "Kettlebell swing": require("../assets/images/kettlebell swing.png"),
   "Push-up": require("../assets/images/push ups.png"),
-  Lunge: require("../assets/images/lunge.webp"),
+  "Barbell Lunge": require("../assets/images/lunge.webp"),
   "Pull-up": require("../assets/images/pull up.webp"),
   Plank: require("../assets/images/plank.png"),
   "Front squat": require("../assets/images/Barbell Front Squat.webp"),
