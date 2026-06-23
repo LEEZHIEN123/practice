@@ -1,10 +1,10 @@
 {
   "expo": {
     "name": "Fitness App",
-    "slug": "Personalised Workout and Nutrition Guidance Application",
+    "slug": "practice",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/fitness logo.jpg",
+    "icon": "./assets/images/fitness-logo.jpg",
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
     "infoPlist": {
@@ -19,11 +19,10 @@
       "permissions": [
         "ACTIVITY_RECOGNITION"
       ],
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/fitness-logo.jpg"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -37,7 +36,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/fitness-logo.jpg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

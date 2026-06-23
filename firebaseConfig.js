@@ -1,8 +1,10 @@
+import "./lib/firebasePolyfills";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { Platform } from "react-native";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBRgSUWNUgTOf4uGrR1yn8XmfvXf5-YCyg",
@@ -16,16 +18,23 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Persist auth session on React Native (keeps users signed in)
-let auth;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-  });
-} catch {
-  auth = getAuth(app);
+function createAuth() {
+  if (Platform.OS === "web") {
+    return getAuth(app);
+  }
+  try {
+    return initializeAuth(app, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+    });
+  } catch (e) {
+    const code = e?.code ?? "";
+    if (code === "auth/already-initialized") {
+      return getAuth(app);
+    }
+    throw e;
+  }
 }
 
-export { auth };
+export const auth = createAuth();
 export const db = getFirestore(app);
 export const storage = getStorage(app);

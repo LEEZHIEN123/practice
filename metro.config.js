@@ -34,6 +34,12 @@ function withCssInteropJsxRuntimeResolution(config) {
 
 const config = getDefaultConfig(__dirname);
 
+// Expo SDK 53+ / RN 0.79+: Firebase Auth needs the RN bundle + .cjs resolution (not browser ESM).
+// Without this, auth often fails with auth/network-request-failed on Android/iOS.
+// https://docs.expo.dev/guides/using-firebase/#configure-metro
+config.resolver.sourceExts.push("cjs");
+config.resolver.unstable_enablePackageExports = false;
+
 module.exports = withCssInteropJsxRuntimeResolution(
   withNativeWind(config, {
     input: path.join(__dirname, "app/global.css"),

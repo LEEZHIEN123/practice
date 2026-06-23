@@ -8,6 +8,8 @@ import {
 } from "firebase/auth";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Modal, Text, TextInput, View } from "react-native";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
+import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { auth } from "../firebaseConfig";
 
 export default function Login() {
@@ -59,14 +61,32 @@ export default function Login() {
     try {
       setLoading(true);
       await signInWithEmailAndPassword(auth, cleanEmail, password);
-      router.replace("/home");
-    } catch (e: any) {
-      // Email format should already be validated above; treat the rest as wrong credentials.
-      const code: string | undefined = e?.code;
+      if (isAdminEmail(cleanEmail)) {
+        void syncAdminConfig().catch(() => {});
+        router.replace("/admin" as any);
+      } else {
+        router.replace("/home");
+      }
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
       if (code === "auth/invalid-email") {
         Alert.alert("Invalid email", "Please enter a valid email format (abc@gmail.com).");
+      } else if (code === "auth/network-request-failed") {
+        Alert.alert("Connection error", firebaseAuthErrorMessage(e));
+      } else if (code === "auth/user-not-found") {
+        Alert.alert(
+          "Account not found",
+          "This email is not registered yet. Tap Register to create an account first."
+        );
+      } else if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+        Alert.alert(
+          "Wrong password",
+          "The password is incorrect. Use Forgot Password to reset it, or register if you have not created this account yet."
+        );
+      } else if (code === "auth/too-many-requests") {
+        Alert.alert("Too many attempts", "Please wait a few minutes and try again.");
       } else {
-        Alert.alert("Wrong email/password", "please enter the correct email and password");
+        Alert.alert("Login failed", firebaseAuthErrorMessage(e));
       }
     } finally {
       setLoading(false);
@@ -106,8 +126,10 @@ export default function Login() {
         Alert.alert("Invalid email", "Please enter a valid email address.");
       } else if (code === "auth/too-many-requests") {
         Alert.alert("Too many requests", "Please try again later.");
+      } else if (code === "auth/network-request-failed") {
+        Alert.alert("Connection error", firebaseAuthErrorMessage(error));
       } else {
-        Alert.alert("Error", error?.message ?? "Unable to send reset email.");
+        Alert.alert("Error", firebaseAuthErrorMessage(error));
       }
     } finally {
       setSendingReset(false);

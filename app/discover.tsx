@@ -1,3 +1,6 @@
+import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -7,6 +10,8 @@ import { auth, db } from "../firebaseConfig";
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  useAdminRedirect();
+  const { totalUnread } = useCommunityUnread();
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -126,9 +131,11 @@ export default function DiscoverScreen() {
               onPress={() => router.push("/community" as any)}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
-              <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
-                <Ionicons name="people" size={24} color="white" />
-              </View>
+              <CommunityUnreadBadge count={totalUnread}>
+                <View className="w-16 h-16 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
+                  <Ionicons name="people" size={30} color="white" />
+                </View>
+              </CommunityUnreadBadge>
 
               <Text className="text-white text-2xl font-extrabold">
                 Community
@@ -171,7 +178,9 @@ export default function DiscoverScreen() {
         
 
         <Pressable className="items-center">
-          <Ionicons name="compass" size={20} color="#76C893" />
+          <CommunityUnreadBadge count={totalUnread}>
+            <Ionicons name="compass" size={24} color="#76C893" />
+          </CommunityUnreadBadge>
           <Text className="text-[10px] text-[#76C893] font-bold mt-1">
             DISCOVER
           </Text>

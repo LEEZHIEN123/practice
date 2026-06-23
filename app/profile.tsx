@@ -1,3 +1,6 @@
+import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
@@ -36,6 +39,8 @@ type Gender = "male" | "female";
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  useAdminRedirect();
+  const { totalUnread } = useCommunityUnread();
 
   const [userName, setUserName] = useState(" ");
   const [userEmail, setUserEmail] = useState(" ");
@@ -254,17 +259,22 @@ export default function ProfileScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <View className="relative mb-6 h-12 justify-center">
+        <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
           <Pressable
             onPress={() => router.back()}
             hitSlop={12}
-            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
+            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
           >
             <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
               <Ionicons name="arrow-back" size={24} color="#111827" />
             </View>
           </Pressable>
-          <Text className="text-center text-xl font-extrabold text-gray-900">Profile</Text>
+          <Text
+            pointerEvents="none"
+            className="absolute left-0 right-0 text-center text-2xl font-extrabold text-gray-900"
+          >
+            Profile
+          </Text>
         </View>
 
         <View>
@@ -336,19 +346,6 @@ export default function ProfileScreen() {
                 <Feather name="file-text" size={20} color="#76C893" />
               </View>
               <Text className="text-lg font-bold text-gray-900 ml-4">Terms of Service</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
-          </Pressable>
-
-          <Pressable
-            onPress={() => router.push("/contact-us")}
-            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-3.5 shadow-sm"
-          >
-            <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Feather name="mail" size={20} color="#76C893" />
-              </View>
-              <Text className="text-lg font-bold text-gray-900 ml-4">Contact Us</Text>
             </View>
             <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
           </Pressable>
@@ -563,7 +560,9 @@ export default function ProfileScreen() {
         </Pressable>
 
         <Pressable onPress={() => router.replace("/discover")} className="items-center">
-          <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          <CommunityUnreadBadge count={totalUnread}>
+            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          </CommunityUnreadBadge>
           <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
         </Pressable>
 

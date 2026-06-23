@@ -1,8 +1,9 @@
 import { useMusicPlayer } from "@/context/MusicPlayerContext";
 import { getMusicCategoryIcon } from "@/lib/musicCategoryIcons";
+import { useMusicModeToast } from "@/lib/useMusicModeToast";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,11 +28,16 @@ export function AllMusicBottomPlayer() {
     skipPrevious,
     playlist,
     currentIndex,
+    repeatOne,
+    shuffle,
+    toggleRepeatOne,
+    toggleShuffle,
     stop,
   } = useMusicPlayer();
 
   const [sliding, setSliding] = useState(false);
   const [slideValue, setSlideValue] = useState(0);
+  const { toast, showToast } = useMusicModeToast();
 
   const dur = Math.max(durationMillis || currentTrack?.durationMs || 0, 1);
   const progress = useMemo(() => Math.min(1, Math.max(0, positionMillis / dur)), [positionMillis, dur]);
@@ -39,14 +45,14 @@ export function AllMusicBottomPlayer() {
 
   if (!currentTrack) return null;
 
-  const canNext = currentIndex < playlist.length - 1;
+  const canNext = repeatOne || playlist.length > 1;
   const icon = getMusicCategoryIcon(currentTrack.categoryId);
   const queueLabel =
     playlist.length > 0 ? `${currentIndex + 1} / ${playlist.length}` : "";
 
   return (
     <View
-      className="absolute left-0 right-0 bg-white border-t border-gray-200 shadow-lg shadow-black/10"
+      className="absolute left-0 right-0 bg-white border-t border-gray-200 shadow-lg shadow-black/10 relative"
       style={{
         bottom: 0,
         paddingBottom: Math.max(insets.bottom, 10),
@@ -109,10 +115,36 @@ export function AllMusicBottomPlayer() {
         </View>
       </View>
 
-      <View className="flex-row items-center justify-center gap-10 mt-1">
-        <Pressable onPress={() => void skipPrevious()} hitSlop={12} className="p-2">
-          <Ionicons name="play-skip-back" size={28} color="#111827" />
-        </Pressable>
+      {toast ? (
+        <View className="absolute left-0 right-0 items-center" style={{ top: -36 }}>
+          <View className="bg-gray-900/90 px-4 py-2 rounded-full">
+            <Text className="text-[16px] font-bold text-red-500">{toast}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View className="flex-row items-center justify-center mt-1 gap-6">
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={() => {
+              toggleShuffle();
+              showToast(shuffle ? "Random play off" : "Random play on");
+            }}
+            hitSlop={10}
+            accessibilityLabel={shuffle ? "Shuffle on" : "Shuffle off"}
+            className="w-10 h-10 rounded-full items-center justify-center"
+          >
+            <Ionicons
+              name="shuffle"
+              size={22}
+              color={shuffle ? "#52B69A" : "#9ca3af"}
+            />
+          </Pressable>
+          <Pressable onPress={() => void skipPrevious()} hitSlop={12} className="p-2">
+            <Ionicons name="play-skip-back" size={28} color="#111827" />
+          </Pressable>
+        </View>
+
         <Pressable
           onPress={() => void togglePlayPause()}
           hitSlop={12}
@@ -120,18 +152,36 @@ export function AllMusicBottomPlayer() {
         >
           <Ionicons name={isPlaying ? "pause" : "play"} size={28} color="#fff" />
         </Pressable>
-        <Pressable
-          onPress={() => void skipNext()}
-          disabled={!canNext}
-          hitSlop={12}
-          className={`p-2 ${!canNext ? "opacity-30" : ""}`}
-        >
-          <Ionicons name="play-skip-forward" size={28} color="#111827" />
-        </Pressable>
+
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={() => void skipNext()}
+            disabled={!canNext}
+            hitSlop={12}
+            className={`p-2 ${!canNext ? "opacity-30" : ""}`}
+          >
+            <Ionicons name="play-skip-forward" size={28} color="#111827" />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              toggleRepeatOne();
+              showToast(repeatOne ? "Repeat song off" : "Repeat song on");
+            }}
+            hitSlop={10}
+            accessibilityLabel={repeatOne ? "Repeat one on" : "Repeat one off"}
+            className="w-10 h-10 rounded-full items-center justify-center"
+          >
+            <Ionicons
+              name="repeat"
+              size={22}
+              color={repeatOne ? "#52B69A" : "#9ca3af"}
+            />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
 /** Extra bottom space so the list clears the dock. */
-export const ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD = 168;
+export const ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD = 180;

@@ -16,6 +16,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { useRegistration } from "../context/registrationContext";
 import { auth, db } from "../firebaseConfig";
 
@@ -128,16 +129,16 @@ export default function Register() {
       });
 
       router.push("/profiledetails");
-    } catch (e: any) {
-      if (e?.code === "auth/email-already-in-use") {
-        Alert.alert("Email Exists", "This email is already registered.");
-      } else if (e?.code === "permission-denied") {
+    } catch (e: unknown) {
+      if ((e as { code?: string })?.code === "permission-denied") {
         Alert.alert(
           "Firestore: permission denied",
           "Your account was created but your profile data could not be saved. Please check your Firestore rules."
         );
+      } else if ((e as { code?: string })?.code === "auth/email-already-in-use") {
+        Alert.alert("Email Exists", firebaseAuthErrorMessage(e));
       } else {
-        Alert.alert("Error", e?.message ?? "Registration failed.");
+        Alert.alert("Error", firebaseAuthErrorMessage(e));
       }
     } finally {
       setLoading(false);

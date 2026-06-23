@@ -5,6 +5,7 @@ import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { onAuthStateChanged } from "firebase/auth";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -46,6 +47,7 @@ function effectiveSteps(data: { stepsAuto?: unknown; stepsManual?: unknown } | u
 export default function StepProgressScreen() {
   const router = useRouter();
   const calendarTz = useUserCalendarTimezone();
+  const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const params = useLocalSearchParams<{ period?: string }>();
   const initialPeriod = (params.period === "month" || params.period === "year" || params.period === "week"
     ? params.period
@@ -78,6 +80,28 @@ export default function StepProgressScreen() {
     return ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
   }, [period]);
 
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setAuthUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    lastLiveSyncedRef.current = 0;
+    if (liveSyncTimerRef.current) {
+      clearTimeout(liveSyncTimerRef.current);
+      liveSyncTimerRef.current = null;
+    }
+    if (!authUid) {
+      setLiveTodayAuto(null);
+      setTodayManualOverride(null);
+      setStepSeries(Array.from({ length: 7 }, () => 0));
+      setWindowRows([]);
+      setLoading(false);
+      return;
+    }
+    setSeriesRefresh((n) => n + 1);
+  }, [authUid]);
+
   const title = useMemo(() => {
     if (period === "week") {
       const ws = startOfWeekMon(anchor);
@@ -92,7 +116,7 @@ export default function StepProgressScreen() {
   useEffect(() => {
     if (!editOpen) return;
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     const k = formatCalendarDayKey(editModalDate, calendarTz);
     const ref = doc(db, "users", user.uid, "dailyStats", k);
     const unsub = onSnapshot(
@@ -111,7 +135,7 @@ export default function StepProgressScreen() {
       }
     );
     return () => unsub();
-  }, [calendarTz, editModalDate, editOpen]);
+  }, [authUid, calendarTz, editModalDate, editOpen]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -122,7 +146,7 @@ export default function StepProgressScreen() {
   useEffect(() => {
     const load = async () => {
       const user = auth.currentUser;
-      if (!user) {
+      if (!user || user.uid !== authUid) {
         const len = period === "week" ? 7 : period === "month" ? 4 : 12;
         setStepSeries(Array.from({ length: len }, () => 0));
         setWindowRows([]);
@@ -226,11 +250,11 @@ export default function StepProgressScreen() {
     };
 
     void load();
-  }, [anchor, calendarTz, chartLabels, period, seriesRefresh]);
+  }, [anchor, authUid, calendarTz, chartLabels, period, seriesRefresh]);
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     const todayKey = formatCalendarDayKey(new Date(), calendarTz);
     const unsub = onSnapshot(
       doc(db, "users", user.uid, "dailyStats", todayKey),
@@ -253,7 +277,7 @@ export default function StepProgressScreen() {
       }
     );
     return () => unsub();
-  }, [calendarTz]);
+  }, [authUid, calendarTz]);
 
   // Real-time steps for "today" (only affects the currently-visible window/bucket).
   useEffect(() => {
@@ -265,7 +289,7 @@ export default function StepProgressScreen() {
 
     const startLive = async () => {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user || user.uid !== authUid) return;
 
       // Only need live OS step polls for the weekly chart; month/year use aggregates from load().
       if (period !== "week") return;
@@ -313,7 +337,7 @@ export default function StepProgressScreen() {
       pedSub?.remove();
       if (timer) clearInterval(timer);
     };
-  }, [period, screenFocused]);
+  }, [authUid, period, screenFocused]);
 
   // Patch today's bar/row with live value (week view only, and only if there's no manual override).
   useEffect(() => {
@@ -346,7 +370,7 @@ export default function StepProgressScreen() {
     if (todayManualOverride != null) return;
     if (liveTodayAuto == null) return;
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     if (liveTodayAuto <= lastLiveSyncedRef.current) return;
     const dayKey = formatCalendarDayKey(new Date(), calendarTz);
 
@@ -371,7 +395,7 @@ export default function StepProgressScreen() {
           liveSyncTimerRef.current = null;
         });
     }, 2000);
-  }, [calendarTz, liveTodayAuto, period, todayManualOverride]);
+  }, [authUid, calendarTz, liveTodayAuto, period, todayManualOverride]);
 
   useEffect(() => {
     return () => {
@@ -457,7 +481,7 @@ export default function StepProgressScreen() {
 
   const saveManual = async () => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     const parsed = parseInt(stepText.replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(parsed) || parsed < 0 || parsed > 200000) {
       Alert.alert("Invalid steps", "Enter a step count between 0 and 200,000.");
@@ -519,7 +543,7 @@ export default function StepProgressScreen() {
 
   const resetToAuto = async () => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     try {
       setSaving(true);
       const dayKey = formatCalendarDayKey(editModalDate, calendarTz);

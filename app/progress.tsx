@@ -1,3 +1,6 @@
+import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
@@ -31,11 +34,15 @@ type PeriodKey = "week" | "month" | "year";
 
 type WorkoutLogRowProgress = { burnedKcal: number; createdAt: Date; dayKey: string };
 
-const localStepDraftKey = (dateKey: string) => `daily-steps-draft:${dateKey}`;
+const localStepDraftKey = (uid: string, dateKey: string) => `daily-steps-draft:${uid}:${dateKey}`;
 
 export default function ProgressScreen() {
   const router = useRouter();
+  useAdminRedirect();
+  const { totalUnread } = useCommunityUnread();
   const calendarTz = useUserCalendarTimezone();
+  /** Firestore listeners must re-subscribe when the signed-in user changes (missing this caused cross-account data bleed). */
+  const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [tab, setTab] = useState<TabKey>("weight");
   const [period, setPeriod] = useState<PeriodKey>("week");
 
@@ -139,10 +146,38 @@ export default function ProgressScreen() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUid(user?.uid ?? null);
       if (user) void runRemoveZeroKcalWorkoutLogsOnce();
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    lastSyncedStepsRef.current = 0;
+    if (stepsSyncTimerRef.current) {
+      clearTimeout(stepsSyncTimerRef.current);
+      stepsSyncTimerRef.current = null;
+    }
+    if (!authUid) {
+      setStepsToday(0);
+      setStepsAutoDb(0);
+      setStepsManualDb(null);
+      setStepsHydrated(false);
+      setConsumedToday(0);
+      setBurnedToday(0);
+      setConsumedYesterday(0);
+      setBurnedYesterday(0);
+      setWaterMlToday(0);
+      setWaterFromLogs({ sum: 0, count: 0 });
+      setStepSource("pedometer");
+      return;
+    }
+    setStepsToday(0);
+    setStepsAutoDb(0);
+    setStepsManualDb(null);
+    setStepsHydrated(false);
+    setStepSource("pedometer");
+  }, [authUid]);
 
   useEffect(() => {
     if (!stepsHydrated) return;
@@ -151,7 +186,7 @@ export default function ProgressScreen() {
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     if (!stepsHydrated) return;
 
     const key = formatCalendarDayKey(new Date(), calendarTz);
@@ -181,7 +216,7 @@ export default function ProgressScreen() {
           stepsSyncTimerRef.current = null;
         });
     }, 2000);
-  }, [calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
+  }, [authUid, calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
 
   useEffect(() => {
     return () => {
@@ -190,20 +225,21 @@ export default function ProgressScreen() {
   }, []);
 
   useEffect(() => {
+    if (!authUid) return;
     if (!stepsHydrated) return;
     const key = formatCalendarDayKey(new Date(), calendarTz);
     const value = Math.max(Math.max(0, Math.round(stepsToday)), Math.max(0, Math.round(stepsAutoDb)));
-    void AsyncStorage.setItem(localStepDraftKey(key), String(value));
-  }, [calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
+    void AsyncStorage.setItem(localStepDraftKey(authUid, key), String(value));
+  }, [authUid, calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     let cancelled = false;
     const syncDraftToAccount = async () => {
       const dayKey = formatCalendarDayKey(new Date(), calendarTz);
       try {
-        const draftRaw = await AsyncStorage.getItem(localStepDraftKey(dayKey));
+        const draftRaw = await AsyncStorage.getItem(localStepDraftKey(user.uid, dayKey));
         if (cancelled || draftRaw == null) return;
         const draftSteps = parseInt(draftRaw, 10);
         if (!Number.isFinite(draftSteps) || draftSteps < 0) return;
@@ -223,11 +259,11 @@ export default function ProgressScreen() {
     return () => {
       cancelled = true;
     };
-  }, [calendarTz]);
+  }, [authUid, calendarTz]);
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     const unsub = onSnapshot(
       doc(db, "users", user.uid),
       (snap) => {
@@ -247,7 +283,7 @@ export default function ProgressScreen() {
       () => {}
     );
     return () => unsub();
-  }, []);
+  }, [authUid]);
 
   useEffect(() => {
     const id = setInterval(() => setDayTick((n) => n + 1), 60_000);
@@ -256,7 +292,7 @@ export default function ProgressScreen() {
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     setStepsHydrated(false);
 
     const now = new Date();
@@ -306,11 +342,11 @@ export default function ProgressScreen() {
       unsubToday();
       unsubYesterday();
     };
-  }, [calendarTz, dayTick]);
+  }, [authUid, calendarTz, dayTick]);
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user || user.uid !== authUid) return;
     const q = query(
       collection(db, "users", user.uid, "waterLogs"),
       orderBy("createdAt", "desc"),
@@ -342,7 +378,7 @@ export default function ProgressScreen() {
       () => setWaterFromLogs({ sum: 0, count: 0 })
     );
     return () => unsub();
-  }, [calendarTz, dayTick]);
+  }, [authUid, calendarTz, dayTick]);
 
   useEffect(() => {
     if (!screenFocused) return;
@@ -504,7 +540,7 @@ export default function ProgressScreen() {
       pedSub?.remove();
       accelSub?.remove();
     };
-  }, [screenFocused]);
+  }, [authUid, screenFocused]);
 
   useEffect(() => {
     setHoverIdx(null);
@@ -513,7 +549,7 @@ export default function ProgressScreen() {
   useEffect(() => {
     if (tab !== "weight") return;
     const user = auth.currentUser;
-    if (!user) {
+    if (!user || user.uid !== authUid) {
       setWeightProgressLogRows([]);
       return;
     }
@@ -544,7 +580,7 @@ export default function ProgressScreen() {
       }
     );
     return () => unsub();
-  }, [tab]);
+  }, [authUid, tab]);
 
   useEffect(() => {
     const applyWeightProgressLogs = () => {
@@ -664,7 +700,7 @@ export default function ProgressScreen() {
   useEffect(() => {
     if (tab !== "workout") return;
     const user = auth.currentUser;
-    if (!user) {
+    if (!user || user.uid !== authUid) {
       setWorkoutLogRows([]);
       return;
     }
@@ -694,7 +730,7 @@ export default function ProgressScreen() {
       () => setWorkoutLogRows([])
     );
     return () => unsub();
-  }, [tab, calendarTz]);
+  }, [authUid, calendarTz, tab]);
 
   const workoutSeries = useMemo((): number[] => {
     if (tab !== "workout") return [];
@@ -1320,7 +1356,9 @@ export default function ProgressScreen() {
         </Pressable>
 
         <Pressable onPress={() => router.replace("/discover")} className="items-center">
-          <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          <CommunityUnreadBadge count={totalUnread}>
+            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          </CommunityUnreadBadge>
           <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
         </Pressable>
 

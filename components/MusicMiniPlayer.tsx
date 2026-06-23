@@ -1,9 +1,10 @@
 import { useMusicPlayer } from "@/context/MusicPlayerContext";
 import { getMusicCategoryIcon } from "@/lib/musicCategoryIcons";
+import { useMusicModeToast } from "@/lib/useMusicModeToast";
 import { Ionicons } from "@expo/vector-icons";
-import { usePathname } from "expo-router";
 import Slider from "@react-native-community/slider";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -81,7 +82,10 @@ export function MusicMiniPlayer() {
     skipNext,
     skipPrevious,
     playlist,
-    currentIndex,
+    repeatOne,
+    shuffle,
+    toggleRepeatOne,
+    toggleShuffle,
     stop,
   } = useMusicPlayer();
 
@@ -98,6 +102,7 @@ export function MusicMiniPlayer() {
 
   const [sliding, setSliding] = useState(false);
   const [slideValue, setSlideValue] = useState(0);
+  const { toast, showToast } = useMusicModeToast();
 
   useEffect(() => {
     posRef.current = pos;
@@ -237,7 +242,7 @@ export function MusicMiniPlayer() {
     [applyDrag, cardW, cardH, screenW, screenH, insets.top, insets.bottom]
   );
 
-  const canNext = currentIndex < playlist.length - 1;
+  const canNext = repeatOne || playlist.length > 1;
 
   const handleClose = () => {
     posReadyRef.current = false;
@@ -360,7 +365,25 @@ export function MusicMiniPlayer() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between mt-1 px-1">
+              {toast ? (
+                <View className="items-center -mt-1 mb-1">
+                  <View className="bg-gray-900/90 px-3 py-1.5 rounded-full">
+                    <Text className="text-[10px] font-bold text-red-500">{toast}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <View className="flex-row items-center justify-center mt-1 px-1 gap-2">
+                <Pressable
+                  onPress={() => {
+                    toggleShuffle();
+                    showToast(shuffle ? "Random play off" : "Random play on");
+                  }}
+                  hitSlop={8}
+                  className="w-8 h-8 rounded-full items-center justify-center ml-2"
+                >
+                  <Ionicons name="shuffle" size={18} color={shuffle ? "#52B69A" : "#9ca3af"} />
+                </Pressable>
                 <Pressable onPress={() => void skipPrevious()} hitSlop={8} className="p-1">
                   <Ionicons name="play-skip-back" size={22} color="#111827" />
                 </Pressable>
@@ -378,6 +401,16 @@ export function MusicMiniPlayer() {
                   className={`p-1 ${!canNext ? "opacity-30" : ""}`}
                 >
                   <Ionicons name="play-skip-forward" size={22} color="#111827" />
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    toggleRepeatOne();
+                    showToast(repeatOne ? "Repeat song off" : "Repeat song on");
+                  }}
+                  hitSlop={8}
+                  className="w-8 h-8 rounded-full items-center justify-center mr-2"
+                >
+                  <Ionicons name="repeat" size={18} color={repeatOne ? "#52B69A" : "#9ca3af"} />
                 </Pressable>
               </View>
             </View>

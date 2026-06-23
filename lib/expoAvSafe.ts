@@ -1,3 +1,5 @@
+import { requireOptionalNativeModule } from "expo-modules-core";
+
 /**
  * Lazy-load expo-av Audio API without a static `import { Audio } from "expo-av"`, which would
  * evaluate the package index and native ExponentAV at bundle load (crashes when the native
@@ -11,6 +13,8 @@ export function getExpoAvAudioOrNull(): Promise<ExpoAvAudioModule | null> {
   if (!loadPromise) {
     loadPromise = (async () => {
       try {
+        const avNative = requireOptionalNativeModule("ExponentAV");
+        if (!avNative) return null;
         return await import("expo-av/build/Audio");
       } catch {
         return null;

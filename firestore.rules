@@ -1,14 +1,225 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User profile: only that signed-in user can read/write their own doc (create + update).
-    match /users/{userId} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isAdminEmail() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && request.auth.token.email == "leezhien12345@gmail.com";
+    }
+    function isFirestoreAdminFlag() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get("isAdmin", false) == true;
+    }
+    function isConfigAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/communityConfig/main)
+        && get(/databases/$(database)/documents/communityConfig/main).data.adminUserId == request.auth.uid;
+    }
+    function isUserDocAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get("email", "")
+            == "leezhien12345@gmail.com"
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get("role", "")
+            == "admin"
+        );
+    }
+    function isAdmin() {
+      return isAdminEmail() || isFirestoreAdminFlag() || isConfigAdmin() || isUserDocAdmin();
+    }
+    function isChatParticipant(chatId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/communityChats/$(chatId))
+        && request.auth.uid in get(/databases/$(database)/documents/communityChats/$(chatId)).data.participants;
+    }
+    function otherChatParticipantId(chatId) {
+      let chat = get(/databases/$(database)/documents/communityChats/$(chatId)).data;
+      let participants = chat.participants;
+      return participants[0] == request.auth.uid ? participants[1] : participants[0];
+    }
+    function isFriendsWithChatOther(chatId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(otherChatParticipantId(chatId)));
+    }
+    function canSeedSupportWelcome(chatId) {
+      let chat = get(/databases/$(database)/documents/communityChats/$(chatId)).data;
+      return isChatParticipant(chatId)
+        && chat.get("isSupportChat", false) == true
+        && request.resource.data.get("isWelcomeMessage", false) == true
+        && request.resource.data.get("isAutoReply", false) == true
+        && request.resource.data.messageType == "text"
+        && request.resource.data.senderId in chat.participants;
+    }
+    function canSendUserChatMessage(chatId) {
+      let chat = get(/databases/$(database)/documents/communityChats/$(chatId)).data;
+      return chat.get("isSupportChat", false) == true
+        || isAdmin()
+        || (
+          exists(/databases/$(database)/documents/communityConfig/main)
+          && otherChatParticipantId(chatId)
+            == get(/databases/$(database)/documents/communityConfig/main).data.adminUserId
+        )
+        || isFriendsWithChatOther(chatId);
+    }
+    function isOwnChatMessageEdit() {
+      return resource.data.senderId == request.auth.uid
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.messageType == resource.data.messageType
+        && resource.data.get("recalled", false) == false;
+    }
+    function isOwnChatMessageRecall() {
+      return resource.data.senderId == request.auth.uid
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && resource.data.get("recalled", false) == false
+        && request.resource.data.recalled == true;
+    }
+    function adminFieldUnchanged() {
+      return !("isAdmin" in request.resource.data)
+        || request.resource.data.isAdmin == resource.data.get("isAdmin", false);
+    }
+    function userProfileFieldsSafe() {
+      return !("role" in request.resource.data)
+        || request.resource.data.role == resource.data.get("role", "")
+        || (
+          isOwner(userId)
+          && request.resource.data.get("role", "") == "admin"
+          && (
+            request.auth.token.email == "leezhien12345@gmail.com"
+            || resource.data.get("email", "") == "leezhien12345@gmail.com"
+          )
+        );
+    }
+    function postNotBlocked() {
+      return resource.data.get("blocked", false) == false;
+    }
+    function isAuthorPostEdit() {
+      return resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.authorName == resource.data.authorName
+        && request.resource.data.get("blocked", false) == resource.data.get("blocked", false)
+        && request.resource.data.likeCount == resource.data.likeCount
+        && request.resource.data.commentCount == resource.data.commentCount
+        && request.resource.data.likedBy == resource.data.likedBy
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
 
-    // Nested data (e.g. weightLogs): same user only.
-    match /users/{userId}/{document=**} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId)
+        && (
+          !("role" in request.resource.data)
+          || request.resource.data.get("role", "") != "admin"
+          || isAdminEmail()
+        );
+      allow update, delete: if isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe();
+
+      match /friends/{friendId} {
+        allow read: if isOwner(userId);
+        allow create, delete: if isSignedIn()
+          && (request.auth.uid == userId || request.auth.uid == friendId);
+      }
+
+      match /{document=**} {
+        allow read, create, update, delete: if isOwner(userId);
+      }
+    }
+
+    match /communityPosts/{postId} {
+      allow read: if isSignedIn() && postNotBlocked();
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.get("blocked", false) == false;
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || isAuthorPostEdit()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likedBy", "likeCount"])
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["commentCount"])
+        || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["blocked"]))
+      );
+      allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+        allow delete: if isSignedIn() && (
+          resource.data.authorId == request.auth.uid
+          || get(/databases/$(database)/documents/communityPosts/$(postId)).data.authorId == request.auth.uid
+          || isAdmin()
+        );
+      }
+    }
+
+    match /communityReports/{reportId} {
+      allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow read, update: if isAdmin();
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if isSignedIn() && (
+        resource.data.fromUserId == request.auth.uid
+        || resource.data.toUserId == request.auth.uid
+      );
+      allow create: if isSignedIn() && request.resource.data.fromUserId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.toUserId == request.auth.uid;
+    }
+
+    match /communityNotifications/{notificationId} {
+      allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+    }
+
+    match /communityChats/{chatId} {
+      allow read: if isSignedIn()
+        && (resource == null || request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if isChatParticipant(chatId);
+        allow create: if isChatParticipant(chatId)
+          && (
+            (
+              request.resource.data.senderId == request.auth.uid
+              && canSendUserChatMessage(chatId)
+            )
+            || canSeedSupportWelcome(chatId)
+            || (
+              request.resource.data.get("isAutoReply", false) == true
+              && (
+                (
+                  exists(/databases/$(database)/documents/communityConfig/main)
+                  && request.resource.data.senderId
+                    == get(/databases/$(database)/documents/communityConfig/main).data.adminUserId
+                )
+                || isAdminEmail()
+              )
+            )
+          );
+        allow delete: if isAdmin();
+        allow update: if isChatParticipant(chatId)
+          && (isOwnChatMessageEdit() || isOwnChatMessageRecall());
+      }
+    }
+
+    match /communityConfig/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && docId == "main"
+        && request.resource.data.adminUserId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /communityInvites/{inviteId} {
+      allow read, create: if isAdmin();
     }
   }
 }

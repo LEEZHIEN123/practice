@@ -1,3 +1,4 @@
+import { checkIsAdmin } from "@/lib/communityService";
 import { Pressable } from "@/components/Pressable";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePathname, useRouter } from "expo-router";
@@ -18,7 +19,11 @@ export default function Home() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user && pathname === "/") {
-        router.replace("/home");
+        void checkIsAdmin(user).then((admin) => {
+          router.replace(admin ? ("/admin" as any) : "/home");
+        }).catch(() => {
+          router.replace("/home");
+        });
         return;
       }
       setCheckingSession(false);

@@ -17,7 +17,7 @@ export type MusicTrack = {
   artworkUrl: string;
   streamUrl: string;
   durationMs: number;
-  /** All Music genre chip id (hiphop, rock, …) for category icon. */
+  /** Library category id (e.g. local) for list icon. */
   categoryId?: string;
 };
 
@@ -37,17 +37,44 @@ type MusicPlayerContextValue = {
   isPlaying: boolean;
   positionMillis: number;
   durationMillis: number;
+  repeatOne: boolean;
+  shuffle: boolean;
   playPlaylistAt: (tracks: MusicTrack[], index: number, mode: "full" | "snippet") => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
   skipNext: () => Promise<void>;
   skipPrevious: () => Promise<void>;
+  toggleRepeatOne: () => void;
+  toggleShuffle: () => void;
   stop: () => Promise<void>;
 };
 
 const MusicPlayerContext = createContext<MusicPlayerContextValue | null>(null);
 
 let snippetTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function pickRandomIndex(length: number, exclude?: number): number {
+  if (length <= 0) return 0;
+  if (length === 1) return 0;
+  let next = Math.floor(Math.random() * length);
+  if (exclude !== undefined && exclude >= 0 && next === exclude) {
+    next = (next + 1 + Math.floor(Math.random() * (length - 1))) % length;
+  }
+  return next;
+}
+
+function resolveNextIndex(
+  list: MusicTrack[],
+  currentIdx: number,
+  repeatOne: boolean,
+  shuffle: boolean
+): number | null {
+  if (!list.length) return null;
+  if (repeatOne) return currentIdx;
+  if (shuffle) return pickRandomIndex(list.length, currentIdx);
+  if (currentIdx < list.length - 1) return currentIdx + 1;
+  return null;
+}
 
 function clearSnippetTimeout() {
   if (snippetTimeout) {
@@ -63,6 +90,8 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
+  const [repeatOne, setRepeatOne] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
 
   const soundRef = useRef<ExpoSoundHandle | null>(null);
   const playReqRef = useRef(0);
@@ -71,6 +100,8 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   const modeRef = useRef<"full" | "snippet">("full");
   const currentIdRef = useRef<string | null>(null);
   const loadTrackAtRef = useRef<(tracks: MusicTrack[], index: number, mode: "full" | "snippet", reqId: number) => Promise<void>>(async () => {});
+  const repeatOneRef = useRef(false);
+  const shuffleRef = useRef(false);
   const [shouldResumeOnActive, setShouldResumeOnActive] = useState(false);
 
   useEffect(() => {
@@ -82,6 +113,12 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     currentIdRef.current = currentTrack?.id ?? null;
   }, [currentTrack?.id]);
+  useEffect(() => {
+    repeatOneRef.current = repeatOne;
+  }, [repeatOne]);
+  useEffect(() => {
+    shuffleRef.current = shuffle;
+  }, [shuffle]);
 
   const unloadCurrent = useCallback(async () => {
     clearSnippetTimeout();
@@ -131,8 +168,13 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
             clearSnippetTimeout();
             return;
           }
-          if (idx < list.length - 1) {
-            const next = idx + 1;
+          const next = resolveNextIndex(
+            list,
+            idx,
+            repeatOneRef.current,
+            shuffleRef.current
+          );
+          if (next !== null) {
             setCurrentIndex(next);
             indexRef.current = next;
             setCurrentTrack(list[next] ?? null);
@@ -342,8 +384,9 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   const skipNext = useCallback(async () => {
     const list = playlistRef.current;
     const idx = indexRef.current;
-    if (!list.length || idx >= list.length - 1) return;
-    const next = idx + 1;
+    if (!list.length) return;
+    const next = resolveNextIndex(list, idx, repeatOneRef.current, shuffleRef.current);
+    if (next === null) return;
     const reqId = ++playReqRef.current;
     setCurrentIndex(next);
     indexRef.current = next;
@@ -351,6 +394,14 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     currentIdRef.current = list[next]?.id ?? null;
     await loadTrackAt(list, next, "full", reqId);
   }, [loadTrackAt]);
+
+  const toggleRepeatOne = useCallback(() => {
+    setRepeatOne((v) => !v);
+  }, []);
+
+  const toggleShuffle = useCallback(() => {
+    setShuffle((v) => !v);
+  }, []);
 
   const skipPrevious = useCallback(async () => {
     const list = playlistRef.current;
@@ -395,11 +446,15 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
       isPlaying,
       positionMillis,
       durationMillis,
+      repeatOne,
+      shuffle,
       playPlaylistAt,
       togglePlayPause,
       seekTo,
       skipNext,
       skipPrevious,
+      toggleRepeatOne,
+      toggleShuffle,
       stop,
     }),
     [
@@ -409,11 +464,15 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
       isPlaying,
       positionMillis,
       durationMillis,
+      repeatOne,
+      shuffle,
       playPlaylistAt,
       togglePlayPause,
       seekTo,
       skipNext,
       skipPrevious,
+      toggleRepeatOne,
+      toggleShuffle,
       stop,
     ]
   );

@@ -1,3 +1,6 @@
+import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { CaloriesDonut } from "@/components/CaloriesDonut";
 import { bumpWorkoutPlanDay } from "@/lib/achievements";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
@@ -60,6 +63,8 @@ function HomeSectionHeading({
 
 export default function HomeScreen() {
   const router = useRouter();
+  useAdminRedirect();
+  const { totalUnread } = useCommunityUnread();
   const calendarTz = useUserCalendarTimezone();
   const [dayRoll, setDayRoll] = useState(0);
   const dayKey = useMemo(() => formatCalendarDayKey(new Date(), calendarTz), [calendarTz, dayRoll]);
@@ -639,7 +644,9 @@ export default function HomeScreen() {
           onPress={() => router.push("/discover")}
           className="items-center"
         >
-          <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          <CommunityUnreadBadge count={totalUnread}>
+            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
+          </CommunityUnreadBadge>
           <Text className="text-[10px] text-gray-400 font-bold mt-1">
             DISCOVER
           </Text>
