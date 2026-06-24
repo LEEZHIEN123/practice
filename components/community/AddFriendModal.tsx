@@ -1,23 +1,23 @@
 import { Pressable } from "@/components/Pressable";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
-import type { FriendRelation, RegisteredUser } from "@/lib/communityTypes";
 import {
-  getFriendRelation,
-  searchUsersForAdding,
-  sendFriendRequest,
+    getFriendRelation,
+    searchUsersForAdding,
+    sendFriendRequest,
 } from "@/lib/communityService";
+import type { FriendRelation, RegisteredUser } from "@/lib/communityTypes";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -121,7 +121,7 @@ export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendMod
           style={{ paddingBottom: insets.bottom + 16, maxHeight: "85%" }}
         >
           <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
-            <Text className="text-xl font-extrabold text-gray-900">Add friend</Text>
+            <Text className="text-xl font-extrabold text-gray-900">Add Friend</Text>
             <Pressable
               onPress={onClose}
               className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200"

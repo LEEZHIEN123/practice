@@ -5,11 +5,16 @@
  *   set ADMIN_PASSWORD=your-password
  *   node scripts/setupCommunityAdmin.cjs
  *
- * Do not commit passwords. The admin email is fixed in firestore.rules / communityService.
+ * Requires EXPO_PUBLIC_FIREBASE_API_KEY and EXPO_PUBLIC_FIREBASE_PROJECT_ID in `.env`.
+ * Do not commit passwords or API keys.
  */
 
+const path = require("path");
+require("@expo/env").load(path.resolve(__dirname, "..", ".env"), { force: true });
+
 const ADMIN_EMAIL = "leezhien12345@gmail.com";
-const API_KEY = "AIzaSyBRgSUWNUgTOf4uGrR1yn8XmfvXf5-YCyg";
+const API_KEY = (process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? "").trim();
+const PROJECT_ID = (process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? "").trim();
 
 async function authRequest(path, body) {
   const res = await fetch(`https://identitytoolkit.googleapis.com/v1/${path}?key=${API_KEY}`, {
@@ -27,13 +32,12 @@ async function authRequest(path, body) {
 }
 
 async function ensureUserDoc(idToken, localId, name) {
-  const projectId = "fitnessapplication-25add";
   const fields = {
     name: { stringValue: name },
     email: { stringValue: ADMIN_EMAIL },
     createdAt: { integerValue: String(Date.now()) },
   };
-  const createUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users?documentId=${localId}`;
+  const createUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users?documentId=${localId}`;
   const createRes = await fetch(createUrl, {
     method: "POST",
     headers: {
@@ -44,7 +48,7 @@ async function ensureUserDoc(idToken, localId, name) {
   });
   if (createRes.ok) return;
 
-  const patchUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${localId}?updateMask.fieldPaths=name&updateMask.fieldPaths=email`;
+  const patchUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${localId}?updateMask.fieldPaths=name&updateMask.fieldPaths=email`;
   const patchRes = await fetch(patchUrl, {
     method: "PATCH",
     headers: {
@@ -60,6 +64,13 @@ async function ensureUserDoc(idToken, localId, name) {
 }
 
 async function main() {
+  if (!API_KEY || !PROJECT_ID) {
+    console.error(
+      "Set EXPO_PUBLIC_FIREBASE_API_KEY and EXPO_PUBLIC_FIREBASE_PROJECT_ID in .env before running this script."
+    );
+    process.exit(1);
+  }
+
   const password = process.env.ADMIN_PASSWORD;
   if (!password) {
     console.error("Set ADMIN_PASSWORD before running this script.");
