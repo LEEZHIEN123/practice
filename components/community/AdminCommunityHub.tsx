@@ -5,6 +5,9 @@ import { PostCommentsSheet } from "@/components/community/PostCommentsSheet";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
+import { AppearanceModal } from "@/components/profile/AppearanceModal";
+import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
   adminBlockComment,
@@ -61,9 +64,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../firebaseConfig";
 
-const PROFILE_ROW_CLASS =
-  "bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-3.5 shadow-sm";
-
 type AdminTab = "community" | "reports" | "users" | "profile";
 
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
@@ -98,9 +98,12 @@ function AdminTabHeader({
   title: string;
   right?: ReactNode;
 }) {
+  const { textPrimary } = useThemedScreen();
   return (
     <View className="flex-row items-center mb-5">
-      <Text className="text-3xl font-extrabold text-gray-900 flex-1">{title}</Text>
+      <Text className="text-3xl font-extrabold flex-1" style={textPrimary}>
+        {title}
+      </Text>
       {right}
     </View>
   );
@@ -109,6 +112,20 @@ function AdminTabHeader({
 export function AdminCommunityHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const {
+    mode,
+    theme,
+    cardStyle,
+    surfaceStyle,
+    textPrimary,
+    textSecondary,
+    textMuted,
+    iconButtonStyle,
+    navStyle,
+    segmentActiveStyle,
+    segmentTrackStyle,
+  } = useThemedScreen();
+  const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [activeTab, setActiveTab] = useState<AdminTab>("community");
   const [communitySubTab, setCommunitySubTab] = useState<"feed" | "chat">("feed");
 
@@ -163,6 +180,7 @@ export function AdminCommunityHub() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  const [appearanceVisible, setAppearanceVisible] = useState(false);
 
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
 
@@ -514,32 +532,28 @@ export function AdminCommunityHub() {
     >
       <AdminTabHeader title="Community" right={<AdminBadge />} />
 
-      <View className="bg-white rounded-[28px] p-5 border border-gray-200">
+      <View className="rounded-[28px] p-5" style={cardStyle}>
         <View className="flex-row mb-4">
           <Pressable
             onPress={() => setCommunitySubTab("feed")}
-            className={`flex-1 rounded-full py-3 items-center mr-2 ${
-              communitySubTab === "feed" ? "bg-[#eaf7f0]" : "bg-[#f3f4f3]"
-            }`}
+            className="flex-1 rounded-full py-3 items-center mr-2"
+            style={communitySubTab === "feed" ? segmentActiveStyle : segmentTrackStyle}
           >
             <Text
-              className={`text-sm font-extrabold ${
-                communitySubTab === "feed" ? "text-[#52B69A]" : "text-gray-500"
-              }`}
+              className="text-sm font-extrabold"
+              style={{ color: communitySubTab === "feed" ? theme.accentText : theme.textMuted }}
             >
               Community
             </Text>
           </Pressable>
           <Pressable
             onPress={() => setCommunitySubTab("chat")}
-            className={`flex-1 rounded-full py-3 items-center ml-2 flex-row justify-center ${
-              communitySubTab === "chat" ? "bg-[#eaf7f0]" : "bg-[#f3f4f3]"
-            }`}
+            className="flex-1 rounded-full py-3 items-center ml-2 flex-row justify-center"
+            style={communitySubTab === "chat" ? segmentActiveStyle : segmentTrackStyle}
           >
             <Text
-              className={`text-sm font-extrabold ${
-                communitySubTab === "chat" ? "text-[#52B69A]" : "text-gray-500"
-              }`}
+              className="text-sm font-extrabold"
+              style={{ color: communitySubTab === "chat" ? theme.accentText : theme.textMuted }}
             >
               Chat
             </Text>
@@ -555,15 +569,17 @@ export function AdminCommunityHub() {
 
         {communitySubTab === "feed" ? (
           <>
-            <View className="bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200">
+            <View className="rounded-2xl px-4 py-4" style={surfaceStyle}>
               <View className="flex-row items-center">
                 <ProfileAvatar uri={myProfileImage} />
                 <View className="flex-1 ml-3">
                   <View className="flex-row items-center">
-                    <Text className="text-base font-extrabold text-gray-900">Share Any Announcements</Text>
+                    <Text className="text-base font-extrabold" style={textPrimary}>
+                      Share Any Announcements
+                    </Text>
                     <AdminBadge small />
                   </View>
-                  <Text className="text-sm text-gray-500 mt-1">
+                  <Text className="text-sm mt-1" style={textMuted}>
                     Post any announcements or updates for the community.
                   </Text>
                 </View>
@@ -573,13 +589,15 @@ export function AdminCommunityHub() {
                 onChangeText={setPostText}
                 placeholder="What would you like to share today?"
                 multiline
-                className="mt-4 bg-white rounded-2xl px-4 py-4 border border-gray-200 text-sm text-gray-800 min-h-[80px]"
-                placeholderTextColor="#9ca3af"
+                className="mt-4 rounded-2xl px-4 py-4 text-sm min-h-[80px]"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <Pressable
                 onPress={() => void handleCreatePost()}
                 disabled={posting || !postText.trim()}
-                className={`mt-3 rounded-full py-3 items-center ${postText.trim() ? "bg-[#52B69A]" : "bg-gray-200"}`}
+                className="mt-3 rounded-full py-3 items-center"
+                style={{ backgroundColor: postText.trim() ? "#52B69A" : theme.iconMuted }}
               >
                 {posting ? (
                   <ActivityIndicator color="white" />
@@ -592,16 +610,19 @@ export function AdminCommunityHub() {
               <View className="flex-row items-center mb-3 mt-4">
                 <Pressable
                   onPress={exitTagView}
-                  className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
+                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
+                  style={iconButtonStyle}
                 >
-                  <Ionicons name="chevron-back" size={22} color="#111827" />
+                  <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
                 </Pressable>
-                <Text className="text-lg font-extrabold text-gray-900">#{activeTagFilter}</Text>
+                <Text className="text-lg font-extrabold" style={textPrimary}>
+                  #{activeTagFilter}
+                </Text>
               </View>
             ) : null}
             <View className="mt-4 gap-3">
               {displayedPosts.length === 0 ? (
-                <Text className="text-sm text-gray-500 text-center py-8">
+                <Text className="text-sm text-center py-8" style={textMuted}>
                   {tagFilterView && activeTagFilter
                     ? `No posts with #${activeTagFilter}`
                     : "No posts yet."}
@@ -611,17 +632,20 @@ export function AdminCommunityHub() {
                 const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
                 const isOwnPost = post.authorId === currentUserId;
                 return (
-                <View key={post.id} className="bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200">
+                <View key={post.id} className="rounded-2xl px-4 py-4" style={surfaceStyle}>
                   <View className="flex-row items-center">
                     <ProfileAvatar uri={post.authorProfileImage} size={40} />
                     <View className="flex-1 ml-3">
-                      <Text className="text-base font-extrabold text-gray-900">
+                      <Text className="text-base font-extrabold" style={textPrimary}>
                         {post.authorName}
                         {isOwnPost ? (
-                          <Text className="text-sm font-bold text-[#52B69A]"> · me</Text>
+                          <Text style={{ color: theme.accentText }} className="text-sm font-bold">
+                            {" "}
+                            · me
+                          </Text>
                         ) : null}
                       </Text>
-                      <Text className="text-[10px] text-gray-400 mt-0.5">
+                      <Text className="text-[10px] mt-0.5" style={textMuted}>
                         {formatPostDisplayTime(post.createdAt)}
                       </Text>
                     </View>
@@ -629,10 +653,12 @@ export function AdminCommunityHub() {
                       onPress={() => setMenuPost(post)}
                       className="w-9 h-9 rounded-full items-center justify-center"
                     >
-                      <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                      <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
                     </Pressable>
                   </View>
-                  <Text className="text-sm text-gray-700 mt-3 leading-6">{post.content}</Text>
+                  <Text className="text-sm mt-3 leading-6" style={textSecondary}>
+                    {post.content}
+                  </Text>
                   {post.imageUrl ? (
                     <Image
                       source={{ uri: post.imageUrl }}
@@ -646,9 +672,12 @@ export function AdminCommunityHub() {
                         <Pressable
                           key={tag}
                           onPress={() => openTagFromPost(tag)}
-                          className="rounded-full px-2.5 py-1 bg-white border border-[#52B69A]"
+                          className="rounded-full px-2.5 py-1 border"
+                          style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
                         >
-                          <Text className="text-[10px] font-bold text-[#52B69A]">#{tag}</Text>
+                          <Text className="text-[10px] font-bold" style={{ color: theme.accentText }}>
+                            #{tag}
+                          </Text>
                         </Pressable>
                       ))}
                     </View>
@@ -683,7 +712,9 @@ export function AdminCommunityHub() {
         ) : (
           <View className="gap-3">
             {chats.length === 0 ? (
-              <Text className="text-sm text-gray-500 text-center py-8">No user chats yet.</Text>
+              <Text className="text-sm text-center py-8" style={textMuted}>
+                No user chats yet.
+              </Text>
             ) : null}
             {chats.map((chat) => {
               const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
@@ -699,25 +730,31 @@ export function AdminCommunityHub() {
                       params: { chatId: chat.id, name, image: image ?? "", isAdmin: "1" },
                     })
                   }
-                  className={`flex-row items-center bg-[#f3f4f3] rounded-2xl px-4 py-4 border ${
-                    highlightChatId === chat.id ? "border-[#52B69A] border-2" : "border-gray-200"
-                  }`}
+                  className="flex-row items-center rounded-2xl px-4 py-4 border"
+                  style={[
+                    surfaceStyle,
+                    highlightChatId === chat.id
+                      ? { borderColor: theme.accent, borderWidth: 2 }
+                      : undefined,
+                  ]}
                 >
                   <ProfileAvatar uri={image} />
                   <View className="flex-1 ml-3">
                     <View className="flex-row items-center">
-                      <Text className="text-base font-extrabold text-gray-900">{name}</Text>
+                      <Text className="text-base font-extrabold" style={textPrimary}>
+                        {name}
+                      </Text>
                       {unread > 0 ? (
                         <View className="ml-2 min-w-[20px] h-5 px-1 rounded-full bg-[#ef4444] items-center justify-center">
                           <Text className="text-[10px] font-extrabold text-white">{unread}</Text>
                         </View>
                       ) : null}
                     </View>
-                    <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
+                    <Text className="text-sm mt-1" style={textMuted} numberOfLines={1}>
                       {chat.lastMessage || "No messages"}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#76C893" />
+                  <Ionicons name="chevron-forward" size={20} color={theme.accent} />
                 </Pressable>
               );
             })}
@@ -730,19 +767,32 @@ export function AdminCommunityHub() {
   const renderReportsTab = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
       <AdminTabHeader title="Report Management" />
-      <View className="bg-white rounded-[28px] p-5 border border-gray-200 gap-3">
-        <Text className="text-sm text-gray-500">Total pending: {reports.length}</Text>
+      <View className="rounded-[28px] p-5 gap-3" style={cardStyle}>
+        <Text className="text-sm" style={textMuted}>
+          Total pending: {reports.length}
+        </Text>
         {reports.length === 0 ? (
-          <Text className="text-sm text-gray-500 text-center py-8">No pending reports.</Text>
+          <Text className="text-sm text-center py-8" style={textMuted}>
+            No pending reports.
+          </Text>
         ) : null}
         {reports.map((report) => {
           const busy = reportActionId === report.id;
           return (
-            <View key={report.id} className="bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200">
-              <Text className="text-xs font-extrabold text-[#52B69A] uppercase">{report.targetType}</Text>
-              <Text className="text-sm font-extrabold text-gray-900 mt-2">By {report.reporterName}</Text>
-              <Text className="text-sm text-gray-600 mt-1">Reason: {report.reason}</Text>
-              <Text className="text-sm text-gray-700 mt-3 bg-white rounded-xl px-3 py-3 border border-gray-200">
+            <View key={report.id} className="rounded-2xl px-4 py-4" style={surfaceStyle}>
+              <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
+                {report.targetType}
+              </Text>
+              <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
+                By {report.reporterName}
+              </Text>
+              <Text className="text-sm mt-1" style={textSecondary}>
+                Reason: {report.reason}
+              </Text>
+              <Text
+                className="text-sm mt-3 rounded-xl px-3 py-3 border"
+                style={[cardStyle, textSecondary]}
+              >
                 {report.targetContent}
               </Text>
               {report.targetType === "post" ? (
@@ -765,18 +815,24 @@ export function AdminCommunityHub() {
                   <Pressable
                     onPress={() => handleDismiss(report)}
                     disabled={busy}
-                    className="flex-1 rounded-full py-2.5 items-center bg-white border border-gray-200"
+                    className="flex-1 rounded-full py-2.5 items-center border"
+                    style={cardStyle}
                   >
-                    <Text className="text-xs font-extrabold text-gray-600">Dismiss</Text>
+                    <Text className="text-xs font-extrabold" style={textSecondary}>
+                      Dismiss
+                    </Text>
                   </Pressable>
                 </View>
               ) : (
                 <Pressable
                   onPress={() => handleDismiss(report)}
                   disabled={busy}
-                  className="mt-3 rounded-full py-2.5 items-center bg-white border border-gray-200"
+                  className="mt-3 rounded-full py-2.5 items-center border"
+                  style={cardStyle}
                 >
-                  <Text className="text-xs font-extrabold text-gray-600">Dismiss</Text>
+                  <Text className="text-xs font-extrabold" style={textSecondary}>
+                    Dismiss
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -789,7 +845,9 @@ export function AdminCommunityHub() {
   const renderUsersTab = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
       <View className="flex-row items-center mb-1">
-        <Text className="text-3xl font-extrabold text-gray-900 flex-1">User Management</Text>
+        <Text className="text-3xl font-extrabold flex-1" style={textPrimary}>
+          User Management
+        </Text>
         <Pressable
           onPress={() => {
             setInviteEmail("");
@@ -801,28 +859,38 @@ export function AdminCommunityHub() {
           <Text className="text-sm font-extrabold text-white ml-2">Invite</Text>
         </Pressable>
       </View>
-      <Text className="text-sm text-[#52B69A] font-bold mb-3">
+      <Text className="text-sm font-bold mb-3" style={{ color: theme.accentText }}>
         {users.length} registered users
       </Text>
-      <View className="bg-white rounded-[28px] p-5 border border-gray-200 gap-3">
+      <View className="rounded-[28px] p-5 gap-3" style={cardStyle}>
         {users.length === 0 ? (
-          <Text className="text-sm text-gray-500 text-center py-8">No registered users yet.</Text>
+          <Text className="text-sm text-center py-8" style={textMuted}>
+            No registered users yet.
+          </Text>
         ) : null}
         {users.map((user) => (
           <View
             key={user.id}
-            className="flex-row items-center bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200"
+            className="flex-row items-center rounded-2xl px-4 py-4"
+            style={surfaceStyle}
           >
             <ProfileAvatar uri={user.profileImage} size={40} />
             <View className="flex-1 ml-3">
-              <Text className="text-sm font-extrabold text-gray-900">{user.name}</Text>
-              <Text className="text-xs text-gray-500 mt-0.5">{user.email}</Text>
+              <Text className="text-sm font-extrabold" style={textPrimary}>
+                {user.name}
+              </Text>
+              <Text className="text-xs mt-0.5" style={textMuted}>
+                {user.email}
+              </Text>
             </View>
             <Pressable
               onPress={() => void openUserDetail(user)}
-              className="rounded-full px-4 py-2 bg-white border border-[#52B69A]"
+              className="rounded-full px-4 py-2 border"
+              style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
             >
-              <Text className="text-xs font-extrabold text-[#52B69A]">View</Text>
+              <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
+                View
+              </Text>
             </Pressable>
           </View>
         ))}
@@ -830,10 +898,18 @@ export function AdminCommunityHub() {
     </ScrollView>
   );
 
-  const renderProfileTab = () => (
+  const renderProfileTab = () => {
+    const rowStyle = {
+      backgroundColor: theme.rowBg,
+      borderColor: theme.cardBorder,
+      borderWidth: 1,
+    };
+    const appearanceLabel = mode === "dark" ? "Dark mode" : "Light mode";
+
+    return (
     <ScrollView
       contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}
-      className="bg-[#eef2f1]"
+      style={{ backgroundColor: theme.screenBg }}
     >
       <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
         <Pressable
@@ -841,13 +917,17 @@ export function AdminCommunityHub() {
           hitSlop={12}
           className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
         >
-          <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+          <View
+            className="h-12 w-12 items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.cardBg }}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </View>
         </Pressable>
         <Text
           pointerEvents="none"
-          className="absolute left-0 right-0 text-center text-3xl font-extrabold text-gray-900"
+          className="absolute left-0 right-0 text-center text-3xl font-extrabold"
+          style={{ color: theme.textPrimary }}
         >
           Profile
         </Text>
@@ -862,43 +942,112 @@ export function AdminCommunityHub() {
           )}
         </View>
         <View className="flex-row items-center mt-4">
-          <Text className="text-3xl font-extrabold text-gray-900">{myName}</Text>
+          <Text className="text-3xl font-extrabold" style={{ color: theme.textPrimary }}>
+            {myName}
+          </Text>
           <AdminBadge small />
         </View>
-        <Text className="text-gray-500 text-lg mt-1.5">{myEmail}</Text>
+        <Text className="text-lg mt-1.5" style={{ color: theme.textMuted }}>
+          {myEmail}
+        </Text>
       </View>
 
-      <Pressable onPress={() => router.push("/EditAdminProfile" as any)} className={PROFILE_ROW_CLASS}>
+      <Pressable
+        onPress={() => router.push("/EditAdminProfile" as any)}
+        className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+        style={rowStyle}
+      >
         <View className="flex-row items-center flex-1">
-          <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-            <Ionicons name="person" size={22} color="#76C893" />
+          <View
+            className="w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: theme.accentSoft }}
+          >
+            <Ionicons name="person" size={20} color={theme.accent} />
           </View>
-          <Text className="text-lg font-bold text-gray-900 ml-4">Edit Profile</Text>
+          <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+            Edit Profile
+          </Text>
         </View>
-        <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+        <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
       </Pressable>
 
-      <Pressable onPress={() => setPasswordVisible(true)} className={PROFILE_ROW_CLASS}>
+      <Pressable
+        onPress={() => setPasswordVisible(true)}
+        className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+        style={rowStyle}
+      >
         <View className="flex-row items-center flex-1">
-          <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-            <Ionicons name="lock-closed-outline" size={22} color="#76C893" />
+          <View
+            className="w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: theme.accentSoft }}
+          >
+            <Ionicons name="lock-closed-outline" size={20} color={theme.accent} />
           </View>
-          <Text className="text-lg font-bold text-gray-900 ml-4">Change Password</Text>
+          <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+            Change Password
+          </Text>
         </View>
-        <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+        <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+      </Pressable>
+
+      <Pressable
+        onPress={() => router.push("/admin-edit-terms")}
+        className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+        style={rowStyle}
+      >
+        <View className="flex-row items-center flex-1">
+          <View
+            className="w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: theme.accentSoft }}
+          >
+            <Ionicons name="document-text-outline" size={20} color={theme.accent} />
+          </View>
+          <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+            Edit Terms of Service
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+      </Pressable>
+
+      <Pressable
+        onPress={() => setAppearanceVisible(true)}
+        className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+        style={rowStyle}
+      >
+        <View className="flex-row items-center flex-1">
+          <View
+            className="w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: theme.accentSoft }}
+          >
+            <Ionicons name="contrast-outline" size={20} color={theme.accent} />
+          </View>
+          <View className="ml-3 flex-1">
+            <Text className="text-base font-bold" style={{ color: theme.textPrimary }}>
+              Appearance
+            </Text>
+            <Text className="text-sm font-semibold mt-0.5" style={{ color: theme.accentText }}>
+              {appearanceLabel}
+            </Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
       </Pressable>
 
       <Pressable
         onPress={() => void handleLogout()}
-        className="bg-[#f7f7f7] rounded-3xl py-5 items-center justify-center mt-2"
+        className="rounded-3xl py-4 items-center justify-center mt-1"
+        style={rowStyle}
       >
         <View className="flex-row items-center">
-          <MaterialCommunityIcons name="logout" size={22} color="#ef4444" />
-          <Text className="text-red-500 text-lg font-bold ml-2">Logout</Text>
+          <MaterialCommunityIcons name="logout" size={20} color={theme.danger} />
+          <Text className="text-base font-bold ml-2" style={{ color: theme.danger }}>
+            Logout
+          </Text>
         </View>
       </Pressable>
     </ScrollView>
-  );
+    );
+  };
 
   const tabs: { key: AdminTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { key: "community", label: "Community", icon: "people-outline" },
@@ -908,7 +1057,7 @@ export function AdminCommunityHub() {
   ];
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]" style={{ paddingTop: insets.top + 12 }}>
+    <View className="flex-1" style={{ paddingTop: insets.top + 12, backgroundColor: theme.screenBg }}>
       {firestoreError ? (
         <View className="mx-3 mt-2 rounded-2xl bg-[#fef2f2] border border-[#fecaca] px-4 py-3">
           <Text className="text-xs font-bold text-[#b91c1c] leading-5">{firestoreError}</Text>
@@ -922,8 +1071,8 @@ export function AdminCommunityHub() {
       </View>
 
       <View
-        className="flex-row bg-white border-t border-gray-200 px-2 pt-2"
-        style={{ paddingBottom: insets.bottom + 8 }}
+        className="flex-row px-2 pt-2"
+        style={[navStyle, { paddingBottom: insets.bottom + 8 }]}
       >
         {tabs.map((tab) => {
           const active = activeTab === tab.key;
@@ -941,11 +1090,16 @@ export function AdminCommunityHub() {
             >
               <View>
                 <CommunityUnreadBadge count={badge}>
-                  <Ionicons name={tab.icon} size={22} color={active ? "#52B69A" : "#9ca3af"} />
+                  <Ionicons
+                    name={tab.icon}
+                    size={22}
+                    color={active ? theme.accentText : theme.iconMuted}
+                  />
                 </CommunityUnreadBadge>
               </View>
               <Text
-                className={`text-[10px] font-bold mt-1 ${active ? "text-[#52B69A]" : "text-gray-400"}`}
+                className="text-[10px] font-bold mt-1"
+                style={{ color: active ? theme.accentText : theme.textMuted }}
               >
                 {tab.label}
               </Text>
@@ -963,41 +1117,53 @@ export function AdminCommunityHub() {
           setSelectedUser(null);
         }}
       >
-        <View className="flex-1 bg-black/40 justify-end">
+        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
           <View
-            className="bg-white rounded-t-[28px] px-5 pt-5 border border-gray-200"
-            style={{ paddingBottom: insets.bottom + 20 }}
+            className="rounded-t-[28px] px-5 pt-5"
+            style={[modalCardStyle, { paddingBottom: insets.bottom + 20, borderBottomWidth: 0 }]}
           >
             {selectedUser ? (
               <>
                 <View className="items-center mb-5">
                   <ProfileAvatar uri={selectedUser.profileImage} size={72} />
-                  <Text className="text-xl font-extrabold text-gray-900 mt-3">{selectedUser.name}</Text>
-                  <Text className="text-sm text-gray-500 mt-1">{selectedUser.email}</Text>
+                  <Text className="text-xl font-extrabold mt-3" style={textPrimary}>
+                    {selectedUser.name}
+                  </Text>
+                  <Text className="text-sm mt-1" style={textMuted}>
+                    {selectedUser.email}
+                  </Text>
                 </View>
 
-                <View className="bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200 gap-2 mb-4">
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">Joined: </Text>
+                <View className="rounded-2xl px-4 py-4 gap-2 mb-4" style={surfaceStyle}>
+                  <Text className="text-sm" style={textSecondary}>
+                    <Text className="font-bold" style={textPrimary}>
+                      Joined:{" "}
+                    </Text>
                     {selectedUser.createdAt
                       ? new Date(selectedUser.createdAt).toLocaleDateString()
                       : "—"}
                   </Text>
                   {userDetailExtra?.gender ? (
-                    <Text className="text-sm text-gray-700">
-                      <Text className="font-bold">Gender: </Text>
+                    <Text className="text-sm" style={textSecondary}>
+                      <Text className="font-bold" style={textPrimary}>
+                        Gender:{" "}
+                      </Text>
                       {userDetailExtra.gender === "male" ? "Male" : "Female"}
                     </Text>
                   ) : null}
                   {userDetailExtra?.height ? (
-                    <Text className="text-sm text-gray-700">
-                      <Text className="font-bold">Height: </Text>
+                    <Text className="text-sm" style={textSecondary}>
+                      <Text className="font-bold" style={textPrimary}>
+                        Height:{" "}
+                      </Text>
                       {userDetailExtra.height} cm
                     </Text>
                   ) : null}
                   {userDetailExtra?.weight ? (
-                    <Text className="text-sm text-gray-700">
-                      <Text className="font-bold">Weight: </Text>
+                    <Text className="text-sm" style={textSecondary}>
+                      <Text className="font-bold" style={textPrimary}>
+                        Weight:{" "}
+                      </Text>
                       {userDetailExtra.weight} kg
                     </Text>
                   ) : null}
@@ -1023,9 +1189,12 @@ export function AdminCommunityHub() {
                     setUserDetailVisible(false);
                     setSelectedUser(null);
                   }}
-                  className="rounded-full py-3.5 items-center bg-[#f3f4f3]"
+                  className="rounded-full py-3.5 items-center"
+                  style={surfaceStyle}
                 >
-                  <Text className="text-sm font-extrabold text-gray-600">Close</Text>
+                  <Text className="text-sm font-extrabold" style={textSecondary}>
+                    Close
+                  </Text>
                 </Pressable>
               </>
             ) : null}
@@ -1034,21 +1203,34 @@ export function AdminCommunityHub() {
       </Modal>
 
       <Modal visible={inviteVisible} transparent animationType="slide" onRequestClose={() => setInviteVisible(false)}>
-        <View className="flex-1 bg-black/40 justify-end">
+        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <View className="bg-white rounded-t-[28px] px-5 pt-5 pb-8">
-              <Text className="text-xl font-extrabold text-gray-900">Invite user</Text>
+            <View
+              className="rounded-t-[28px] px-5 pt-5 pb-8"
+              style={[modalCardStyle, { borderBottomWidth: 0 }]}
+            >
+              <Text className="text-xl font-extrabold" style={textPrimary}>
+                Invite user
+              </Text>
               <TextInput
                 value={inviteEmail}
                 onChangeText={setInviteEmail}
                 placeholder="email@example.com"
                 autoCapitalize="none"
                 keyboardType="email-address"
-                className="mt-4 bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200 text-sm"
+                className="mt-4 rounded-2xl px-4 py-4 text-sm"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <View className="flex-row gap-3 mt-4">
-                <Pressable onPress={() => setInviteVisible(false)} className="flex-1 rounded-full py-3.5 items-center bg-[#f3f4f3]">
-                  <Text className="text-sm font-extrabold text-gray-600">Cancel</Text>
+                <Pressable
+                  onPress={() => setInviteVisible(false)}
+                  className="flex-1 rounded-full py-3.5 items-center"
+                  style={surfaceStyle}
+                >
+                  <Text className="text-sm font-extrabold" style={textSecondary}>
+                    Cancel
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={() => void handleInvite()}
@@ -1068,34 +1250,51 @@ export function AdminCommunityHub() {
       </Modal>
 
       <Modal visible={passwordVisible} transparent animationType="slide" onRequestClose={() => setPasswordVisible(false)}>
-        <View className="flex-1 bg-black/40 justify-end">
+        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <View className="bg-white rounded-t-[28px] px-5 pt-5 pb-8">
-              <Text className="text-xl font-extrabold text-gray-900">Change password</Text>
+            <View
+              className="rounded-t-[28px] px-5 pt-5 pb-8"
+              style={[modalCardStyle, { borderBottomWidth: 0 }]}
+            >
+              <Text className="text-xl font-extrabold" style={textPrimary}>
+                Change password
+              </Text>
               <TextInput
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
                 placeholder="Current password"
                 secureTextEntry
-                className="mt-4 bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200 text-sm"
+                className="mt-4 rounded-2xl px-4 py-4 text-sm"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="New password"
                 secureTextEntry
-                className="mt-3 bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200 text-sm"
+                className="mt-3 rounded-2xl px-4 py-4 text-sm"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <TextInput
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 placeholder="Confirm new password"
                 secureTextEntry
-                className="mt-3 bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200 text-sm"
+                className="mt-3 rounded-2xl px-4 py-4 text-sm"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <View className="flex-row gap-3 mt-4">
-                <Pressable onPress={() => setPasswordVisible(false)} className="flex-1 rounded-full py-3.5 items-center bg-[#f3f4f3]">
-                  <Text className="text-sm font-extrabold text-gray-600">Cancel</Text>
+                <Pressable
+                  onPress={() => setPasswordVisible(false)}
+                  className="flex-1 rounded-full py-3.5 items-center"
+                  style={surfaceStyle}
+                >
+                  <Text className="text-sm font-extrabold" style={textSecondary}>
+                    Cancel
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={() => void handleChangePassword()}
@@ -1193,7 +1392,7 @@ export function AdminCommunityHub() {
           setReportDetailPost(null);
         }}
       >
-        <View className="flex-1 bg-black/40 justify-center px-6">
+        <View className="flex-1 justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
           <Pressable
             className="absolute inset-0"
             onPress={() => {
@@ -1202,41 +1401,46 @@ export function AdminCommunityHub() {
             }}
           />
           <View
-            className="bg-white rounded-[28px] px-5 pt-5 pb-8 border border-gray-200 max-h-[80%]"
-            style={{ marginBottom: insets.bottom }}
+            className="rounded-[28px] px-5 pt-5 pb-8 max-h-[80%]"
+            style={[modalCardStyle, { marginBottom: insets.bottom }]}
           >
             <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xl font-extrabold text-gray-900">Post details</Text>
+              <Text className="text-xl font-extrabold" style={textPrimary}>
+                Post details
+              </Text>
               <Pressable
                 onPress={() => {
                   setReportDetailReport(null);
                   setReportDetailPost(null);
                 }}
-                className="w-10 h-10 rounded-full bg-[#f3f4f3] items-center justify-center"
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={surfaceStyle}
               >
-                <Ionicons name="close" size={22} color="#6b7280" />
+                <Ionicons name="close" size={22} color={theme.iconMuted} />
               </Pressable>
             </View>
 
             {reportDetailLoading ? (
               <View className="py-12 items-center">
-                <ActivityIndicator size="large" color="#52B69A" />
+                <ActivityIndicator size="large" color={theme.accentText} />
               </View>
             ) : reportDetailPost ? (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View className="flex-row items-center mb-4">
                   <ProfileAvatar uri={reportDetailPost.authorProfileImage} size={44} />
                   <View className="ml-3 flex-1">
-                    <Text className="text-base font-extrabold text-gray-900">
+                    <Text className="text-base font-extrabold" style={textPrimary}>
                       {reportDetailPost.authorName}
                     </Text>
-                    <Text className="text-xs text-gray-500 mt-0.5">
+                    <Text className="text-xs mt-0.5" style={textMuted}>
                       {formatPostDisplayTime(reportDetailPost.createdAt)}
                     </Text>
                   </View>
                 </View>
                 {reportDetailPost.content ? (
-                  <Text className="text-sm text-gray-800 leading-6">{reportDetailPost.content}</Text>
+                  <Text className="text-sm leading-6" style={textSecondary}>
+                    {reportDetailPost.content}
+                  </Text>
                 ) : null}
                 {reportDetailPost.imageUrl ? (
                   <Image
@@ -1250,33 +1454,43 @@ export function AdminCommunityHub() {
                     {reportDetailPost.tags.map((tag) => (
                       <View
                         key={tag}
-                        className="rounded-full px-2.5 py-1 bg-[#f3f4f3] border border-[#52B69A]"
+                        className="rounded-full px-2.5 py-1 border"
+                        style={{ backgroundColor: theme.rowBg, borderColor: theme.accent }}
                       >
-                        <Text className="text-[10px] font-bold text-[#52B69A]">#{tag}</Text>
+                        <Text className="text-[10px] font-bold" style={{ color: theme.accentText }}>
+                          #{tag}
+                        </Text>
                       </View>
                     ))}
                   </View>
                 ) : null}
-                <Text className="text-xs text-[#52B69A] font-bold mt-4">
+                <Text className="text-xs font-bold mt-4" style={{ color: theme.accentText }}>
                   {reportDetailPost.likeCount} likes • {reportDetailPost.commentCount} comments
                 </Text>
                 {reportDetailReport ? (
-                  <View className="mt-4 bg-[#fef2f2] rounded-2xl px-4 py-3 border border-[#fecaca]">
-                    <Text className="text-xs font-extrabold text-[#b91c1c] uppercase">Report</Text>
-                    <Text className="text-sm text-gray-700 mt-2">
+                  <View
+                    className="mt-4 rounded-2xl px-4 py-3 border"
+                    style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
+                  >
+                    <Text className="text-xs font-extrabold uppercase" style={{ color: theme.danger }}>
+                      Report
+                    </Text>
+                    <Text className="text-sm mt-2" style={textSecondary}>
                       By {reportDetailReport.reporterName}: {reportDetailReport.reason}
                     </Text>
                   </View>
                 ) : null}
               </ScrollView>
             ) : (
-              <Text className="text-sm text-gray-500 text-center py-8">
+              <Text className="text-sm text-center py-8" style={textMuted}>
                 Post not found. It may have been removed already.
               </Text>
             )}
           </View>
         </View>
       </Modal>
+
+      <AppearanceModal visible={appearanceVisible} onClose={() => setAppearanceVisible(false)} />
     </View>
   );
 }

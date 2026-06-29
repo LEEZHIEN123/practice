@@ -1,6 +1,7 @@
 import { useMusicPlayer } from "@/context/MusicPlayerContext";
 import { getMusicCategoryIcon } from "@/lib/musicCategoryIcons";
 import { useMusicModeToast } from "@/lib/useMusicModeToast";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useMemo, useState } from "react";
@@ -17,6 +18,7 @@ function fmtMmSs(ms: number) {
 /** Bottom dock on All Music: same prev / play-pause / next + seek as the floating mini player. */
 export function AllMusicBottomPlayer() {
   const insets = useSafeAreaInsets();
+  const { navStyle, textPrimary, textSecondary, textMuted, theme } = useThemedScreen();
   const {
     currentTrack,
     isPlaying,
@@ -52,37 +54,46 @@ export function AllMusicBottomPlayer() {
 
   return (
     <View
-      className="absolute left-0 right-0 bg-white border-t border-gray-200 shadow-lg shadow-black/10 relative"
-      style={{
-        bottom: 0,
-        paddingBottom: Math.max(insets.bottom, 10),
-        paddingTop: 10,
-        paddingHorizontal: 14,
-      }}
+      className="absolute left-0 right-0 shadow-lg shadow-black/10 relative"
+      style={[
+        navStyle,
+        {
+          bottom: 0,
+          paddingBottom: Math.max(insets.bottom, 10),
+          paddingTop: 10,
+          paddingHorizontal: 14,
+        },
+      ]}
     >
       <View className="flex-row items-start justify-between mb-2 gap-2">
-        <Text className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex-1">
+        <Text className="text-[10px] font-extrabold uppercase tracking-widest flex-1" style={textMuted}>
           Now playing {queueLabel ? ` · ${queueLabel}` : ""}
         </Text>
         <Pressable
           onPress={() => void stop()}
           hitSlop={10}
           accessibilityLabel="Stop playback"
-          className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200"
+          className="w-9 h-9 rounded-full items-center justify-center"
+          style={({ pressed }) => ({
+            backgroundColor: pressed ? theme.rowBg : theme.cardBg,
+          })}
         >
-          <Ionicons name="close" size={22} color="#dc2626" />
+          <Ionicons name="close" size={22} color={theme.danger} />
         </Pressable>
       </View>
 
       <View className="flex-row items-center">
-        <View className="w-11 h-11 rounded-xl bg-[#eaf7f0] items-center justify-center shrink-0">
-          <Ionicons name={icon} size={22} color="#76C893" />
+        <View
+          className="w-11 h-11 rounded-xl items-center justify-center shrink-0"
+          style={{ backgroundColor: theme.accentSoft }}
+        >
+          <Ionicons name={icon} size={22} color={theme.accent} />
         </View>
         <View className="flex-1 ml-3 min-w-0">
-          <Text className="text-sm font-extrabold text-gray-900" numberOfLines={1}>
+          <Text className="text-sm font-extrabold" style={textPrimary} numberOfLines={1}>
             {currentTrack.title}
           </Text>
-          <Text className="text-xs text-gray-500 font-semibold mt-0.5" numberOfLines={1}>
+          <Text className="text-xs font-semibold mt-0.5" style={textSecondary} numberOfLines={1}>
             {currentTrack.artistName}
           </Text>
         </View>
@@ -103,15 +114,17 @@ export function AllMusicBottomPlayer() {
             setSliding(false);
             await seekTo(v * dur);
           }}
-          minimumTrackTintColor="#76C893"
-          maximumTrackTintColor="#e5e7eb"
-          thumbTintColor="#52B69A"
+          minimumTrackTintColor={theme.accent}
+          maximumTrackTintColor={theme.cardBorder}
+          thumbTintColor={theme.accentText}
         />
         <View className="flex-row justify-between px-0.5 -mt-0.5">
-          <Text className="text-[10px] font-bold text-gray-400">
+          <Text className="text-[10px] font-bold" style={textMuted}>
             {fmtMmSs(sliding ? slideValue * dur : positionMillis)}
           </Text>
-          <Text className="text-[10px] font-bold text-gray-400">{fmtMmSs(dur)}</Text>
+          <Text className="text-[10px] font-bold" style={textMuted}>
+            {fmtMmSs(dur)}
+          </Text>
         </View>
       </View>
 
@@ -137,11 +150,11 @@ export function AllMusicBottomPlayer() {
             <Ionicons
               name="shuffle"
               size={22}
-              color={shuffle ? "#52B69A" : "#9ca3af"}
+              color={shuffle ? theme.accentText : theme.iconMuted}
             />
           </Pressable>
           <Pressable onPress={() => void skipPrevious()} hitSlop={12} className="p-2">
-            <Ionicons name="play-skip-back" size={28} color="#111827" />
+            <Ionicons name="play-skip-back" size={28} color={theme.textPrimary} />
           </Pressable>
         </View>
 
@@ -160,7 +173,7 @@ export function AllMusicBottomPlayer() {
             hitSlop={12}
             className={`p-2 ${!canNext ? "opacity-30" : ""}`}
           >
-            <Ionicons name="play-skip-forward" size={28} color="#111827" />
+            <Ionicons name="play-skip-forward" size={28} color={theme.textPrimary} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -174,7 +187,7 @@ export function AllMusicBottomPlayer() {
             <Ionicons
               name="repeat"
               size={22}
-              color={repeatOne ? "#52B69A" : "#9ca3af"}
+              color={repeatOne ? theme.accentText : theme.iconMuted}
             />
           </Pressable>
         </View>

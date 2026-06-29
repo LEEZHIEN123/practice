@@ -1,5 +1,6 @@
-// Register.tsx
 import { Pressable } from "@/components/Pressable";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
+import { useLightScreen } from "@/lib/useLightScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -16,13 +17,23 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { useRegistration } from "../context/registrationContext";
 import { auth, db } from "../firebaseConfig";
 
 export default function Register() {
   const router = useRouter();
   const { setAccount, reset } = useRegistration();
+  const {
+    theme,
+    screenStyle,
+    cardStyle,
+    inputStyle,
+    placeholderColor,
+    textPrimary,
+    textSecondary,
+    textMuted,
+    textAccent,
+  } = useLightScreen();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -147,45 +158,67 @@ export default function Register() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-[#f4fcf7]"
+      className="flex-1"
+      style={screenStyle}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 32 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          paddingHorizontal: 12,
+          paddingVertical: 32,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-         <View className="items-center mb-6">
-                <View className="w-28 h-28 bg-white rounded-full items-center justify-center shadow-lg">
-                  <Ionicons name="person" size={50} color="#76C893" />
-                </View>
-              </View>
+        <View className="items-center mb-6">
+          <View
+            className="w-28 h-28 rounded-full items-center justify-center shadow-lg"
+            style={cardStyle}
+          >
+            <Ionicons name="person" size={50} color={theme.accent} />
+          </View>
+        </View>
 
-        <Text className="text-3xl font-bold text-center text-gray-800">Create Account</Text>
-        <Text className="text-center text-lg text-gray-500 mb-8">Join us to start your fitness journey!</Text>
+        <Text className="text-3xl font-bold text-center" style={textPrimary}>
+          Create Account
+        </Text>
+        <Text className="text-center text-lg mb-8" style={textSecondary}>
+          Join us to start your fitness journey!
+        </Text>
 
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-gray-800 ml-2">Full Name</Text>
-          <Text className="text-sm text-gray-500 font-semibold mr-2">
+          <Text className="ml-2" style={textPrimary}>
+            Full Name
+          </Text>
+          <Text className="text-sm font-semibold mr-2" style={textMuted}>
             {Math.min(name.length, 14)}/14
           </Text>
         </View>
         <TextInput
           placeholder="Jane Doe"
+          placeholderTextColor={placeholderColor}
           value={name}
           onChangeText={(v) => {
             setName(v.slice(0, 14));
             if (nameError) setNameError("");
           }}
           maxLength={14}
-          className="mb-4 rounded-xl bg-white px-4 py-4 text-gray-700"
+          className="mb-4 rounded-xl px-4 py-4"
+          style={inputStyle}
         />
-        {!!nameError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{nameError}</Text>}
+        {!!nameError && (
+          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{nameError}</Text>
+        )}
 
-        <Text className="text-gray-800 mb-2 ml-2">Email Address</Text>
+        <Text className="mb-2 ml-2" style={textPrimary}>
+          Email Address
+        </Text>
         <TextInput
           placeholder="jane@gmail.com"
+          placeholderTextColor={placeholderColor}
           value={email}
           onChangeText={(v) => {
             setEmail(v);
@@ -193,20 +226,30 @@ export default function Register() {
           }}
           autoCapitalize="none"
           keyboardType="email-address"
-          className="mb-4 rounded-xl bg-white px-4 py-4 text-gray-700"
+          className="mb-4 rounded-xl px-4 py-4"
+          style={inputStyle}
         />
-        {!!emailError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{emailError}</Text>}
+        {!!emailError && (
+          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{emailError}</Text>
+        )}
 
         <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-gray-800 ml-2">Password</Text>
+          <Text className="ml-2" style={textPrimary}>
+            Password
+          </Text>
           <View className="flex-row items-center flex-1 justify-end ml-2">
-            <Text className="text-xs text-gray-600 mr-1.5 text-right">{passwordRule}</Text>
-            {passwordMeetsRule ? <Ionicons name="checkmark-circle" size={18} color="#76C893" /> : null}
+            <Text className="text-xs mr-1.5 text-right" style={textSecondary}>
+              {passwordRule}
+            </Text>
+            {passwordMeetsRule ? (
+              <Ionicons name="checkmark-circle" size={18} color={theme.accent} />
+            ) : null}
           </View>
         </View>
         <View className="relative mb-4">
           <TextInput
             placeholder="abc123"
+            placeholderTextColor={placeholderColor}
             value={password}
             onChangeText={(v) => {
               setPassword(v);
@@ -216,18 +259,31 @@ export default function Register() {
               }
             }}
             secureTextEntry={!showPassword}
-            className="rounded-xl bg-white px-4 py-4 pr-12 text-gray-700"
+            className="rounded-xl px-4 py-4 pr-12"
+            style={inputStyle}
           />
-          <Pressable onPress={() => setShowPassword((p) => !p)} style={{ position: "absolute", right: 15, top: 18 }}>
-            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="gray" />
+          <Pressable
+            onPress={() => setShowPassword((p) => !p)}
+            style={{ position: "absolute", right: 15, top: 18 }}
+          >
+            <Ionicons
+              name={showPassword ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={theme.iconMuted}
+            />
           </Pressable>
         </View>
-        {!!passwordError && <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{passwordError}</Text>}
+        {!!passwordError && (
+          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{passwordError}</Text>
+        )}
 
-        <Text className="text-gray-800 mb-2 ml-2">Confirm Password</Text>
+        <Text className="mb-2 ml-2" style={textPrimary}>
+          Confirm Password
+        </Text>
         <View className="relative mb-4">
           <TextInput
             placeholder="abc123"
+            placeholderTextColor={placeholderColor}
             value={confirmPassword}
             onChangeText={(v) => {
               setConfirmPassword(v);
@@ -238,16 +294,23 @@ export default function Register() {
               setConfirmPasswordError(v === password ? "" : "Passwords do not match.");
             }}
             secureTextEntry={!showConfirmPassword}
-            className="rounded-xl bg-white px-4 py-4 pr-12 text-gray-700"
+            className="rounded-xl px-4 py-4 pr-12"
+            style={inputStyle}
           />
           <Pressable
             onPress={() => setShowConfirmPassword((p) => !p)}
             style={{ position: "absolute", right: 15, top: 18 }}
           >
-            <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={22} color="gray" />
+            <Ionicons
+              name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={theme.iconMuted}
+            />
           </Pressable>
         </View>
-        {!!confirmPasswordError && <Text className="text-red-500 text-xs -mt-3 mb-4 ml-2">{confirmPasswordError}</Text>}
+        {!!confirmPasswordError && (
+          <Text className="text-red-500 text-xs -mt-3 mb-4 ml-2">{confirmPasswordError}</Text>
+        )}
 
         <View className="flex-row items-start mb-2">
           <Pressable
@@ -259,17 +322,21 @@ export default function Register() {
             className="mr-3 mt-0.5"
           >
             <View
-              className={`w-6 h-6 ml-1 rounded-md border-2 items-center justify-center ${
-                acceptedPolicy ? "bg-[#76C893] border-[#76C893]" : "border-gray-400 bg-white"
-              }`}
+              className="w-6 h-6 ml-1 rounded-md border-2 items-center justify-center"
+              style={
+                acceptedPolicy
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : cardStyle
+              }
             >
               {acceptedPolicy ? <Ionicons name="checkmark" size={16} color="white" /> : null}
             </View>
           </Pressable>
-          <Text className="flex-1 text-gray-600 text-sm leading-5">
+          <Text className="flex-1 text-sm leading-5" style={textSecondary}>
             By continuing, I accept the{" "}
             <Text
-              className="text-[#76C893] font-semibold"
+              className="font-semibold"
+              style={textAccent}
               onPress={() => {
                 setAcceptedPolicy(true);
                 if (policyError) setPolicyError("");
@@ -279,24 +346,32 @@ export default function Register() {
               Terms of Service
             </Text>{" "}
             of the Personalised Workout and Nutrition Guidance System.
-             
           </Text>
         </View>
-        {!!policyError && <Text className="text-red-500 text-xs mb-4 ml-2">{policyError}</Text>}
+        {!!policyError && (
+          <Text className="text-red-500 text-xs mb-4 ml-2">{policyError}</Text>
+        )}
 
         <Pressable
           onPress={register}
           disabled={loading}
           className={`rounded-full overflow-hidden mt-2 mb-6 ${loading ? "opacity-60" : "opacity-100"}`}
         >
-          <LinearGradient colors={["#76C893", "#52B69A"]} className="py-4 items-center rounded-2xl">
-            {loading ? <ActivityIndicator color="white" /> : <Text className="text-white text-lg font-semibold">Register</Text>}
+          <LinearGradient
+            colors={[theme.accent, theme.accentText]}
+            className="py-4 items-center rounded-2xl"
+          >
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text className="text-white text-lg font-semibold">Register</Text>
+            )}
           </LinearGradient>
         </Pressable>
 
-        <Text className="text-center text-gray-500">
+        <Text className="text-center" style={textSecondary}>
           Already have an account?{" "}
-          <Text className="text-[#76C893] font-semibold" onPress={() => router.replace("/login")}>
+          <Text className="font-semibold" style={textAccent} onPress={() => router.replace("/login")}>
             Click Here to Login
           </Text>
         </Text>

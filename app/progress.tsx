@@ -1,11 +1,12 @@
-import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
-import { useAdminRedirect } from "@/lib/useAdminRedirect";
-import { useCommunityUnread } from "@/lib/useCommunityUnread";
+import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
 import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
+import { useWaterIntakeSuggestion } from "@/lib/useWaterIntakeSuggestion";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -13,17 +14,17 @@ import Slider from "@react-native-community/slider";
 import { useFocusEffect, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-    addDoc,
-    collection,
-    doc,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    Timestamp,
-    updateDoc,
+  addDoc,
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -39,7 +40,18 @@ const localStepDraftKey = (uid: string, dateKey: string) => `daily-steps-draft:$
 export default function ProgressScreen() {
   const router = useRouter();
   useAdminRedirect();
-  const { totalUnread } = useCommunityUnread();
+  const {
+    cardStyle,
+    screenStyle,
+    textPrimary,
+    textMuted,
+    textSecondary,
+    iconButtonStyle,
+    segmentTrackStyle,
+    segmentActiveStyle,
+    theme,
+  } = useThemedScreen();
+  const tabBarPadding = useBottomTabBarScrollPadding();
   const calendarTz = useUserCalendarTimezone();
   /** Firestore listeners must re-subscribe when the signed-in user changes (missing this caused cross-account data bleed). */
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
@@ -48,6 +60,9 @@ export default function ProgressScreen() {
 
   const [heightCm, setHeightCm] = useState<number>(0);
   const [weightKg, setWeightKg] = useState<number>(0);
+  const [profileAge, setProfileAge] = useState<number>(0);
+  const [profileGender, setProfileGender] = useState<"male" | "female" | null>(null);
+  const [profileActivityLevel, setProfileActivityLevel] = useState<string | null>(null);
   const [todayLoggedWeight, setTodayLoggedWeight] = useState<number | null>(null);
   const [consumedToday, setConsumedToday] = useState(0);
   const [burnedToday, setBurnedToday] = useState(0);
@@ -127,6 +142,32 @@ export default function ProgressScreen() {
     if (stepsManualDb != null) return Math.round(stepsManualDb);
     return Math.max(Math.round(stepsToday), Math.round(stepsAutoDb));
   }, [stepsAutoDb, stepsManualDb, stepsToday]);
+
+  const todayDayKey = useMemo(
+    () => formatCalendarDayKey(new Date(), calendarTz),
+    [calendarTz, dayTick]
+  );
+
+  const waterProfile = useMemo(
+    () => ({
+      age: profileAge > 0 ? profileAge : undefined,
+      gender: profileGender ?? undefined,
+      height: heightCm > 0 ? heightCm : undefined,
+      weight: weightKg > 0 ? weightKg : undefined,
+      activityLevel: profileActivityLevel,
+    }),
+    [heightCm, profileActivityLevel, profileAge, profileGender, weightKg]
+  );
+
+  const { suggestedMl: waterSuggestedMl, loading: waterSuggestionLoading } = useWaterIntakeSuggestion({
+      uid: authUid,
+      calendarTz,
+      calendarDayKey: todayDayKey,
+      profile: waterProfile,
+      burnedKcalToday: burnedToday,
+      stepsToday: displaySteps,
+      enabled: Boolean(authUid),
+    });
 
   /** Source of truth for "today's total": waterLogs. If none, show 0. */
   const waterTotalTodayMl = useMemo(() => {
@@ -272,11 +313,23 @@ export default function ProgressScreen() {
           profileImage?: string;
           height?: number;
           weight?: number;
+          age?: number;
+          gender?: "male" | "female";
+          activityLevel?: string;
         };
         const h = typeof data.height === "number" ? data.height : 0;
         const w = typeof data.weight === "number" ? data.weight : 0;
         setHeightCm(h);
         setWeightKg(w);
+        if (typeof data.age === "number" && Number.isFinite(data.age)) setProfileAge(data.age);
+        else setProfileAge(0);
+        if (data.gender === "male" || data.gender === "female") setProfileGender(data.gender);
+        else setProfileGender(null);
+        if (typeof data.activityLevel === "string" && data.activityLevel.length > 0) {
+          setProfileActivityLevel(data.activityLevel);
+        } else {
+          setProfileActivityLevel(null);
+        }
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
       },
@@ -1051,14 +1104,16 @@ export default function ProgressScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} className="px-3 pt-10">
-        {/* Header */}
+    <View style={screenStyle}>
+      <ScrollView contentContainerStyle={{ paddingBottom: tabBarPadding }} className="px-3 pt-10">
         <View className="flex-row justify-between items-center mb-8">
-          <Text className="text-4xl font-extrabold text-gray-900">Progress</Text>
+          <Text className="text-4xl font-extrabold" style={textPrimary}>
+            Progress
+          </Text>
           <Pressable
             onPress={() => router.push("/profile")}
-            className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+            className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
+            style={iconButtonStyle}
           >
             {profileImage ? (
               <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
@@ -1069,34 +1124,46 @@ export default function ProgressScreen() {
         </View>
 
         {/* Segmented Control */}
-        <View className="mt-3 bg-white rounded-full p-1 flex-row border border-gray-100">
+        <View className="mt-3 rounded-full p-1 flex-row" style={segmentTrackStyle}>
           <Pressable
             onPress={() => setTab("weight")}
             className={`flex-1 py-3 rounded-full items-center ${
-              tab === "weight" ? "bg-[#eaf7f0]" : "bg-transparent"
+              tab === "weight" ? "" : "bg-transparent"
             }`}
+            style={tab === "weight" ? segmentActiveStyle : undefined}
           >
-            <Text className={`${tab === "weight" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+            <Text
+              className="font-bold"
+              style={{ color: tab === "weight" ? theme.accentText : theme.textMuted }}
+            >
               Weight
             </Text>
           </Pressable>
           <Pressable
             onPress={() => setTab("workout")}
             className={`flex-1 py-3 rounded-full items-center ${
-              tab === "workout" ? "bg-[#eaf7f0]" : "bg-transparent"
+              tab === "workout" ? "" : "bg-transparent"
             }`}
+            style={tab === "workout" ? segmentActiveStyle : undefined}
           >
-            <Text className={`${tab === "workout" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+            <Text
+              className="font-bold"
+              style={{ color: tab === "workout" ? theme.accentText : theme.textMuted }}
+            >
               Workout
             </Text>
           </Pressable>
           <Pressable
             onPress={() => setTab("meal")}
             className={`flex-1 py-3 rounded-full items-center ${
-              tab === "meal" ? "bg-[#eaf7f0]" : "bg-transparent"
+              tab === "meal" ? "" : "bg-transparent"
             }`}
+            style={tab === "meal" ? segmentActiveStyle : undefined}
           >
-            <Text className={`${tab === "meal" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+            <Text
+              className="font-bold"
+              style={{ color: tab === "meal" ? theme.accentText : theme.textMuted }}
+            >
               Meal
             </Text>
           </Pressable>
@@ -1116,11 +1183,17 @@ export default function ProgressScreen() {
               <Pressable
                 key={p.key}
                 onPress={() => setPeriod(p.key)}
-                className={`flex-1 mx-1 rounded-2xl border px-3 py-3 items-center ${
-                  active ? "border-[#76C893] bg-[#eaf7f0]" : "border-gray-200 bg-white"
-                }`}
+                className="flex-1 mx-1 rounded-2xl border px-3 py-3 items-center"
+                style={
+                  active
+                    ? { borderColor: theme.accent, backgroundColor: theme.accentSoft }
+                    : cardStyle
+                }
               >
-                <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-extrabold`}>
+                <Text
+                  className="font-extrabold"
+                  style={{ color: active ? theme.accentText : theme.textMuted }}
+                >
                   {p.label}
                 </Text>
               </Pressable>
@@ -1129,14 +1202,14 @@ export default function ProgressScreen() {
         </View>
 
         {/* Metric + chart card */}
-        <View className="mt-4 bg-white rounded-3xl p-5 border border-gray-100">
+        <View className="mt-4 rounded-3xl p-5" style={cardStyle}>
           <View className="flex-row items-start justify-between">
             <View className="flex-1 pr-2">
-              <Text className="text-base font-extrabold tracking-wide text-gray-900">
+              <Text className="text-base font-extrabold tracking-wide" style={textPrimary}>
                 {metricLabel}
               </Text>
               <View className="flex-row items-end mt-2 flex-wrap">
-                <Text className="text-3xl font-extrabold text-gray-900 shrink">
+                <Text className="text-3xl font-extrabold shrink" style={textPrimary}>
                   {metricValue.main}
                 </Text>
                 <View
@@ -1154,8 +1227,8 @@ export default function ProgressScreen() {
                 </View>
               </View>
               {workoutWeekTodayKcal ? (
-                <Text className="text-base font-semibold text-gray-500 mt-1.5">
-                  Today burned <Text className="text-lg font-extrabold text-[#52B69A]">{workoutWeekTodayKcal}</Text> kcal
+                <Text className="text-base font-semibold mt-1.5" style={textMuted}>
+                  Today burned <Text className="text-lg font-extrabold" style={{ color: theme.accentText }}>{workoutWeekTodayKcal}</Text> kcal
                 </Text>
               ) : null}
             </View>
@@ -1166,7 +1239,7 @@ export default function ProgressScreen() {
                   onPress={openLogWeight}
                   className="px-4 py-2 rounded-full bg-[#76C893]"
                 >
-                  <Text className="text-white font-extrabold">Log weight +</Text>
+                  <Text className="font-extrabold" style={{ color: "#ffffff" }}>Log weight +</Text>
                 </Pressable>
               ) : (
                 <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
@@ -1181,13 +1254,13 @@ export default function ProgressScreen() {
 
           {/* Chart */}
           <View className="mt-4">
-            <View className="h-32 rounded-2xl bg-[#f3f4f3] overflow-hidden">
+            <View className="h-32 rounded-2xl overflow-hidden" style={{ backgroundColor: theme.rowBg }}>
               <View className="absolute left-0 right-0 bottom-0 h-14 bg-[#76C893] opacity-10" />
               {((tab === "weight" && weightBarTooltip) || (tab === "workout" && workoutBarTooltip)) &&
                 hoverIdx != null && (
                   <View className="absolute top-2 left-0 right-0 items-center">
-                    <View className="px-3 py-1 rounded-full bg-white border border-gray-200">
-                      <Text className="text-xs font-bold text-gray-800">
+                    <View className="px-3 py-1 rounded-full" style={cardStyle}>
+                      <Text className="text-xs font-bold" style={textSecondary}>
                         {tab === "weight" ? weightBarTooltip : workoutBarTooltip}
                       </Text>
                     </View>
@@ -1219,7 +1292,7 @@ export default function ProgressScreen() {
                               }
                             />
                           </Pressable>
-                          <Text className="text-[10px] text-gray-400 font-bold mt-2">
+                          <Text className="text-[10px] font-bold mt-2" style={textMuted}>
                             {chartLabels[idx]}
                           </Text>
                         </View>
@@ -1253,7 +1326,7 @@ export default function ProgressScreen() {
                               }
                             />
                           </Pressable>
-                          <Text className="text-[10px] text-gray-400 font-bold mt-2">
+                          <Text className="text-[10px] font-bold mt-2" style={textMuted}>
                             {chartLabels[idx]}
                           </Text>
                         </View>
@@ -1279,17 +1352,18 @@ export default function ProgressScreen() {
           <View className="flex-row justify-between gap-4">
             <Pressable
               onPress={() => router.push("/step-progress" as any)}
-              className="flex-1 bg-white rounded-3xl p-4 pb-5 border border-gray-100 active:opacity-90"
+              className="flex-1 rounded-3xl p-4 pb-5 active:opacity-90"
+              style={cardStyle}
             >
               <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">Daily Steps</Text>
-                <Ionicons name="walk-outline" size={18} color="#76C893" />
+                <Text className="text-lg font-extrabold" style={textPrimary}>Daily Steps</Text>
+                <Ionicons name="walk-outline" size={18} color={theme.accent} />
               </View>
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold mt-2">TODAY&apos;S TOTAL</Text>
-              <Text className="text-3xl font-extrabold text-gray-900 mt-1">
+              <Text className="text-[10px] tracking-widest font-bold mt-2" style={textMuted}>TODAY&apos;S TOTAL</Text>
+              <Text className="text-3xl font-extrabold mt-1" style={textPrimary}>
                 {displaySteps.toLocaleString()} steps
               </Text>
-              <Text className="text-sm text-gray-500 mt-2">
+              <Text className="text-sm mt-2" style={textMuted}>
                 {stepSource === "pedometer"
                   ? "Phone step counter (walking & daily movement)"
                   : stepSource === "accelerometer"
@@ -1303,17 +1377,36 @@ export default function ProgressScreen() {
 
             <Pressable
               onPress={() => router.push("/water-intake" as any)}
-              className="flex-1 bg-white rounded-3xl p-4 pb-5 border border-gray-100 active:opacity-90"
+              className="flex-1 rounded-3xl p-4 pb-5 active:opacity-90"
+              style={cardStyle}
             >
               <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">Water Intake</Text>
-                <Ionicons name="water-outline" size={18} color="#76C893" />
+                <Text className="text-lg font-extrabold" style={textPrimary}>Water Intake</Text>
+                <Ionicons name="water-outline" size={18} color={theme.accent} />
               </View>
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold mt-2">TODAY&apos;S TOTAL</Text>
-              <Text className="text-3xl font-extrabold text-gray-900 mt-1">
+              <Text className="text-[10px] tracking-widest font-bold mt-2" style={textMuted}>TODAY&apos;S TOTAL</Text>
+              <Text className="text-3xl font-extrabold mt-1" style={textPrimary}>
                 {waterTotalTodayMl.toLocaleString()} ml
               </Text>
-              <Text className="text-sm text-gray-500 mt-2">Record Your Water Intake</Text>
+              {waterSuggestionLoading ? (
+                <Text className="text-sm mt-2" style={textMuted}>
+                  Calculating today&apos;s suggestion…
+                </Text>
+              ) : waterSuggestedMl != null ? (
+                <Text className="text-sm mt-2" style={textMuted}>
+                  Today's water intake suggestion:{" "}
+                  <Text className="font-extrabold" style={{ color: theme.danger }}>
+                    {waterSuggestedMl.toLocaleString()} ml
+                  </Text>
+                </Text>
+              ) : (
+                <Text className="text-sm mt-2" style={textMuted}>
+                  Today suggestion:{" "}
+                  <Text className="font-extrabold" style={{ color: theme.danger }}>
+                    unavailable
+                  </Text>
+                </Text>
+              )}
               {!waterRecordedToday ? (
                 <Text className="text-sm text-amber-700 font-semibold mt-1">
                   You haven&apos;t recorded water today.
@@ -1328,66 +1421,45 @@ export default function ProgressScreen() {
         <View className="mt-4">
           <Pressable
             onPress={() => router.push("/achievements" as any)}
-            className="bg-white rounded-3xl border border-gray-100 px-5 py-5 active:bg-gray-50 shadow-sm shadow-black/5"
+            className="rounded-3xl px-5 py-5 active:opacity-90 shadow-sm shadow-black/5"
+            style={cardStyle}
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center flex-1 pr-3">
-                <View className="w-14 h-14 rounded-2xl bg-[#eaf7f0] items-center justify-center">
-                  <Ionicons name="trophy-outline" size={30} color="#76C893" />
+                <View className="w-14 h-14 rounded-2xl items-center justify-center" style={{ backgroundColor: theme.accentSoft }}>
+                  <Ionicons name="trophy-outline" size={30} color={theme.accent} />
                 </View>
                 <View className="ml-4 flex-1">
-                  <Text className="text-xl font-extrabold text-gray-900">Achievements</Text>
-                  <Text className="text-sm text-gray-500 mt-1 leading-5">
+                  <Text className="text-xl font-extrabold" style={textPrimary}>Achievements</Text>
+                  <Text className="text-sm mt-1 leading-5" style={textMuted}>
                     Workout, meal, community & streak badges
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+              <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
             </View>
           </Pressable>
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation (match existing app style) */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
-        <Pressable onPress={() => router.replace("/home")} className="items-center">
-          <Ionicons name="home-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">HOME</Text>
-        </Pressable>
-
-        <Pressable onPress={() => router.replace("/discover")} className="items-center">
-          <CommunityUnreadBadge count={totalUnread}>
-            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
-          </CommunityUnreadBadge>
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
-        </Pressable>
-
-        <Pressable className="items-center">
-          <Ionicons name="stats-chart" size={20} color="#76C893" />
-          <Text className="text-[10px] text-[#76C893] font-bold mt-1">PROGRESS</Text>
-        </Pressable>
-
-        <Pressable onPress={() => router.replace("/profile")} className="items-center">
-          <Ionicons name="person-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">PROFILE</Text>
-        </Pressable>
-      </View>
+      <BottomTabBar active="progress" />
 
       {/* Log weight modal */}
       <Modal visible={logVisible} transparent animationType="fade" onRequestClose={() => setLogVisible(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-5">
-            <Text className="text-xl font-extrabold text-gray-900">Log weight</Text>
-            <Text className="text-gray-500 mt-1">Pick a date and log your weight.</Text>
+          <View className="w-full rounded-3xl p-5" style={cardStyle}>
+            <Text className="text-xl font-extrabold" style={textPrimary}>Log weight</Text>
+            <Text className="mt-1" style={textMuted}>Pick a date and log your weight.</Text>
 
             <View className="mt-5">
-              <Text className="text-gray-600 font-semibold ml-1 mb-2">DATE</Text>
+              <Text className="font-semibold ml-1 mb-2" style={textSecondary}>DATE</Text>
               <Pressable
                 onPress={() => setShowDatePicker(true)}
-                className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900 flex-row items-center justify-between"
+                className="rounded-2xl px-4 py-3 flex-row items-center justify-between"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder, borderWidth: 1 }}
               >
-                <Text className="text-gray-900 font-bold">{formatDateShort(logDate)}</Text>
-                <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+                <Text className="font-bold" style={textPrimary}>{formatDateShort(logDate)}</Text>
+                <Ionicons name="calendar-outline" size={20} color={theme.iconMuted} />
               </Pressable>
 
               {showDatePicker && (
@@ -1404,13 +1476,15 @@ export default function ProgressScreen() {
                 />
               )}
 
-              <Text className="text-gray-600 font-semibold ml-1 mb-2">WEIGHT (kg)</Text>
+              <Text className="font-semibold ml-1 mb-2" style={textSecondary}>WEIGHT (kg)</Text>
               <TextInput
                 value={logWeightText}
                 onChangeText={(t) => setLogWeightText(sanitizeDecimal(t))}
                 keyboardType="decimal-pad"
-                className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900"
+                className="rounded-2xl px-4 py-3"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder, borderWidth: 1, color: theme.textPrimary }}
                 placeholder="68.2"
+                placeholderTextColor={theme.textMuted}
               />
               <Slider
                 style={{ width: "100%", marginTop: 10 }}
@@ -1427,14 +1501,16 @@ export default function ProgressScreen() {
 
             <View className="flex-row justify-end mt-6">
               <Pressable onPress={() => setLogVisible(false)} className="px-4 py-3 mr-2">
-                <Text className="font-extrabold text-gray-500">Cancel</Text>
+                <Text className="font-extrabold" style={textMuted}>Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={saveWeightLog}
                 disabled={savingLog}
                 className={`px-5 py-3 rounded-2xl bg-[#76C893] ${savingLog ? "opacity-60" : "opacity-100"}`}
               >
-                <Text className="font-extrabold text-white">{savingLog ? "Saving..." : "Save"}</Text>
+                <Text className="font-extrabold" style={{ color: "#ffffff" }}>
+                  {savingLog ? "Saving..." : "Save"}
+                </Text>
               </Pressable>
             </View>
           </View>

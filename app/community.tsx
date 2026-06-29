@@ -21,6 +21,13 @@ import {
   type ReportTargetType,
 } from "@/lib/communityTypes";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import {
+  getCommunityBootstrapSnapshot,
+  prefetchCommunityScreen,
+  resetCommunityBootstrapCache,
+  subscribeCommunityPosts,
+} from "@/lib/communityBootstrap";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -54,21 +61,17 @@ import {
   ensureSupportChatWithAdmin,
   filterPostsByKeyword,
   filterPostsByTag,
-  getCurrentUserProfile,
   getPostsByAuthor,
   getPublicUserProfile,
-  getUserProfile,
   isSupportAdminPlaceholder,
   loadFriendRelations,
   loadLikerProfiles,
   markAllNotificationsRead,
-  resolveAdminUid,
   sendFriendRequest,
   submitReport,
   subscribeChats,
   subscribeComments,
   subscribeNotifications,
-  subscribePosts,
   SUPPORT_ADMIN_NAME,
   threadedComments,
   togglePostLike,
@@ -113,6 +116,7 @@ type ReportModalProps = {
 
 function ReportModal({ visible, title, onClose, onSubmit }: ReportModalProps) {
   const insets = useSafeAreaInsets();
+  const { cardStyle, textPrimary, textMuted, textSecondary, theme } = useThemedScreen();
   const [selectedReason, setSelectedReason] = useState<string>(REPORT_REASONS[0]);
   const [customReason, setCustomReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -152,28 +156,29 @@ function ReportModal({ visible, title, onClose, onSubmit }: ReportModalProps) {
       <View className="flex-1 bg-black/40 justify-end">
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View
-            className="bg-white rounded-t-[28px] px-5 pt-5 border border-gray-200"
-            style={{ paddingBottom: insets.bottom + 20 }}
+            className="rounded-t-[28px] px-5 pt-5"
+            style={[cardStyle, { paddingBottom: insets.bottom + 20, borderBottomWidth: 0 }]}
           >
-            <Text className="text-xl font-extrabold text-gray-900 mb-1">{title}</Text>
-            <Text className="text-sm text-gray-500 mb-4">Choose a reason or type your own.</Text>
+            <Text className="text-xl font-extrabold mb-1" style={textPrimary}>{title}</Text>
+            <Text className="text-sm mb-4" style={textMuted}>Choose a reason or type your own.</Text>
 
             {REPORT_REASONS.map((reason) => (
               <Pressable
                 key={reason}
                 onPress={() => setSelectedReason(reason)}
-                className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
+                className="flex-row items-center rounded-2xl px-4 py-3 mb-2 border"
+                style={
                   selectedReason === reason
-                    ? "bg-[#eaf7f0] border-[#52B69A]"
-                    : "bg-[#f9fafb] border-gray-200"
-                }`}
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
                 <Ionicons
                   name={selectedReason === reason ? "radio-button-on" : "radio-button-off"}
                   size={20}
-                  color={selectedReason === reason ? "#52B69A" : "#9ca3af"}
+                  color={selectedReason === reason ? theme.accentText : theme.iconMuted}
                 />
-                <Text className="ml-3 text-sm font-bold text-gray-800">{reason}</Text>
+                <Text className="ml-3 text-sm font-bold" style={textPrimary}>{reason}</Text>
               </Pressable>
             ))}
 
@@ -183,17 +188,23 @@ function ReportModal({ visible, title, onClose, onSubmit }: ReportModalProps) {
                 onChangeText={setCustomReason}
                 placeholder="Describe the issue..."
                 multiline
-                className="bg-[#f9fafb] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 min-h-[90px]"
-                placeholderTextColor="#9ca3af"
+                className="rounded-2xl px-4 py-3 border text-sm min-h-[90px]"
+                style={{
+                  backgroundColor: theme.rowBg,
+                  borderColor: theme.cardBorder,
+                  color: theme.textPrimary,
+                }}
+                placeholderTextColor={theme.textMuted}
               />
             ) : null}
 
             <View className="flex-row gap-3 mt-4">
               <Pressable
                 onPress={handleClose}
-                className="flex-1 rounded-full py-3.5 items-center bg-[#f3f4f3] border border-gray-200"
+                className="flex-1 rounded-full py-3.5 items-center border"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder }}
               >
-                <Text className="text-sm font-extrabold text-gray-600">Cancel</Text>
+                <Text className="text-sm font-extrabold" style={textSecondary}>Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleSubmit()}
@@ -234,6 +245,7 @@ function CommentsModal({
   onOpenProfile,
 }: CommentsModalProps) {
   const insets = useSafeAreaInsets();
+  const { cardStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } = useThemedScreen();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -317,16 +329,20 @@ function CommentsModal({
       >
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className="bg-[#f3f4f3] rounded-t-[28px] border-t border-gray-200 overflow-hidden flex-col"
-          style={{ height: "50%" }}
+          className="rounded-t-[28px] overflow-hidden flex-col"
+          style={{ height: "50%", backgroundColor: theme.screenBg, borderTopColor: theme.cardBorder, borderTopWidth: 1 }}
         >
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-            <Text className="text-xl font-extrabold text-gray-900">Comments</Text>
+          <View
+            className="flex-row items-center justify-between px-4 py-3 border-b"
+            style={{ borderBottomColor: theme.cardBorder }}
+          >
+            <Text className="text-xl font-extrabold" style={textPrimary}>Comments</Text>
             <Pressable
               onPress={onClose}
-              className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200"
+              className="w-10 h-10 rounded-full items-center justify-center border"
+              style={iconButtonStyle}
             >
-              <Ionicons name="close" size={22} color="#6b7280" />
+              <Ionicons name="close" size={22} color={theme.iconMuted} />
             </Pressable>
           </View>
 
@@ -336,7 +352,7 @@ function CommentsModal({
             keyboardShouldPersistTaps="handled"
           >
           {displayComments.length === 0 ? (
-            <Text className="text-sm text-gray-500 text-center py-8">No comments yet.</Text>
+            <Text className="text-sm text-center py-8" style={textMuted}>No comments yet.</Text>
           ) : null}
 
           {displayComments.map((comment) => {
@@ -346,13 +362,13 @@ function CommentsModal({
             return (
             <View
               key={comment.id}
-              className={`bg-white rounded-2xl p-4 border mb-2 ${
+              className={`rounded-2xl p-4 border mb-2 ${
                 isReply ? "ml-6 border-l-4 border-l-[#52B69A]" : ""
-              } ${
-                isReplyingToThis
-                  ? "border-[#52B69A] border-2"
-                  : "border-gray-200"
               }`}
+              style={[
+                cardStyle,
+                isReplyingToThis ? { borderColor: theme.accent, borderWidth: 2 } : undefined,
+              ]}
             >
               <View className="flex-row items-center">
                 <Pressable onPress={() => onOpenProfile(comment.authorId)}>
@@ -361,11 +377,11 @@ function CommentsModal({
                 <View className="flex-1 ml-3">
                   <View className="flex-row items-start justify-between gap-2">
                     <Pressable onPress={() => onOpenProfile(comment.authorId)} className="flex-1">
-                      <Text className="text-sm font-extrabold text-gray-900">
+                      <Text className="text-sm font-extrabold" style={textPrimary}>
                         {comment.authorName}
                       </Text>
                     </Pressable>
-                    <Text className="text-[10px] text-gray-400">
+                    <Text className="text-[10px]" style={textMuted}>
                       {formatChatMessageTime(comment.createdAt)}
                     </Text>
                   </View>
@@ -377,7 +393,7 @@ function CommentsModal({
                     onPress={() => setMenuComment(comment)}
                     className="w-8 h-8 rounded-full items-center justify-center"
                   >
-                    <Ionicons name="ellipsis-vertical" size={18} color="#6b7280" />
+                    <Ionicons name="ellipsis-vertical" size={18} color={theme.iconMuted} />
                   </Pressable>
                 ) : null}
               </View>
@@ -387,7 +403,7 @@ function CommentsModal({
                 </Text>
               ) : null}
               <Pressable onPress={() => startReply(comment)}>
-                <Text className="text-sm text-gray-700 mt-2 leading-6">{comment.text}</Text>
+                <Text className="text-sm mt-2 leading-6" style={textSecondary}>{comment.text}</Text>
                 <Text className="text-xs font-bold text-[#2563eb] mt-2">Reply</Text>
               </Pressable>
             </View>
@@ -419,12 +435,15 @@ function CommentsModal({
         />
 
         <View
-          className="px-4 border-t border-gray-200 bg-white"
-          style={{ paddingBottom: insets.bottom + 8, paddingTop: 12 }}
+          className="px-4 border-t"
+          style={{ paddingBottom: insets.bottom + 8, paddingTop: 12, borderTopColor: theme.cardBorder, backgroundColor: theme.cardBg }}
         >
           {replyingTo ? (
-            <View className="flex-row items-center justify-between bg-[#eaf7f0] rounded-xl px-3 py-2 mb-2 border border-[#b7e4c7]">
-              <Text className="text-xs font-extrabold text-[#52B69A]">
+            <View
+              className="flex-row items-center justify-between rounded-xl px-3 py-2 mb-2 border"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+            >
+              <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
                 Replying to {replyingTo.authorName}
               </Text>
               <Pressable
@@ -432,7 +451,7 @@ function CommentsModal({
                   setReplyingTo(null);
                 }}
               >
-                <Text className="text-xs font-bold text-gray-500">Cancel</Text>
+                <Text className="text-xs font-bold" style={textMuted}>Cancel</Text>
               </Pressable>
             </View>
           ) : null}
@@ -444,8 +463,14 @@ function CommentsModal({
                 replyingTo ? `Reply to ${replyingTo.authorName}...` : "Write a comment..."
               }
               multiline
-              className="flex-1 bg-[#f3f4f3] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 max-h-28"
-              placeholderTextColor="#9ca3af"
+              className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
+              style={{
+                backgroundColor: theme.rowBg,
+                borderColor: theme.cardBorder,
+                borderWidth: 1,
+                color: theme.textPrimary,
+              }}
+              placeholderTextColor={theme.textMuted}
             />
             <Pressable
               onPress={() => void handleSend()}
@@ -473,15 +498,22 @@ export default function CommunityScreen() {
   const params = useLocalSearchParams<{ openPostId?: string; openComments?: string }>();
   const insets = useSafeAreaInsets();
   useAdminRedirect();
+  const { cardStyle, screenStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
+    useThemedScreen();
+  const bootstrap = getCommunityBootstrapSnapshot();
 
   const [activeTab, setActiveTab] = useState<"feed" | "friends" | "chat">("feed");
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [myProfileImage, setMyProfileImage] = useState<string | null>(null);
-  const [adminUid, setAdminUid] = useState<string | null>(null);
-  const [adminProfileImage, setAdminProfileImage] = useState<string | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [myProfileImage, setMyProfileImage] = useState<string | null>(bootstrap.myProfileImage);
+  const [adminUid, setAdminUid] = useState<string | null>(
+    bootstrap.adminUidLoaded ? bootstrap.adminUid : null
+  );
+  const [adminProfileImage, setAdminProfileImage] = useState<string | null>(
+    bootstrap.adminProfileImage
+  );
 
-  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [posts, setPosts] = useState<CommunityPost[]>(bootstrap.posts);
+  const [postsHydrated, setPostsHydrated] = useState(bootstrap.postsHydrated);
   const [friendRelations, setFriendRelations] = useState<Record<string, FriendRelation>>({});
   const [chats, setChats] = useState<ChatConversation[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -562,39 +594,36 @@ export default function CommunityScreen() {
   );
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+    void prefetchCommunityScreen().then(() => {
+      const snap = getCommunityBootstrapSnapshot();
+      if (snap.adminUidLoaded) setAdminUid(snap.adminUid);
+      setAdminProfileImage(snap.adminProfileImage);
+      setMyProfileImage(snap.myProfileImage);
+      if (snap.postsHydrated) {
+        setPosts(snap.posts);
+        setPostsHydrated(true);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUserId(user?.uid ?? null);
       if (user) {
-        try {
-          const uid = await resolveAdminUid();
-          setAdminUid(uid);
-          if (uid) {
-            try {
-              const adminProfile = await getUserProfile(uid);
-              setAdminProfileImage(adminProfile.profileImage);
-            } catch {
-              setAdminProfileImage(null);
-            }
-          } else {
-            setAdminProfileImage(null);
-          }
-          await ensureSupportChatWithAdmin().catch(() => null);
-        } catch {
-          setAdminUid(null);
-          setAdminProfileImage(null);
-        }
-        try {
-          const { profile } = await getCurrentUserProfile();
-          setMyProfileImage(profile.profileImage);
-        } catch {
-          setMyProfileImage(null);
-        }
+        void prefetchCommunityScreen().then(() => {
+          const snap = getCommunityBootstrapSnapshot();
+          if (snap.adminUidLoaded) setAdminUid(snap.adminUid);
+          setAdminProfileImage(snap.adminProfileImage);
+          setMyProfileImage(snap.myProfileImage);
+        });
       } else {
+        resetCommunityBootstrapCache();
         setMyProfileImage(null);
         setAdminUid(null);
         setAdminProfileImage(null);
+        setPosts([]);
+        setPostsHydrated(false);
       }
-      setLoadingAuth(false);
     });
     return unsubAuth;
   }, []);
@@ -602,8 +631,13 @@ export default function CommunityScreen() {
   useEffect(() => {
     if (!currentUserId) return;
     setFirestoreError(null);
-    const unsub = subscribePosts(setPosts, handleFirestoreError);
-    return unsub;
+    return subscribeCommunityPosts(
+      (nextPosts) => {
+        setPosts(nextPosts);
+        setPostsHydrated(true);
+      },
+      handleFirestoreError
+    );
   }, [currentUserId, handleFirestoreError]);
 
   useEffect(() => {
@@ -886,19 +920,11 @@ export default function CommunityScreen() {
     });
   };
 
-  if (loadingAuth) {
-    return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center">
-        <ActivityIndicator size="large" color="#52B69A" />
-      </View>
-    );
-  }
-
   if (!currentUserId) {
     return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center px-8">
-        <Text className="text-lg font-extrabold text-gray-900 text-center">Sign in required</Text>
-        <Text className="text-sm text-gray-500 text-center mt-2">
+      <View className="flex-1 items-center justify-center px-8" style={screenStyle}>
+        <Text className="text-lg font-extrabold text-center" style={textPrimary}>Sign in required</Text>
+        <Text className="text-sm text-center mt-2" style={textMuted}>
           Please log in to use the community features.
         </Text>
         <Pressable
@@ -912,7 +938,7 @@ export default function CommunityScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
+    <View style={screenStyle}>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 100,
@@ -922,19 +948,23 @@ export default function CommunityScreen() {
         <View className="flex-row items-center mb-5 px-4">
           <Pressable
             onPress={() => router.back()}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
+            className="w-11 h-11 rounded-full items-center justify-center border mr-3"
+            style={iconButtonStyle}
           >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
           </Pressable>
-          <Text className="text-2xl font-extrabold text-gray-900 flex-1">Community</Text>
+          <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
+            Community
+          </Text>
           <Pressable
             onPress={() => {
               void markAllNotificationsRead().catch(() => {});
               router.push("/community-notifications" as any);
             }}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 relative"
+            className="w-11 h-11 rounded-full items-center justify-center border relative"
+            style={iconButtonStyle}
           >
-            <Ionicons name="notifications-outline" size={22} color="#111827" />
+            <Ionicons name="notifications-outline" size={22} color={theme.textPrimary} />
             {unreadNotifications > 0 ? (
               <View
                 style={{
@@ -967,48 +997,48 @@ export default function CommunityScreen() {
         <View className="flex-row mb-4 px-4 gap-2">
             <Pressable
               onPress={() => setActiveTab("feed")}
-              className={`flex-1 rounded-full py-3.5 items-center justify-center ${
+              className="flex-1 rounded-full py-3.5 items-center justify-center border-2"
+              style={
                 activeTab === "feed"
-                  ? "bg-[#52B69A] border-2 border-[#52B69A]"
-                  : "bg-white border-2 border-gray-200"
-              }`}
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : cardStyle
+              }
             >
               <Text
-                className={`font-extrabold ${
-                  activeTab === "feed" ? "text-base text-white" : "text-sm text-gray-600"
-                }`}
+                className={`font-extrabold ${activeTab === "feed" ? "text-base" : "text-sm"}`}
+                style={{ color: activeTab === "feed" ? "#ffffff" : theme.textSecondary }}
               >
                 Community
               </Text>
             </Pressable>
             <Pressable
               onPress={() => setActiveTab("friends")}
-              className={`flex-1 rounded-full py-3.5 items-center justify-center ${
+              className="flex-1 rounded-full py-3.5 items-center justify-center border-2"
+              style={
                 activeTab === "friends"
-                  ? "bg-[#52B69A] border-2 border-[#52B69A]"
-                  : "bg-white border-2 border-gray-200"
-              }`}
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : cardStyle
+              }
             >
               <Text
-                className={`font-extrabold ${
-                  activeTab === "friends" ? "text-base text-white" : "text-sm text-gray-600"
-                }`}
+                className={`font-extrabold ${activeTab === "friends" ? "text-base" : "text-sm"}`}
+                style={{ color: activeTab === "friends" ? "#ffffff" : theme.textSecondary }}
               >
                 Friends
               </Text>
             </Pressable>
             <Pressable
               onPress={() => setActiveTab("chat")}
-              className={`flex-1 rounded-full py-3.5 items-center justify-center flex-row ${
+              className="flex-1 rounded-full py-3.5 items-center justify-center flex-row border-2"
+              style={
                 activeTab === "chat"
-                  ? "bg-[#52B69A] border-2 border-[#52B69A]"
-                  : "bg-white border-2 border-gray-200"
-              }`}
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : cardStyle
+              }
             >
               <Text
-                className={`font-extrabold ${
-                  activeTab === "chat" ? "text-base text-white" : "text-sm text-gray-600"
-                }`}
+                className={`font-extrabold ${activeTab === "chat" ? "text-base" : "text-sm"}`}
+                style={{ color: activeTab === "chat" ? "#ffffff" : theme.textSecondary }}
               >
                 Chat
               </Text>
@@ -1036,11 +1066,12 @@ export default function CommunityScreen() {
                 <View className="flex-row items-center mb-4 px-4">
                   <Pressable
                     onPress={exitTagView}
-                    className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
+                    className="w-10 h-10 rounded-full items-center justify-center border mr-3"
+                    style={iconButtonStyle}
                   >
-                    <Ionicons name="chevron-back" size={22} color="#111827" />
+                    <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
                   </Pressable>
-                  <Text className="text-lg font-extrabold text-gray-900">#{activeTagFilter}</Text>
+                  <Text className="text-lg font-extrabold" style={textPrimary}>#{activeTagFilter}</Text>
                 </View>
               ) : (
                 <CommunitySearchBar
@@ -1051,9 +1082,14 @@ export default function CommunityScreen() {
               )}
 
               <View className="gap-3 px-4 pb-4">
-                {filteredPosts.length === 0 ? (
-                  <View className="bg-white px-4 py-8 rounded-2xl border border-gray-200 items-center">
-                    <Text className="text-sm text-gray-500">
+                {!postsHydrated && filteredPosts.length === 0 ? (
+                  <View className="px-4 py-10 rounded-2xl items-center" style={cardStyle}>
+                    <ActivityIndicator size="small" color={theme.accent} />
+                    <Text className="text-sm mt-3" style={textMuted}>Loading community posts...</Text>
+                  </View>
+                ) : filteredPosts.length === 0 ? (
+                  <View className="px-4 py-8 rounded-2xl items-center" style={cardStyle}>
+                    <Text className="text-sm" style={textMuted}>
                       {tagFilterView && activeTagFilter
                         ? `No posts with #${activeTagFilter}`
                         : searchQuery
@@ -1070,7 +1106,8 @@ export default function CommunityScreen() {
                   return (
                     <View
                       key={post.id}
-                      className="bg-white px-4 py-4 rounded-2xl border border-gray-200"
+                      className="px-4 py-4 rounded-2xl"
+                      style={cardStyle}
                     >
                       <View className="flex-row items-center">
                         <Pressable onPress={() => void openUserProfile(post.authorId)}>
@@ -1080,13 +1117,13 @@ export default function CommunityScreen() {
                           onPress={() => void openUserProfile(post.authorId)}
                           className="flex-1 ml-3"
                         >
-                          <Text className="text-base font-extrabold text-gray-900">
+                          <Text className="text-base font-extrabold" style={textPrimary}>
                             {displayCommunityUserName(post.authorId, post.authorName, adminUid)}
                             {isOwnPost ? (
-                              <Text className="text-sm font-bold text-[#52B69A]"> · me</Text>
+                              <Text className="text-sm font-bold" style={{ color: theme.accentText }}> · me</Text>
                             ) : null}
                           </Text>
-                          <Text className="text-[10px] text-gray-400 mt-0.5">
+                          <Text className="text-[10px] mt-0.5" style={textMuted}>
                             {formatPostDisplayTime(post.createdAt)}
                           </Text>
                         </Pressable>
@@ -1094,12 +1131,12 @@ export default function CommunityScreen() {
                           onPress={() => setMenuPost(post)}
                           className="w-9 h-9 rounded-full items-center justify-center"
                         >
-                          <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                          <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
                         </Pressable>
                       </View>
 
                       {post.content ? (
-                        <Text className="text-base text-gray-800 mt-3 leading-7">{post.content}</Text>
+                        <Text className="text-base mt-3 leading-7" style={textSecondary}>{post.content}</Text>
                       ) : null}
 
                       {post.imageUrl ? (
@@ -1116,7 +1153,8 @@ export default function CommunityScreen() {
                             <Pressable
                               key={tag}
                               onPress={() => openTagFromPost(tag)}
-                              className="rounded-full px-2.5 py-1 bg-white border border-[#52B69A]"
+                              className="rounded-full px-2.5 py-1 border"
+                              style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
                             >
                               <Text className="text-[10px] font-bold text-[#52B69A]">#{tag}</Text>
                             </Pressable>
@@ -1197,8 +1235,8 @@ export default function CommunityScreen() {
           ) : (
             <View className="gap-0">
               {displayChats.length === 0 ? (
-                <View className="bg-white px-4 py-8 border-y border-gray-200 items-center">
-                  <Text className="text-sm text-gray-500 text-center">
+                <View className="px-4 py-8 items-center" style={cardStyle}>
+                  <Text className="text-sm text-center" style={textMuted}>
                     Add friends from the feed to start chatting.
                   </Text>
                 </View>
@@ -1213,7 +1251,8 @@ export default function CommunityScreen() {
                 return (
                   <View
                     key={chat.id}
-                    className="flex-row items-center bg-white px-4 py-4 border-b border-gray-200"
+                    className="flex-row items-center px-4 py-4 border-b"
+                    style={{ ...cardStyle, borderRadius: 0, borderWidth: 0, borderBottomWidth: 1 }}
                   >
                     <Pressable onPress={() => void openUserProfile(otherUid)}>
                       <ProfileAvatar uri={image} />
@@ -1224,7 +1263,7 @@ export default function CommunityScreen() {
                     >
                       <View className="flex-1">
                         <View className="flex-row items-center">
-                          <Text className="text-base font-extrabold text-gray-900">{name}</Text>
+                          <Text className="text-base font-extrabold" style={textPrimary}>{name}</Text>
                           {isSupport ? (
                             <View className="ml-2 w-6 h-6 rounded-full bg-[#dbeafe] items-center justify-center">
                               <Ionicons name="shield-checkmark" size={14} color="#2563eb" />
@@ -1236,12 +1275,12 @@ export default function CommunityScreen() {
                             </View>
                           ) : null}
                         </View>
-                        <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
+                        <Text className="text-sm mt-1" style={textMuted} numberOfLines={1}>
                           {chatPreviewForUser(chat, currentUserId ?? "") ||
                             (isSupport ? SUPPORT_CHAT_WELCOME_MESSAGE : "Start your conversation")}
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={20} color="#76C893" />
+                      <Ionicons name="chevron-forward" size={20} color={theme.accent} />
                     </Pressable>
                   </View>
                 );

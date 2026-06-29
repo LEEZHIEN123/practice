@@ -1,11 +1,13 @@
 import { Pressable } from "@/components/Pressable";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
+import { ThemedText } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { removeFriend, subscribeFriendsList } from "@/lib/communityService";
 import type { FriendListEntry } from "@/lib/communityTypes";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Text, View } from "react-native";
+import { ActivityIndicator, Alert, View } from "react-native";
 
 function ProfileAvatar({ uri, size = 44 }: { uri: string | null; size?: number }) {
   return (
@@ -28,6 +30,7 @@ type FriendsSectionProps = {
 };
 
 export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProps) {
+  const { cardStyle, theme } = useThemedScreen();
   const [friends, setFriends] = useState<FriendListEntry[]>([]);
   const [searchText, setSearchText] = useState("");
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -80,31 +83,36 @@ export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProp
       />
 
       <View>
-        <Text className="text-sm font-extrabold text-gray-900 mb-3">
+        <ThemedText className="text-sm font-extrabold mb-3">
           My friends ({friends.length})
-        </Text>
+        </ThemedText>
         {friends.length === 0 ? (
-          <View className="bg-white rounded-2xl px-4 py-8 border border-gray-200 items-center">
-            <Text className="text-sm text-gray-500 text-center">
+          <View className="rounded-2xl px-4 py-8 items-center" style={cardStyle}>
+            <ThemedText variant="muted" className="text-sm text-center">
               No friends yet. Tap Add friend to find someone.
-            </Text>
+            </ThemedText>
           </View>
         ) : filteredFriends.length === 0 ? (
-          <View className="bg-white rounded-2xl px-4 py-8 border border-gray-200 items-center">
-            <Text className="text-sm text-gray-500 text-center">No friends match your search.</Text>
+          <View className="rounded-2xl px-4 py-8 items-center" style={cardStyle}>
+            <ThemedText variant="muted" className="text-sm text-center">
+              No friends match your search.
+            </ThemedText>
           </View>
         ) : (
           filteredFriends.map((friend) => (
             <View
               key={friend.id}
-              className="flex-row items-center bg-white rounded-2xl px-4 py-4 border border-gray-200 mb-2"
+              className="flex-row items-center rounded-2xl px-4 py-4 mb-2"
+              style={cardStyle}
             >
               <Pressable onPress={() => onOpenProfile(friend.id)}>
                 <ProfileAvatar uri={friend.profileImage} />
               </Pressable>
               <Pressable onPress={() => onOpenProfile(friend.id)} className="flex-1 ml-3">
-                <Text className="text-base font-extrabold text-gray-900">{friend.name}</Text>
-                <Text className="text-xs text-gray-500 mt-0.5">{friend.email}</Text>
+                <ThemedText className="text-base font-extrabold">{friend.name}</ThemedText>
+                <ThemedText variant="muted" className="text-xs mt-0.5">
+                  {friend.email}
+                </ThemedText>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -112,23 +120,25 @@ export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProp
                   void Promise.resolve(onOpenChat(friend)).finally(() => setChattingId(null));
                 }}
                 disabled={chattingId === friend.id || removingId === friend.id}
-                className="w-10 h-10 rounded-full bg-[#e8f8ef] items-center justify-center border border-[#b7e4c7] mr-2"
+                className="w-10 h-10 rounded-full items-center justify-center border mr-2"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
               >
                 {chattingId === friend.id ? (
-                  <ActivityIndicator size="small" color="#52B69A" />
+                  <ActivityIndicator size="small" color={theme.accentText} />
                 ) : (
-                  <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
+                  <Ionicons name="chatbubble-outline" size={18} color={theme.accentText} />
                 )}
               </Pressable>
               <Pressable
                 onPress={() => handleRemoveFriend(friend)}
                 disabled={removingId === friend.id}
-                className="w-10 h-10 rounded-full bg-[#fef2f2] items-center justify-center border border-[#fecaca]"
+                className="w-10 h-10 rounded-full items-center justify-center border"
+                style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
               >
                 {removingId === friend.id ? (
-                  <ActivityIndicator size="small" color="#dc2626" />
+                  <ActivityIndicator size="small" color={theme.danger} />
                 ) : (
-                  <Ionicons name="person-remove-outline" size={18} color="#dc2626" />
+                  <Ionicons name="person-remove-outline" size={18} color={theme.danger} />
                 )}
               </Pressable>
             </View>

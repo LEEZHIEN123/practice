@@ -1,3 +1,9 @@
+import {
+  ThemedBackButton,
+  ThemedScreen,
+  ThemedText,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -22,6 +28,7 @@ export default function ActivityLevel() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { account, profile, reset, setActivity } = useRegistration();
+  const { theme, cardStyle } = useThemedScreen();
 
   const [selected, setSelected] = useState<ActivityKey | null>(null);
   const [saving, setSaving] = useState(false);
@@ -69,7 +76,6 @@ export default function ActivityLevel() {
 
   const select = (key: ActivityKey) => setSelected(key);
 
-  // Continue goes to Home (final step)
   const continueToHome = async () => {
     const picked = options.find((o) => o.key === selected);
     if (!picked) return;
@@ -125,37 +131,20 @@ export default function ActivityLevel() {
   };
 
   return (
-    <View
-      className="flex-1 bg-[#f4fcf7]"
-      style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}
-    >
-      {/* Header (same style as Contact Us) */}
+    <ThemedScreen style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
       <View className="relative mb-6 h-12 justify-center">
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-          className="absolute left-0 top-0 h-16 w-24 justify-center pl-2"
-        >
-          <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </View>
-        </Pressable>
-        <Text className="text-center text-xl font-extrabold text-gray-900">
-          Profile Details
-        </Text>
+        <View className="absolute left-0 top-0 h-16 w-24 justify-center pl-2">
+          <ThemedBackButton onPress={() => router.back()} icon="arrow-back" />
+        </View>
+        <ThemedText className="text-center text-xl font-extrabold">Profile Details</ThemedText>
       </View>
 
-      {/* Title */}
-      <Text className="text-center text-3xl font-extrabold text-gray-900 mt-2">
-        Activity Level
-      </Text>
+      <ThemedText className="text-center text-3xl font-extrabold mt-2">Activity Level</ThemedText>
 
-      <Text className="text-center text-gray-500 mt-3 mb-6 text-base">
-        This helps us personalize your fitness journey{"\n"}and track progress
-        accurately.
-      </Text>
+      <ThemedText variant="secondary" className="text-center mt-3 mb-6 text-base">
+        This helps us personalize your fitness journey{"\n"}and track progress accurately.
+      </ThemedText>
 
-      {/* Activity Options */}
       <View className="gap-4">
         {options.map((o) => {
           const isActive = selected === o.key;
@@ -164,41 +153,46 @@ export default function ActivityLevel() {
             <Pressable
               key={o.key}
               onPress={() => select(o.key)}
-              className={`rounded-3xl p-5 flex-row items-center justify-between ${
+              className="rounded-3xl p-5 flex-row items-center justify-between"
+              style={
                 isActive
-                  ? "bg-[#eaf7f0] border-2 border-[#76C893]"
-                  : "bg-white"
-              }`}
+                  ? {
+                      backgroundColor: theme.accentSoft,
+                      borderColor: theme.accent,
+                      borderWidth: 2,
+                    }
+                  : cardStyle
+              }
             >
               <View className="flex-row items-center">
                 <View
-                  className={`w-16 h-16 rounded-2xl items-center justify-center ${
-                    isActive ? "bg-[#76C893]" : "bg-gray-100"
-                  }`}
+                  className="w-16 h-16 rounded-2xl items-center justify-center"
+                  style={{ backgroundColor: isActive ? theme.accent : theme.rowBg }}
                 >
                   <Ionicons
                     name={o.icon}
                     size={26}
-                    color={isActive ? "white" : "#111827"}
+                    color={isActive ? "white" : theme.textPrimary}
                   />
                 </View>
 
                 <View className="ml-4">
-                  <Text className="text-xl font-extrabold text-gray-900">
-                    {o.title}
-                  </Text>
-                  <Text className="text-gray-500 mt-1">{o.subtitle}</Text>
+                  <ThemedText className="text-xl font-extrabold">{o.title}</ThemedText>
+                  <ThemedText variant="secondary" className="mt-1">
+                    {o.subtitle}
+                  </ThemedText>
                 </View>
               </View>
 
-              {/* Radio Circle */}
               <View
-                className={`w-7 h-7 rounded-full border-2 items-center justify-center ${
-                  isActive ? "border-[#76C893]" : "border-gray-300"
-                }`}
+                className="w-7 h-7 rounded-full border-2 items-center justify-center"
+                style={{ borderColor: isActive ? theme.accent : theme.iconMuted }}
               >
                 {isActive && (
-                  <View className="w-3.5 h-3.5 rounded-full bg-[#76C893]" />
+                  <View
+                    className="w-3.5 h-3.5 rounded-full"
+                    style={{ backgroundColor: theme.accent }}
+                  />
                 )}
               </View>
             </Pressable>
@@ -206,17 +200,14 @@ export default function ActivityLevel() {
         })}
       </View>
 
-      {/* Continue Button */}
       <View className="flex-1 justify-end pb-10 mt-3">
         <Pressable
           onPress={continueToHome}
           disabled={saving}
-          className={`rounded-full overflow-hidden ${
-            saving ? "opacity-60" : "opacity-100"
-          }`}
+          className={`rounded-full overflow-hidden ${saving ? "opacity-60" : "opacity-100"}`}
         >
           <LinearGradient
-            colors={["#76C893", "#52B69A"]}
+            colors={[theme.accent, theme.accentText]}
             className="py-4 items-center rounded-2xl"
           >
             <View className="flex-row items-center">
@@ -228,6 +219,6 @@ export default function ActivityLevel() {
           </LinearGradient>
         </Pressable>
       </View>
-    </View>
+    </ThemedScreen>
   );
 }

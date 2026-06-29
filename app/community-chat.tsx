@@ -3,6 +3,12 @@ import { ChatInboxMenuModal } from "@/components/community/ChatInboxMenuModal";
 import { ChatMessageMenuModal } from "@/components/community/ChatMessageMenuModal";
 import { ChatStickerPicker } from "@/components/community/ChatStickerPicker";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
+import {
+  ThemedBackButton,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import type { ChatMessage, CommunityPost } from "@/lib/communityTypes";
 import { getChatSticker, type ChatSticker } from "@/lib/chatStickers";
@@ -35,6 +41,7 @@ import {
   subscribeFriendsList,
   subscribePosts,
 } from "@/lib/communityService";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -76,6 +83,7 @@ function QuoteBlock({
   quote: NonNullable<ChatMessage["quote"]>;
   isMe: boolean;
 }) {
+  const { theme, textMuted } = useThemedScreen();
   const quotedSticker =
     quote.messageType === "sticker" && quote.stickerId
       ? getChatSticker(quote.stickerId)
@@ -83,14 +91,12 @@ function QuoteBlock({
 
   return (
     <View
-      className={`border-l-2 pl-2 mb-2 ${
-        isMe ? "border-white/70" : "border-[#52B69A]"
-      }`}
+      className="border-l-2 pl-2 mb-2"
+      style={{ borderLeftColor: isMe ? "rgba(255,255,255,0.7)" : theme.accentText }}
     >
       <Text
-        className={`text-[10px] font-bold ${
-          isMe ? "text-white/90" : "text-[#52B69A]"
-        }`}
+        className="text-[10px] font-bold"
+        style={{ color: isMe ? "rgba(255,255,255,0.9)" : theme.accentText }}
       >
         {quote.senderName}
       </Text>
@@ -102,7 +108,8 @@ function QuoteBlock({
         />
       ) : (
         <Text
-          className={`text-xs ${isMe ? "text-white/80" : "text-gray-500"}`}
+          className="text-xs"
+          style={isMe ? { color: "rgba(255,255,255,0.8)" } : textMuted}
           numberOfLines={2}
         >
           {quotePreviewText(quote)}
@@ -117,13 +124,19 @@ function SupportWelcomeMessage({
 }: {
   avatar: string | null;
 }) {
+  const { cardStyle } = useThemedScreen();
+
   return (
     <View className="flex-row items-end gap-2 justify-start">
       <ProfileAvatar uri={avatar} size={32} />
       <View className="max-w-[78%] items-start">
-        <View className="rounded-2xl px-4 py-3 bg-white border border-gray-200">
-          <Text className="text-[10px] font-bold text-[#2563eb] mb-1">Support Admin</Text>
-          <Text className="text-gray-700 text-sm leading-6">{SUPPORT_CHAT_WELCOME_MESSAGE}</Text>
+        <View className="rounded-2xl px-4 py-3" style={cardStyle}>
+          <Text className="text-[10px] font-bold mb-1" style={{ color: "#2563eb" }}>
+            Support Admin
+          </Text>
+          <ThemedText variant="secondary" className="text-sm leading-6">
+            {SUPPORT_CHAT_WELCOME_MESSAGE}
+          </ThemedText>
         </View>
       </View>
     </View>
@@ -133,6 +146,8 @@ function SupportWelcomeMessage({
 export default function CommunityChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { cardStyle, textSecondary, theme, iconButtonStyle } = useThemedScreen();
+  const { inputStyle, placeholderColor, rowBorderStyle } = useProfileCardStyles();
   const scrollRef = useRef<ScrollView>(null);
   const params = useLocalSearchParams<{
     chatId?: string;
@@ -509,35 +524,35 @@ export default function CommunityChatScreen() {
 
   if (!chatId) {
     return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center px-8">
-        <Text className="text-sm text-gray-500 text-center">Invalid chat.</Text>
+      <ThemedScreen className="items-center justify-center px-8">
+        <ThemedText variant="muted" className="text-sm text-center">
+          Invalid chat.
+        </ThemedText>
         <Pressable onPress={() => router.back()} className="mt-4 rounded-full bg-[#52B69A] px-6 py-3">
           <Text className="text-sm font-extrabold text-white">Go Back</Text>
         </Pressable>
-      </View>
+      </ThemedScreen>
     );
   }
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
+    <ThemedScreen>
       <View className="flex-1">
         <View
           style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}
           className="flex-row items-center mb-2"
         >
-          <Pressable
+          <ThemedBackButton
             onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
+            className="w-11 h-11 mr-3"
+          />
           <Pressable
             onPress={() => void openOtherProfile()}
             disabled={!otherUserId || otherUserId === currentUserId}
             className="flex-row items-center flex-1"
           >
             <ProfileAvatar uri={chatImage} size={40} />
-            <Text className="text-xl font-extrabold text-gray-900 flex-1 ml-3">{displayChatName}</Text>
+            <ThemedText className="text-xl font-extrabold flex-1 ml-3">{displayChatName}</ThemedText>
           </Pressable>
           {isSupport ? (
             <View className="w-8 h-8 rounded-full bg-[#dbeafe] items-center justify-center mr-1">
@@ -546,11 +561,12 @@ export default function CommunityChatScreen() {
           ) : null}
           <Pressable
             onPress={() => setMenuVisible(true)}
-            className="w-10 h-10 rounded-full items-center justify-center"
+            className="w-10 h-10 rounded-full items-center justify-center border"
+            style={iconButtonStyle}
           >
-            <Ionicons name="ellipsis-vertical" size={22} color="#6b7280" />
+            <Ionicons name="ellipsis-vertical" size={22} color={theme.iconMuted} />
           </Pressable>
-        </View>
+          </View>
 
         <ScrollView
           ref={scrollRef}
@@ -563,7 +579,9 @@ export default function CommunityChatScreen() {
             <SupportWelcomeMessage avatar={senderImage(otherUserId || "")} />
           ) : null}
           {messages.length === 0 && !showSupportWelcome ? (
-            <Text className="text-sm text-gray-400 text-center py-8">No messages yet. Say hello!</Text>
+            <ThemedText variant="muted" className="text-sm text-center py-8">
+              No messages yet. Say hello!
+            </ThemedText>
           ) : null}
           {messages.map((message) => {
             const isMe = message.senderId === currentUserId;
@@ -589,14 +607,14 @@ export default function CommunityChatScreen() {
                     disabled={message.recalled}
                   >
                     {message.recalled ? (
-                      <View className="rounded-2xl px-4 py-3 bg-[#ececec] border border-gray-200">
-                        <Text className="text-xs italic text-gray-500 leading-5">
+                      <View className="rounded-2xl px-4 py-3" style={rowBorderStyle}>
+                        <ThemedText variant="muted" className="text-xs italic leading-5">
                           {formatRecallNotice(
                             message,
                             currentUserId,
                             resolveSenderName(message.senderId)
                           )}
-                        </Text>
+                        </ThemedText>
                       </View>
                     ) : isSticker && sticker ? (
                       <View className="px-1 py-1">
@@ -609,32 +627,30 @@ export default function CommunityChatScreen() {
                       </View>
                     ) : (
                       <View
-                        className={`rounded-2xl px-4 py-3 ${
-                          isMe ? "bg-[#76C893]" : "bg-white border border-gray-200"
-                        }`}
+                        className={`rounded-2xl px-4 py-3 ${isMe ? "bg-[#76C893]" : ""}`}
+                        style={isMe ? undefined : cardStyle}
                       >
                         {isAuto ? (
-                          <Text className="text-[10px] font-bold text-[#2563eb] mb-1">
+                          <Text className="text-[10px] font-bold mb-1" style={{ color: "#2563eb" }}>
                             Support Admin
-                          </Text>
+                </Text>
                         ) : null}
                         {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
                         {displayText ? (
                           <ChatFormattedText
                             text={displayText}
-                            className={
-                              isMe ? "text-white text-sm leading-6" : "text-gray-700 text-sm leading-6"
-                            }
-                            boldClassName={isMe ? "font-extrabold text-white" : "font-extrabold text-gray-700"}
+                            className={isMe ? "text-white text-sm leading-6" : "text-sm leading-6"}
+                            style={isMe ? undefined : textSecondary}
+                            boldClassName={isMe ? "font-extrabold text-white" : "font-extrabold"}
                           />
                         ) : null}
                       </View>
                     )}
                   </Pressable>
-                  <Text className="text-[10px] text-gray-400 mt-1">
+                  <ThemedText variant="muted" className="text-[10px] mt-1">
                     {formatChatMessageTime(message.recalledAt ?? message.createdAt)}
                     {message.editedAt && !message.recalled ? " · Edited" : ""}
-                  </Text>
+                  </ThemedText>
                 </View>
                 {isMe ? <ProfileAvatar uri={avatar} size={32} /> : null}
               </View>
@@ -644,37 +660,49 @@ export default function CommunityChatScreen() {
 
         {canSendMessages || isSupport ? (
         <View
-          className="px-3 border-t border-gray-200 bg-[#f3f4f3]"
-          style={{ paddingBottom: inputBottomPadding, paddingTop: 10 }}
+          className="px-3 border-t"
+          style={{
+            paddingBottom: inputBottomPadding,
+            paddingTop: 10,
+            backgroundColor: theme.navBg,
+            borderTopColor: theme.navBorder,
+          }}
         >
           {editingMessage ? (
-            <View className="flex-row items-center justify-between bg-[#eaf7f0] rounded-xl px-3 py-2 mb-2 border border-[#b7e4c7]">
-              <Text className="text-xs font-extrabold text-[#52B69A]">Editing message</Text>
+            <View
+              className="flex-row items-center justify-between rounded-xl px-3 py-2 mb-2 border"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+            >
+              <ThemedText variant="accent" className="text-xs font-extrabold">
+                Editing message
+              </ThemedText>
               <Pressable
                 onPress={() => {
                   setEditingMessage(null);
                   setText("");
                 }}
               >
-                <Text className="text-xs font-bold text-gray-500">Cancel</Text>
+                <ThemedText variant="muted" className="text-xs font-bold">
+                  Cancel
+                </ThemedText>
               </Pressable>
             </View>
           ) : null}
 
           {quotingMessage ? (
-            <View className="flex-row items-center bg-white rounded-xl px-3 py-2 mb-2 border border-gray-200">
-              <View className="flex-1 border-l-2 border-[#52B69A] pl-2">
-                <Text className="text-xs font-extrabold text-[#52B69A]">
+            <View className="flex-row items-center rounded-xl px-3 py-2 mb-2" style={cardStyle}>
+              <View className="flex-1 border-l-2 pl-2" style={{ borderLeftColor: theme.accentText }}>
+                <ThemedText variant="accent" className="text-xs font-extrabold">
                   {resolveSenderName(quotingMessage.senderId)}
-                </Text>
-                <Text className="text-xs text-gray-600 mt-0.5" numberOfLines={1}>
+                </ThemedText>
+                <ThemedText variant="secondary" className="text-xs mt-0.5" numberOfLines={1}>
                   {messageSummary(quotingMessage)}
-                </Text>
+                </ThemedText>
               </View>
               <Pressable onPress={() => setQuotingMessage(null)} className="p-1 ml-2">
-                <Ionicons name="close" size={18} color="#9ca3af" />
+                <Ionicons name="close" size={18} color={theme.iconMuted} />
               </Pressable>
-            </View>
+          </View>
           ) : null}
 
           {stickerPickerVisible && !editingMessage ? (
@@ -684,14 +712,19 @@ export default function CommunityChatScreen() {
             <Pressable
               onPress={toggleStickerPicker}
               disabled={sending || Boolean(editingMessage)}
-              className={`w-10 h-10 rounded-full items-center justify-center ${
-                stickerPickerVisible ? "bg-[#52B69A]" : "bg-white border border-gray-200"
-              } ${editingMessage ? "opacity-40" : ""}`}
+              className={`w-10 h-10 rounded-full items-center justify-center border ${
+                editingMessage ? "opacity-40" : ""
+              }`}
+              style={
+                stickerPickerVisible
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }
+              }
             >
               <Ionicons
                 name="happy-outline"
                 size={20}
-                color={stickerPickerVisible ? "white" : "#52B69A"}
+                color={stickerPickerVisible ? "white" : theme.accentText}
               />
             </Pressable>
             <TextInput
@@ -703,15 +736,15 @@ export default function CommunityChatScreen() {
                 setStickerPickerVisible(false);
                 setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
               }}
-              className="flex-1 bg-white rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 max-h-28"
-              placeholderTextColor="#9ca3af"
+              className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
+              style={inputStyle}
+              placeholderTextColor={placeholderColor}
             />
             <Pressable
               onPress={() => void handleSend()}
               disabled={sending || !text.trim()}
-              className={`w-11 h-11 rounded-full items-center justify-center ${
-                text.trim() ? "bg-[#52B69A]" : "bg-gray-200"
-              }`}
+              className="w-11 h-11 rounded-full items-center justify-center"
+              style={{ backgroundColor: text.trim() ? theme.accent : theme.iconMuted }}
             >
               {sending ? (
                 <ActivityIndicator color="white" size="small" />
@@ -727,15 +760,20 @@ export default function CommunityChatScreen() {
         </View>
         ) : (
           <View
-            className="px-3 border-t border-gray-200 bg-[#f3f4f3]"
-            style={{ paddingBottom: insets.bottom + 12, paddingTop: 12 }}
+            className="px-3 border-t"
+            style={{
+              paddingBottom: insets.bottom + 12,
+              paddingTop: 12,
+              backgroundColor: theme.navBg,
+              borderTopColor: theme.navBorder,
+            }}
           >
-            <Text className="text-xs text-center text-gray-500">
+            <ThemedText variant="muted" className="text-xs text-center">
               Add {displayChatName} as a friend to send messages.
-            </Text>
+            </ThemedText>
           </View>
         )}
-      </View>
+    </View>
 
       <ChatMessageMenuModal
         visible={menuMessage !== null}
@@ -801,6 +839,6 @@ export default function CommunityChatScreen() {
         onAddFriend={handleAddFriend}
         onChat={isSupportAdminUser ? () => setProfileVisible(false) : undefined}
       />
-    </View>
+    </ThemedScreen>
   );
 }

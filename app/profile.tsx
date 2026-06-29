@@ -1,10 +1,13 @@
-import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
-import { useAdminRedirect } from "@/lib/useAdminRedirect";
-import { useCommunityUnread } from "@/lib/useCommunityUnread";
+import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
+import { AppearanceModal } from "@/components/profile/AppearanceModal";
+import { ProfileStatsCards } from "@/components/profile/ProfileStatsCards";
+import { useAppearance } from "@/context/AppearanceContext";
 import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
 } from "@/lib/deleteUserAccount";
+import { subscribeProfileWorkoutStats } from "@/lib/profileStats";
+import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import {
   bmiBandKey,
   calcBmi,
@@ -39,8 +42,9 @@ type Gender = "male" | "female";
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabBarPadding = useBottomTabBarScrollPadding();
+  const { mode, theme } = useAppearance();
   useAdminRedirect();
-  const { totalUnread } = useCommunityUnread();
 
   const [userName, setUserName] = useState(" ");
   const [userEmail, setUserEmail] = useState(" ");
@@ -49,6 +53,9 @@ export default function ProfileScreen() {
   const [gender, setGender] = useState<Gender>("male");
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [bmiValue, setBmiValue] = useState<number | null>(null);
+  const [currentWeightKg, setCurrentWeightKg] = useState<number | null>(null);
+  const [totalCalories, setTotalCalories] = useState(0);
+  const [totalWorkouts, setTotalWorkouts] = useState(0);
 
   const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
@@ -57,6 +64,7 @@ export default function ProfileScreen() {
   const [deletePassword, setDeletePassword] = useState("");
   const [showDeletePassword, setShowDeletePassword] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [appearanceVisible, setAppearanceVisible] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -92,11 +100,29 @@ export default function ProfileScreen() {
 
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
+
+        const weight =
+          typeof data?.weight === "number" && Number.isFinite(data.weight) && data.weight > 0
+            ? data.weight
+            : null;
+        setCurrentWeightKg(weight);
       },
       (error) => console.log("Failed to subscribe profile:", error)
     );
 
-    return () => unsub();
+    const unsubStats = subscribeProfileWorkoutStats(
+      user.uid,
+      (stats) => {
+        setTotalCalories(stats.totalCalories);
+        setTotalWorkouts(stats.totalWorkouts);
+      },
+      (error) => console.log("Failed to subscribe workout stats:", error)
+    );
+
+    return () => {
+      unsub();
+      unsubStats();
+    };
   }, []);
 
   const goalLabelToKey = (g: GoalLabel): "gain" | "maintain" | "lose" => {
@@ -247,14 +273,19 @@ export default function ProfileScreen() {
     }
   };
 
-  const rowClass =
-    "bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-3.5 shadow-sm";
+  const rowStyle = {
+    backgroundColor: theme.rowBg,
+    borderColor: theme.cardBorder,
+    borderWidth: 1,
+  };
+
+  const appearanceLabel = mode === "dark" ? "Dark mode" : "Light mode";
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <View className="flex-1" style={{ backgroundColor: theme.screenBg }}>
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: 120,
+          paddingBottom: tabBarPadding,
           paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
@@ -265,13 +296,14 @@ export default function ProfileScreen() {
             hitSlop={12}
             className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
           >
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-              <Ionicons name="arrow-back" size={24} color="#111827" />
+            <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: theme.cardBg }}>
+              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </View>
           </Pressable>
           <Text
             pointerEvents="none"
-            className="absolute left-0 right-0 text-center text-2xl font-extrabold text-gray-900"
+            className="absolute left-0 right-0 text-center text-2xl font-extrabold"
+            style={{ color: theme.textPrimary }}
           >
             Profile
           </Text>
@@ -295,81 +327,155 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <Text className="text-3xl font-extrabold text-gray-900 mt-4">{userName}</Text>
-            <Text className="text-gray-500 text-lg mt-1.5">{userEmail}</Text>
+            <Text className="text-3xl font-extrabold mt-4" style={{ color: theme.textPrimary }}>
+              {userName}
+            </Text>
+            <Text className="text-lg mt-1.5" style={{ color: theme.textMuted }}>
+              {userEmail}
+            </Text>
           </View>
+
+          <ProfileStatsCards
+            totalCalories={totalCalories}
+            totalWorkouts={totalWorkouts}
+            currentWeightKg={currentWeightKg}
+            theme={theme}
+          />
 
           <Pressable
             onPress={() => router.push("/EditProfile")}
-            className={rowClass}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
           >
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Ionicons name="person" size={22} color="#76C893" />
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="person" size={20} color={theme.accent} />
               </View>
-              <Text className="text-lg font-bold text-gray-900 ml-4">Edit Profile</Text>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Edit Profile
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
           </Pressable>
 
-          <Pressable onPress={() => router.push("/reminder")} className={rowClass}>
+          <Pressable
+            onPress={() => router.push("/reminder")}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Ionicons name="alarm-outline" size={22} color="#76C893" />
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="alarm-outline" size={20} color={theme.accent} />
               </View>
-              <Text className="text-lg font-bold text-gray-900 ml-4">Reminders</Text>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Reminders
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
           </Pressable>
 
-          <Pressable onPress={() => setGoalModalVisible(true)} className={rowClass}>
+          <Pressable
+            onPress={() => setGoalModalVisible(true)}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Ionicons name="radio-button-on-outline" size={22} color="#76C893" />
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="radio-button-on-outline" size={20} color={theme.accent} />
               </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-lg font-bold text-gray-900">My Goals</Text>
-                <Text className="text-[#76C893] text-base font-semibold mt-1">
+              <View className="ml-3 flex-1">
+                <Text className="text-base font-bold" style={{ color: theme.textPrimary }}>
+                  My Goals
+                </Text>
+                <Text className="text-sm font-semibold mt-0.5" style={{ color: theme.accent }}>
                   Goal: {goal}
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setAppearanceVisible(true)}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
+            <View className="flex-row items-center flex-1">
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="contrast-outline" size={20} color={theme.accent} />
+              </View>
+              <View className="ml-3 flex-1">
+                <Text className="text-base font-bold" style={{ color: theme.textPrimary }}>
+                  Appearance
+                </Text>
+                <Text className="text-sm font-semibold mt-0.5" style={{ color: theme.accentText }}>
+                  {appearanceLabel}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
           </Pressable>
 
           <Pressable
             onPress={() => router.push("/terms-of-service")}
-            className={rowClass}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
           >
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Feather name="file-text" size={20} color="#76C893" />
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Feather name="file-text" size={18} color={theme.accent} />
               </View>
-              <Text className="text-lg font-bold text-gray-900 ml-4">Terms of Service</Text>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Terms of Service
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
           </Pressable>
 
           <Pressable
             onPress={() => setDeletePasswordModal(true)}
-            className="bg-[#f7f7f7] rounded-3xl px-5 py-5 flex-row items-center justify-between mb-8 shadow-sm"
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-6 shadow-sm"
+            style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder, borderWidth: 1 }}
           >
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-[#fef2f2] items-center justify-center">
-                <Ionicons name="trash-outline" size={22} color="#dc2626" />
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.dangerSoft }}
+              >
+                <Ionicons name="trash-outline" size={20} color={theme.danger} />
               </View>
-              <Text className="text-lg font-bold text-gray-900 ml-4">Delete account</Text>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Delete account
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
           </Pressable>
 
           <Pressable
             onPress={handleLogout}
-            className="bg-[#f7f7f7] rounded-3xl py-5 items-center justify-center"
+            className="rounded-3xl py-4 items-center justify-center"
+            style={rowStyle}
           >
             <View className="flex-row items-center">
-              <MaterialCommunityIcons name="logout" size={22} color="#ef4444" />
-              <Text className="text-red-500 text-lg font-bold ml-2">Logout</Text>
+              <MaterialCommunityIcons name="logout" size={20} color={theme.danger} />
+              <Text className="text-base font-bold ml-2" style={{ color: theme.danger }}>
+                Logout
+              </Text>
             </View>
           </Pressable>
         </View>
@@ -386,11 +492,12 @@ export default function ProfileScreen() {
           onPress={() => !savingGoal && setGoalModalVisible(false)}
         >
           <Pressable
-            className="bg-white rounded-3xl p-6"
+            className="rounded-3xl p-6"
+            style={{ backgroundColor: theme.modalBg, borderColor: theme.cardBorder, borderWidth: 1 }}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="text-xl font-extrabold text-gray-900">Edit your goal</Text>
-            <Text className="text-gray-500 mt-2">
+            <Text className="text-xl font-extrabold" style={{ color: theme.textPrimary }}>Edit your goal</Text>
+            <Text className="mt-2" style={{ color: theme.textMuted }}>
               This will update your daily calorie target on the Home page.
             </Text>
 
@@ -417,14 +524,17 @@ export default function ProfileScreen() {
                     key={o.label}
                     disabled={savingGoal}
                     onPress={() => void setGoalAndPersist(o.label)}
-                    className={`rounded-2xl border p-4 ${
-                      active ? "border-[#76C893] bg-[#eaf7f0]" : "border-gray-200 bg-[#fafafa]"
-                    }`}
+                    className="rounded-2xl border p-4"
+                    style={
+                      active
+                        ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                        : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                    }
                   >
                     <View className="flex-row items-center justify-between">
                       <View className="pr-3 flex-1">
                         <View className="flex-row items-center flex-wrap">
-                          <Text className="text-base font-extrabold text-gray-900">{o.label}</Text>
+                          <Text className="text-base font-extrabold" style={{ color: theme.textPrimary }}>{o.label}</Text>
                           {recommended ? (
                             <View className="ml-2 px-2 py-1 rounded-full bg-amber-50 border border-amber-200">
                               <Text className="text-[10px] font-extrabold text-amber-800">
@@ -433,12 +543,11 @@ export default function ProfileScreen() {
                             </View>
                           ) : null}
                         </View>
-                        <Text className="text-sm text-gray-500 mt-1">{o.desc}</Text>
+                        <Text className="text-sm mt-1" style={{ color: theme.textMuted }}>{o.desc}</Text>
                       </View>
                       <View
-                        className={`w-6 h-6 rounded-full border-2 items-center justify-center ${
-                          active ? "border-[#76C893]" : "border-gray-300"
-                        }`}
+                        className="w-6 h-6 rounded-full border-2 items-center justify-center"
+                        style={{ borderColor: active ? theme.accent : theme.iconMuted }}
                       >
                         {active && <View className="w-3 h-3 rounded-full bg-[#76C893]" />}
                       </View>
@@ -449,14 +558,20 @@ export default function ProfileScreen() {
             </View>
 
             {recommendedGoalLabel && goal !== recommendedGoalLabel ? (
-              <View className="mt-5 bg-[#eaf7f0] border border-[#b7ead1] rounded-2xl p-4">
+              <View
+                className="mt-5 rounded-2xl p-4 border"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+              >
                 <View className="flex-row items-start">
-                  <View className="w-8 h-8 rounded-full bg-white items-center justify-center mr-3">
-                    <Ionicons name="information-circle-outline" size={18} color="#52B69A" />
+                  <View
+                    className="w-8 h-8 rounded-full items-center justify-center mr-3"
+                    style={{ backgroundColor: theme.cardBg }}
+                  >
+                    <Ionicons name="information-circle-outline" size={18} color={theme.accent} />
                   </View>
-                  <Text className="flex-1 text-sm text-gray-700 leading-6">
+                  <Text className="flex-1 text-sm leading-6" style={{ color: theme.textSecondary }}>
                     To improve your health, we recommended you{" "}
-                    <Text className="font-extrabold text-red-600">{recommendedGoalLabel}</Text> goal.
+                    <Text className="font-extrabold" style={{ color: theme.danger }}>{recommendedGoalLabel}</Text> goal.
                   </Text>
                 </View>
               </View>
@@ -468,7 +583,7 @@ export default function ProfileScreen() {
                 disabled={savingGoal}
                 className="px-4 py-3"
               >
-                <Text className="font-extrabold text-gray-500">Close</Text>
+                <Text className="font-extrabold" style={{ color: theme.textMuted }}>Close</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -490,17 +605,21 @@ export default function ProfileScreen() {
             onPress={() => !deleteBusy && closeDeleteModal()}
           >
             <Pressable
-              className="bg-white rounded-3xl p-6"
+              className="rounded-3xl p-6"
+              style={{ backgroundColor: theme.modalBg, borderColor: theme.cardBorder, borderWidth: 1 }}
               onPress={(e) => e.stopPropagation()}
             >
-              <Text className="text-lg font-extrabold text-gray-900">
+              <Text className="text-lg font-extrabold" style={{ color: theme.textPrimary }}>
                 Enter your password
               </Text>
-              <Text className="text-gray-500 text-sm mt-2 leading-5">
+              <Text className="text-sm mt-2 leading-5" style={{ color: theme.textMuted }}>
                 For your security, confirm your password before we can continue with account
                 deletion.
               </Text>
-              <View className="border border-gray-200 rounded-2xl pl-4 pr-2 py-1 mt-4 flex-row items-center bg-[#fafafa]">
+              <View
+                className="rounded-2xl pl-4 pr-2 py-1 mt-4 flex-row items-center"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder, borderWidth: 1 }}
+              >
                 <TextInput
                   value={deletePassword}
                   onChangeText={setDeletePassword}
@@ -508,15 +627,16 @@ export default function ProfileScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholder="Password"
-                  placeholderTextColor="#9ca3af"
+                  placeholderTextColor={theme.textMuted}
                   editable={!deleteBusy}
-                  className="flex-1 py-3 pr-2 text-base text-gray-900"
+                  className="flex-1 py-3 pr-2 text-base"
+                  style={{ color: theme.textPrimary }}
                 />
                 <Pressable
                   onPress={() => setShowDeletePassword((v) => !v)}
                   disabled={deleteBusy}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  className="p-2 rounded-xl active:bg-gray-200/60"
+                  className="p-2 rounded-xl"
                   accessibilityLabel={
                     showDeletePassword ? "Hide password" : "Show password"
                   }
@@ -524,7 +644,7 @@ export default function ProfileScreen() {
                   <Ionicons
                     name={showDeletePassword ? "eye-off-outline" : "eye-outline"}
                     size={22}
-                    color="#6b7280"
+                    color={theme.iconMuted}
                   />
                 </Pressable>
               </View>
@@ -532,9 +652,10 @@ export default function ProfileScreen() {
                 <Pressable
                   onPress={closeDeleteModal}
                   disabled={deleteBusy}
-                  className="flex-1 py-3.5 rounded-2xl bg-gray-100 items-center active:bg-gray-200"
+                  className="flex-1 py-3.5 rounded-2xl items-center"
+                  style={{ backgroundColor: theme.rowBg }}
                 >
-                  <Text className="font-bold text-gray-700">Cancel</Text>
+                  <Text className="font-bold" style={{ color: theme.textSecondary }}>Cancel</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => void handleDeletePasswordContinue()}
@@ -553,29 +674,9 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
-        <Pressable onPress={() => router.replace("/home")} className="items-center">
-          <Ionicons name="home-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">HOME</Text>
-        </Pressable>
+      <AppearanceModal visible={appearanceVisible} onClose={() => setAppearanceVisible(false)} />
 
-        <Pressable onPress={() => router.replace("/discover")} className="items-center">
-          <CommunityUnreadBadge count={totalUnread}>
-            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
-          </CommunityUnreadBadge>
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">DISCOVER</Text>
-        </Pressable>
-
-        <Pressable onPress={() => router.replace("/progress")} className="items-center">
-          <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
-        </Pressable>
-
-        <Pressable className="items-center">
-          <Ionicons name="person" size={20} color="#76C893" />
-          <Text className="text-[10px] text-[#76C893] font-bold mt-1">PROFILE</Text>
-        </Pressable>
-      </View>
+      <BottomTabBar active="profile" />
     </View>
   );
 }

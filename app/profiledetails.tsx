@@ -1,4 +1,11 @@
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
@@ -14,6 +21,8 @@ export default function ProfileDetails() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { account, setProfile } = useRegistration();
+  const { theme } = useThemedScreen();
+  const { inputStyle } = useProfileCardStyles();
 
   const [gender, setGender] = useState<Gender>("male");
   const [age, setAge] = useState(28);
@@ -36,7 +45,7 @@ export default function ProfileDetails() {
     const cleaned = t.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
     const [a, b] = cleaned.split(".");
     if (b === undefined) return a ?? "";
-    return `${a ?? ""}.${b.slice(0, 1)}`; // one decimal place
+    return `${a ?? ""}.${b.slice(0, 1)}`;
   };
 
   const ranges = useMemo(
@@ -49,7 +58,6 @@ export default function ProfileDetails() {
   );
 
   useEffect(() => {
-    // Ensure defaults are within range (no Firestore reads during onboarding)
     setAge((v) => {
       const n = clamp(v, ranges.age.min, ranges.age.max);
       setAgeText(String(n));
@@ -75,7 +83,6 @@ export default function ProfileDetails() {
         return;
       }
 
-      // Validate before moving forward (use text values too, in case user didn't blur)
       let ok = true;
 
       const parsedAge = parseInt(ageText || "", 10);
@@ -118,7 +125,6 @@ export default function ProfileDetails() {
       const nextHeight = clamp(parsedHeight, ranges.height.min, ranges.height.max);
       const nextWeight = clamp(parsedWeight, ranges.weight.min, ranges.weight.max);
 
-      // Keep UI/state consistent with what we're saving
       setAge(nextAge);
       setAgeText(String(nextAge));
       setHeight(nextHeight);
@@ -156,15 +162,17 @@ export default function ProfileDetails() {
       <View className="items-center">
         <Pressable
           onPress={() => setGender(value)}
-          className={`w-20 h-20 rounded-full items-center justify-center ${
-            active ? "bg-[#76C893]" : "bg-[#dfeee6]"
-          }`}
+          className="w-20 h-20 rounded-full items-center justify-center"
+          style={{ backgroundColor: active ? theme.accent : theme.accentSoft }}
         >
-          <Ionicons name={icon} size={34} color={active ? "white" : "#76C893"} />
+          <Ionicons name={icon} size={34} color={active ? "white" : theme.accent} />
         </Pressable>
-        <Text className={`mt-2 font-semibold ${active ? "text-[#76C893]" : "text-gray-500"}`}>
+        <ThemedText
+          variant={active ? "accent" : "muted"}
+          className="mt-2 font-semibold"
+        >
           {label}
-        </Text>
+        </ThemedText>
       </View>
     );
   };
@@ -172,7 +180,7 @@ export default function ProfileDetails() {
   const bottomPad = Math.max(insets.bottom, 16) + 24;
 
   return (
-    <View className="flex-1 bg-[#f4fcf7]">
+    <ThemedScreen>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -183,235 +191,245 @@ export default function ProfileDetails() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-      {/* Header (same style as Contact Us) */}
-      <View className="relative mb-6 h-12 justify-center">
-        <Text className="text-center text-xl font-extrabold text-gray-900">Profile Details</Text>
-      </View>
-
-      {/* Title */}
-      <Text className="text-center text-3xl font-extrabold text-gray-900 mt-2">
-        Tell us about yourself
-      </Text>
-      <Text className="text-center text-gray-500 mt-3 text-base px-3">
-        This helps us personalize your fitness{"\n"}journey and track progress accurately.
-      </Text>
-
-      {/* Illustration card */}
-      <View className="items-center mt-6">
-        <View className="w-52 h-56 rounded-3xl bg-white items-center justify-center shadow-sm">
-          <Image
-            source={
-              gender === "female"
-                ? require("../assets/images/femalefitnesspic.avif")
-                : require("../assets/images/malefitnesspic.avif")
-            }
-            className="w-40 h-48"
-            resizeMode="contain"
-          />
+        <View className="relative mb-6 h-12 justify-center">
+          <ThemedText className="text-center text-xl font-extrabold">Profile Details</ThemedText>
         </View>
-      </View>
 
-      {/* Gender */}
-      <View className="flex-row justify-center gap-10 mt-7">
-        <GenderButton value="male" label="Male" icon="male" />
-        <GenderButton value="female" label="Female" icon="female" />
-      </View>
+        <ThemedText className="text-center text-3xl font-extrabold mt-2">
+          Tell us about yourself
+        </ThemedText>
+        <ThemedText variant="secondary" className="text-center mt-3 text-base px-3">
+          This helps us personalize your fitness{"\n"}journey and track progress accurately.
+        </ThemedText>
 
-      {/* Sliders */}
-      <View className="mt-6">
-        {/* AGE (EditProfile style) */}
-        <View className="mb-3">
-          <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">AGE</Text>
+        <View className="items-center mt-6">
+          <ThemedCard className="w-52 h-56 items-center justify-center shadow-sm">
+            <Image
+              source={
+                gender === "female"
+                  ? require("../assets/images/femalefitnesspic.avif")
+                  : require("../assets/images/malefitnesspic.avif")
+              }
+              className="w-40 h-48"
+              resizeMode="contain"
+            />
+          </ThemedCard>
+        </View>
 
-            <View className="flex-row items-center">
-              <TextInput
-                value={ageText}
-                onChangeText={(t) => {
-                  setAgeText(sanitizeInt(t));
-                  setAgeError("");
-                }}
-                onBlur={() => {
-                  const parsed = parseInt(ageText || "", 10);
+        <View className="flex-row justify-center gap-10 mt-7">
+          <GenderButton value="male" label="Male" icon="male" />
+          <GenderButton value="female" label="Female" icon="female" />
+        </View>
 
-                  if (!Number.isFinite(parsed)) {
-                    setAgeError("Age must be between 20 and 90.");
-                    setAgeText(String(age));
-                    return;
-                  }
+        <View className="mt-6">
+          <View className="mb-3">
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText variant="secondary" className="font-semibold ml-1">
+                AGE
+              </ThemedText>
 
-                  if (parsed < ranges.age.min || parsed > ranges.age.max) {
-                    setAgeError("Age must be between 20 and 90.");
-                  } else {
+              <View className="flex-row items-center">
+                <TextInput
+                  value={ageText}
+                  onChangeText={(t) => {
+                    setAgeText(sanitizeInt(t));
                     setAgeError("");
-                  }
+                  }}
+                  onBlur={() => {
+                    const parsed = parseInt(ageText || "", 10);
 
-                  const n = clamp(parsed, ranges.age.min, ranges.age.max);
-                  setAge(n);
-                  setAgeText(String(n));
-                }}
-                keyboardType="numeric"
-                className="w-16 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-              />
-              <Text className="ml-2 text-gray-500 mr-1">years</Text>
+                    if (!Number.isFinite(parsed)) {
+                      setAgeError("Age must be between 20 and 90.");
+                      setAgeText(String(age));
+                      return;
+                    }
+
+                    if (parsed < ranges.age.min || parsed > ranges.age.max) {
+                      setAgeError("Age must be between 20 and 90.");
+                    } else {
+                      setAgeError("");
+                    }
+
+                    const n = clamp(parsed, ranges.age.min, ranges.age.max);
+                    setAge(n);
+                    setAgeText(String(n));
+                  }}
+                  keyboardType="numeric"
+                  className="w-16 rounded-lg px-3 py-2 text-center"
+                  style={inputStyle}
+                />
+                <ThemedText variant="muted" className="ml-2 mr-1">
+                  years
+                </ThemedText>
+              </View>
             </View>
+
+            <Slider
+              style={{ width: "100%" }}
+              minimumValue={ranges.age.min}
+              maximumValue={ranges.age.max}
+              step={1}
+              value={age}
+              onValueChange={(v) => {
+                setAge(v);
+                setAgeText(String(v));
+                setAgeError("");
+              }}
+              minimumTrackTintColor={theme.accent}
+              maximumTrackTintColor={theme.cardBorder}
+              thumbTintColor={theme.accent}
+            />
+
+            {!!ageError && <Text className="text-red-500 text-sm mt-1 ml-1">{ageError}</Text>}
           </View>
 
-          <Slider
-            style={{ width: "100%" }}
-            minimumValue={ranges.age.min}
-            maximumValue={ranges.age.max}
-            step={1}
-            value={age}
-            onValueChange={(v) => {
-              setAge(v);
-              setAgeText(String(v));
-              setAgeError("");
-            }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
-          />
+          <View className="mb-3">
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText variant="secondary" className="font-semibold ml-1">
+                HEIGHT
+              </ThemedText>
 
-          {!!ageError && <Text className="text-red-500 text-sm mt-1 ml-1">{ageError}</Text>}
-        </View>
-
-        {/* HEIGHT (EditProfile style) */}
-        <View className="mb-3">
-          <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">HEIGHT</Text>
-
-            <View className="flex-row items-center">
-              <TextInput
-                value={heightText}
-                onChangeText={(t) => {
-                  setHeightText(sanitizeDecimal(t));
-                  setHeightError("");
-                }}
-                onBlur={() => {
-                  const parsed = parseFloat(heightText || "");
-
-                  if (!Number.isFinite(parsed)) {
-                    setHeightError("Height must be between 120 cm and 220 cm.");
-                    setHeightText(String(height));
-                    return;
-                  }
-
-                  if (parsed < ranges.height.min || parsed > ranges.height.max) {
-                    setHeightError("Height must be between 120 cm and 220 cm.");
-                  } else {
+              <View className="flex-row items-center">
+                <TextInput
+                  value={heightText}
+                  onChangeText={(t) => {
+                    setHeightText(sanitizeDecimal(t));
                     setHeightError("");
-                  }
+                  }}
+                  onBlur={() => {
+                    const parsed = parseFloat(heightText || "");
 
-                  const fixed = clamp(parsed, ranges.height.min, ranges.height.max);
-                  setHeight(fixed);
-                  setHeightText(fixed.toFixed(1));
-                }}
-                keyboardType="decimal-pad"
-                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-              />
-              <Text className="ml-2 text-gray-500 mr-1">cm</Text>
+                    if (!Number.isFinite(parsed)) {
+                      setHeightError("Height must be between 120 cm and 220 cm.");
+                      setHeightText(String(height));
+                      return;
+                    }
+
+                    if (parsed < ranges.height.min || parsed > ranges.height.max) {
+                      setHeightError("Height must be between 120 cm and 220 cm.");
+                    } else {
+                      setHeightError("");
+                    }
+
+                    const fixed = clamp(parsed, ranges.height.min, ranges.height.max);
+                    setHeight(fixed);
+                    setHeightText(fixed.toFixed(1));
+                  }}
+                  keyboardType="decimal-pad"
+                  className="w-20 rounded-lg px-3 py-2 text-center"
+                  style={inputStyle}
+                />
+                <ThemedText variant="muted" className="ml-2 mr-1">
+                  cm
+                </ThemedText>
+              </View>
             </View>
+
+            <Slider
+              style={{ width: "100%" }}
+              minimumValue={ranges.height.min}
+              maximumValue={ranges.height.max}
+              step={0.1}
+              value={height}
+              onValueChange={(v) => {
+                setHeight(v);
+                setHeightText(v.toFixed(1));
+                setHeightError("");
+              }}
+              minimumTrackTintColor={theme.accent}
+              maximumTrackTintColor={theme.cardBorder}
+              thumbTintColor={theme.accent}
+            />
+
+            {!!heightError && (
+              <Text className="text-red-500 text-sm mt-1 ml-1">{heightError}</Text>
+            )}
           </View>
 
-          <Slider
-            style={{ width: "100%" }}
-            minimumValue={ranges.height.min}
-            maximumValue={ranges.height.max}
-            step={0.1}
-            value={height}
-            onValueChange={(v) => {
-              setHeight(v);
-              setHeightText(v.toFixed(1));
-              setHeightError("");
-            }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
-          />
+          <View className="mb-2">
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText variant="secondary" className="font-semibold ml-1">
+                WEIGHT
+              </ThemedText>
 
-          {!!heightError && <Text className="text-red-500 text-sm mt-1 ml-1">{heightError}</Text>}
-        </View>
-
-        {/* WEIGHT (EditProfile style) */}
-        <View className="mb-2">
-          <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">WEIGHT</Text>
-
-            <View className="flex-row items-center">
-              <TextInput
-                value={weightText}
-                onChangeText={(t) => {
-                  setWeightText(sanitizeDecimal(t));
-                  setWeightError("");
-                }}
-                onBlur={() => {
-                  const parsed = parseFloat(weightText || "");
-
-                  if (!Number.isFinite(parsed)) {
-                    setWeightError("Weight must be between 30 kg and 200 kg.");
-                    setWeightText(String(weight));
-                    return;
-                  }
-
-                  if (parsed < ranges.weight.min || parsed > ranges.weight.max) {
-                    setWeightError("Weight must be between 30 kg and 200 kg.");
-                  } else {
+              <View className="flex-row items-center">
+                <TextInput
+                  value={weightText}
+                  onChangeText={(t) => {
+                    setWeightText(sanitizeDecimal(t));
                     setWeightError("");
-                  }
+                  }}
+                  onBlur={() => {
+                    const parsed = parseFloat(weightText || "");
 
-                  const fixed = clamp(parsed, ranges.weight.min, ranges.weight.max);
-                  setWeight(fixed);
-                  setWeightText(fixed.toFixed(1));
-                }}
-                keyboardType="decimal-pad"
-                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
-              />
-              <Text className="ml-2 text-gray-500 mr-1">kg</Text>
+                    if (!Number.isFinite(parsed)) {
+                      setWeightError("Weight must be between 30 kg and 200 kg.");
+                      setWeightText(String(weight));
+                      return;
+                    }
+
+                    if (parsed < ranges.weight.min || parsed > ranges.weight.max) {
+                      setWeightError("Weight must be between 30 kg and 200 kg.");
+                    } else {
+                      setWeightError("");
+                    }
+
+                    const fixed = clamp(parsed, ranges.weight.min, ranges.weight.max);
+                    setWeight(fixed);
+                    setWeightText(fixed.toFixed(1));
+                  }}
+                  keyboardType="decimal-pad"
+                  className="w-20 rounded-lg px-3 py-2 text-center"
+                  style={inputStyle}
+                />
+                <ThemedText variant="muted" className="ml-2 mr-1">
+                  kg
+                </ThemedText>
+              </View>
             </View>
+
+            <Slider
+              style={{ width: "100%" }}
+              minimumValue={ranges.weight.min}
+              maximumValue={ranges.weight.max}
+              step={0.1}
+              value={weight}
+              onValueChange={(v) => {
+                setWeight(v);
+                setWeightText(v.toFixed(1));
+                setWeightError("");
+              }}
+              minimumTrackTintColor={theme.accent}
+              maximumTrackTintColor={theme.cardBorder}
+              thumbTintColor={theme.accent}
+            />
+
+            {!!weightError && (
+              <Text className="text-red-500 text-sm mt-1 ml-1">{weightError}</Text>
+            )}
           </View>
-
-          <Slider
-            style={{ width: "100%" }}
-            minimumValue={ranges.weight.min}
-            maximumValue={ranges.weight.max}
-            step={0.1}
-            value={weight}
-            onValueChange={(v) => {
-              setWeight(v);
-              setWeightText(v.toFixed(1));
-              setWeightError("");
-            }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
-          />
-
-          {!!weightError && <Text className="text-red-500 text-sm mt-1 ml-1">{weightError}</Text>}
         </View>
-      </View>
 
-      {/* Continue */}
-      <View className="mt-2">
-        <Pressable
-          onPress={handleContinue}
-          disabled={saving}
-          className={`rounded-full overflow-hidden ${saving ? "opacity-60" : "opacity-100"}`}
-        >
-          <LinearGradient
-            colors={["#76C893", "#52B69A"]}
-            className="py-4 items-center rounded-2xl"
+        <View className="mt-2">
+          <Pressable
+            onPress={handleContinue}
+            disabled={saving}
+            className={`rounded-full overflow-hidden ${saving ? "opacity-60" : "opacity-100"}`}
           >
-            <View className="flex-row items-center">
-              <Text className="text-white text-lg font-semibold mr-2">
-                {saving ? "Saving..." : "Continue"}
-              </Text>
-              <Ionicons name="arrow-forward" size={20} color="white" />
-            </View>
-          </LinearGradient>
-        </Pressable>
-      </View>
+            <LinearGradient
+              colors={[theme.accent, theme.accentText]}
+              className="py-4 items-center rounded-2xl"
+            >
+              <View className="flex-row items-center">
+                <Text className="text-white text-lg font-semibold mr-2">
+                  {saving ? "Saving..." : "Continue"}
+                </Text>
+                <Ionicons name="arrow-forward" size={20} color="white" />
+              </View>
+            </LinearGradient>
+          </Pressable>
+        </View>
       </ScrollView>
-    </View>
+    </ThemedScreen>
   );
 }

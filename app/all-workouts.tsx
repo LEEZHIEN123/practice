@@ -1,3 +1,5 @@
+import { ThemedBackButton } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { WORKOUT_DETAILS, type WorkoutType } from "@/lib/workoutCatalog";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -27,6 +29,7 @@ function workoutTypeHeaderLabel(type: WorkoutType): string {
 export default function AllWorkoutsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { screenStyle, textPrimary, textMuted, textSecondary } = useThemedScreen();
   const [selected, setSelected] = useState<WorkoutType | null>(null);
 
   const names = useMemo(() => {
@@ -36,18 +39,16 @@ export default function AllWorkoutsScreen() {
 
   if (selected) {
     return (
-      <View className="flex-1 bg-[#f3f4f3]">
+      <View className="flex-1" style={screenStyle}>
         <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-          <Pressable
-            onPress={() => setSelected(null)}
-            hitSlop={12}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
+          <ThemedBackButton onPress={() => setSelected(null)} className="w-11 h-11 mr-3" />
           <View className="flex-1 min-w-0">
-            <Text className="text-lg font-extrabold text-gray-500 tracking-wide">ALL WORKOUTS</Text>
-            <Text className="text-2xl font-extrabold text-gray-900 mt-0.5">{workoutTypeHeaderLabel(selected)}</Text>
+            <Text className="text-lg font-extrabold tracking-wide" style={textMuted}>
+              ALL WORKOUTS
+            </Text>
+            <Text className="text-2xl font-extrabold mt-0.5" style={textPrimary}>
+              {workoutTypeHeaderLabel(selected)}
+            </Text>
           </View>
         </View>
 
@@ -81,21 +82,17 @@ export default function AllWorkoutsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
+    <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-        >
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </Pressable>
-        <Text className="text-2xl font-extrabold text-gray-900 flex-1">All Workouts</Text>
+        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
+        <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
+          All Workouts
+        </Text>
       </View>
 
       <View className="px-3 pb-8">
-        <Text className="text-gray-600 ml-2 font-extrabold text-lg mb-4 leading-6">
-          Choose any workout type from the below lists, then pick an exercise to start.  
+        <Text className="ml-2 font-extrabold text-lg mb-4 leading-6" style={textSecondary}>
+          Choose any workout type from the below lists, then pick an exercise to start.
         </Text>
 
         {TYPES.map((t) => (
@@ -108,7 +105,7 @@ export default function AllWorkoutsScreen() {
               <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
                 <Ionicons name={typeIonIcon(t)} size={24} color="#76C893" />
               </View>
-                <Text className="text-2xl font-extrabold text-gray-900">{workoutTypeCardLabel(t)}</Text>
+              <Text className="text-2xl font-extrabold text-gray-900">{workoutTypeCardLabel(t)}</Text>
             </View>
             <Ionicons name="chevron-forward" size={28} color="#76C893" />
           </Pressable>

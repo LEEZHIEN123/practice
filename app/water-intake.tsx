@@ -1,8 +1,19 @@
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
+import { useWaterIntakeSuggestion } from "@/lib/useWaterIntakeSuggestion";
+import type { WaterWeatherCondition } from "@/lib/waterIntakeModel";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -19,7 +30,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -39,9 +50,26 @@ const formatLongDate = (d: Date) => {
 
 type WaterLogRow = { id: string; amountMl: number; createdAt: Date; dayKey: string };
 
+function weatherIconName(condition: WaterWeatherCondition): keyof typeof Ionicons.glyphMap {
+  if (condition === "sunny") return "sunny-outline";
+  if (condition === "rainy") return "rainy-outline";
+  return "cloud-outline";
+}
+
+function formatWeatherCondition(condition: WaterWeatherCondition): string {
+  if (condition === "sunny") return "Sunny";
+  if (condition === "rainy") return "Rainy";
+  return "Cloudy";
+}
+
 export default function WaterIntakeScreen() {
   const router = useRouter();
   const calendarTz = useUserCalendarTimezone();
+  const {
+    cardStyle,
+    theme,
+  } = useThemedScreen();
+  const { inputStyle, modalCardStyle, placeholderColor } = useProfileCardStyles();
   const [mlText, setMlText] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -54,6 +82,15 @@ export default function WaterIntakeScreen() {
   /** When set, "Recent water intake" lists only this calendar day; `null` = all loaded days (incl. yesterday). */
   const [recentViewDay, setRecentViewDay] = useState<Date | null>(null);
   const [showRecentDayPicker, setShowRecentDayPicker] = useState(false);
+  const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [profileAge, setProfileAge] = useState(0);
+  const [profileGender, setProfileGender] = useState<"male" | "female" | null>(null);
+  const [profileActivityLevel, setProfileActivityLevel] = useState<string | null>(null);
+  const [heightCm, setHeightCm] = useState(0);
+  const [weightKg, setWeightKg] = useState(0);
+  const [burnedToday, setBurnedToday] = useState(0);
+  const [stepsToday, setStepsToday] = useState(0);
+  const [dayTick, setDayTick] = useState(0);
 
   const isSelectedToday = useMemo(
     () =>
@@ -74,6 +111,109 @@ export default function WaterIntakeScreen() {
   /** Any water for the selected day: logs and/or dailyStats (avoids false “no record” if one source lags). */
   const hasWaterIntakeForSelectedDay =
     selectedDayLogsCount > 0 || (Number.isFinite(dayTotalMl) && dayTotalMl > 0);
+
+  const todayDayKey = useMemo(
+    () => formatCalendarDayKey(new Date(), calendarTz),
+    [calendarTz, dayTick]
+  );
+
+  const waterProfile = useMemo(
+    () => ({
+      age: profileAge > 0 ? profileAge : undefined,
+      gender: profileGender ?? undefined,
+      height: heightCm > 0 ? heightCm : undefined,
+      weight: weightKg > 0 ? weightKg : undefined,
+      activityLevel: profileActivityLevel,
+    }),
+    [heightCm, profileActivityLevel, profileAge, profileGender, weightKg]
+  );
+
+  const selectedDayTotalMl = hasWaterIntakeForSelectedDay
+    ? Math.max(selectedDayLogsTotalMl, dayTotalMl)
+    : 0;
+
+  const {
+    suggestedMl,
+    weather,
+    placeName,
+    weatherUnavailableReason,
+    loading: suggestionLoading,
+    refresh: refreshSuggestion,
+  } = useWaterIntakeSuggestion({
+    uid: authUid,
+    calendarTz,
+    calendarDayKey: todayDayKey,
+    profile: waterProfile,
+    burnedKcalToday: burnedToday,
+    stepsToday,
+    enabled: Boolean(authUid) && isSelectedToday,
+  });
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUid(user?.uid ?? null);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setDayTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || user.uid !== authUid) return;
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as {
+          age?: number;
+          gender?: "male" | "female";
+          height?: number;
+          weight?: number;
+          activityLevel?: string;
+        };
+        if (typeof data.age === "number" && Number.isFinite(data.age)) setProfileAge(data.age);
+        else setProfileAge(0);
+        if (data.gender === "male" || data.gender === "female") setProfileGender(data.gender);
+        else setProfileGender(null);
+        if (typeof data.height === "number") setHeightCm(data.height);
+        else setHeightCm(0);
+        if (typeof data.weight === "number") setWeightKg(data.weight);
+        else setWeightKg(0);
+        if (typeof data.activityLevel === "string" && data.activityLevel.length > 0) {
+          setProfileActivityLevel(data.activityLevel);
+        } else {
+          setProfileActivityLevel(null);
+        }
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, [authUid]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || user.uid !== authUid) return;
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid, "dailyStats", todayKey),
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+        setBurnedToday(typeof data.burnedKcal === "number" ? data.burnedKcal : 0);
+        const stepsAuto = typeof data.stepsAuto === "number" ? data.stepsAuto : 0;
+        const stepsManual = typeof data.stepsManual === "number" ? data.stepsManual : null;
+        setStepsToday(stepsManual != null ? Math.round(stepsManual) : Math.max(0, Math.round(stepsAuto)));
+      },
+      () => {
+        setBurnedToday(0);
+        setStepsToday(0);
+      }
+    );
+    return () => unsub();
+  }, [authUid, calendarTz]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -273,52 +413,145 @@ export default function WaterIntakeScreen() {
   }, [recentViewDay]);
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView contentContainerStyle={{ paddingBottom: 56 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
-          <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-extrabold text-gray-900">Water Intake</Text>
-          <View className="w-12 h-12" />
+          <ThemedBackButton onPress={() => router.back()} />
+          <ThemedText className="text-xl font-extrabold">Water Intake</ThemedText>
+          <View className="w-11 h-11" />
         </View>
 
-        <View className="bg-white rounded-3xl p-5 border border-gray-100">
+        {isSelectedToday ? (
+          <ThemedCard className="p-5 mb-4">
+            <View className="flex-row items-center justify-between">
+              <ThemedText className="text-base tracking-[0.12em] font-extrabold">TODAY&apos;S WATER INTAKE SUGGESTION</ThemedText>
+              <Pressable
+                onPress={() => void refreshSuggestion()}
+                disabled={suggestionLoading}
+                hitSlop={8}
+                className="w-9 h-9 rounded-full border items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={18}
+                  color={theme.accentText}
+                  style={suggestionLoading ? { opacity: 0.5 } : undefined}
+                />
+              </Pressable>
+            </View>
+
+            {suggestionLoading ? (
+              <ThemedText variant="muted" className="text-sm mt-3">
+                Calculating based on your profile and local weather...
+              </ThemedText>
+            ) : suggestedMl != null ? (
+              <>
+                <ThemedText className="text-3xl font-extrabold mt-3" style={{ color: "#2563eb" }}>
+                  {suggestedMl.toLocaleString()} ml
+                </ThemedText>
+                <ThemedText className="text-sm mt-2 font-extrabold" style={{ color: theme.danger }}>
+                  Logged today: {selectedDayTotalMl.toLocaleString()} ml
+                </ThemedText>
+
+                <View
+                  className="mt-4 rounded-2xl border p-4"
+                  style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                >
+                  <View className="flex-row items-start">
+                    <Ionicons
+                      name={weather ? weatherIconName(weather.condition) : "cloud-outline"}
+                      size={28}
+                      color={theme.accentText}
+                    />
+                    <View className="flex-1 ml-3">
+                      <ThemedText className="font-extrabold text-base">
+                        {placeName ?? "Location unavailable"}
+                      </ThemedText>
+                      {weather ? (
+                        <>
+                          <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest mt-1">
+                            {weather.isForecast
+                              ? "FORECAST FOR 6:00 AM"
+                              : weather.isLive
+                                ? "WEATHER AT TODAY'S 6:00 AM"
+                                : "ESTIMATED 6:00 AM WEATHER"}
+                          </ThemedText>
+                          <ThemedText variant="secondary" className="text-sm mt-1 capitalize">
+                            {weather.description}
+                          </ThemedText>
+                          <ThemedText variant="muted" className="text-sm mt-1">
+                            {formatWeatherCondition(weather.condition)} · {Math.round(weather.temperature)}°C ·{" "}
+                            {weather.humidity}% humidity
+                          </ThemedText>
+                        </>
+                      ) : null}
+                      {weatherUnavailableReason ? (
+                        <ThemedText className="text-sm mt-2 font-semibold" style={{ color: theme.danger }}>
+                          {weatherUnavailableReason}
+                        </ThemedText>
+                      ) : weather?.isForecast ? (
+                        <ThemedText variant="muted" className="text-xs mt-2">
+                          Forecast for 6:00 AM is used until morning. After 6:00 AM, that morning weather is kept for the day.
+                        </ThemedText>
+                      ) : weather?.isLive ? (
+                        <ThemedText variant="muted" className="text-xs mt-2">
+                          Morning weather at 6:00 AM is used for today&apos;s prediction.
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <ThemedText variant="muted" className="text-sm mt-3">
+                Suggestion unavailable. Complete your profile and try again.
+              </ThemedText>
+            )}
+          </ThemedCard>
+        ) : null}
+
+        <ThemedCard className="p-5">
           <View className="flex-row items-start justify-between">
             <View className="flex-1 pr-2">
-              <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">
-                {isSelectedToday ? "TODAY" : "SELECTED DAY"}
-              </Text>
-              <Text className="text-lg font-extrabold text-gray-900 mt-2">
-                {selectedDate.toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </Text>
-              <Text className="text-sm text-gray-600 mt-2 font-extrabold">
-                Total:{" "}
+              <View className="flex-row flex-wrap items-baseline gap-x-2">
+                <ThemedText className="text-base tracking-[0.12em] font-extrabold">
+                  {isSelectedToday ? "TODAY" : "SELECTED DAY"}
+                </ThemedText>
+                <ThemedText className="text-base font-extrabold">
+                  {selectedDate.toLocaleDateString(undefined, {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </ThemedText>
+              </View>
+              <ThemedText className="text-sm mt-2 font-extrabold" style={{ color: theme.danger }}>
+                Total water intake:{" "}
                 {(hasWaterIntakeForSelectedDay
                   ? Math.max(selectedDayLogsTotalMl, dayTotalMl)
                   : 0
                 ).toLocaleString()}{" "}
                 ml
-              </Text>
+              </ThemedText>
               {recordedAt && isSelectedToday ? (
-                <Text className="text-xs text-gray-500 mt-1">Last updated: {recordedAt.toLocaleString()}</Text>
+                <ThemedText variant="muted" className="text-xs mt-1">
+                  Last updated: {recordedAt.toLocaleString()}
+                </ThemedText>
               ) : null}
               {!hasWaterIntakeForSelectedDay ? (
-                <Text className="text-sm text-amber-700 font-semibold mt-2">
+                <ThemedText className="text-sm font-semibold mt-2" style={{ color: theme.danger }}>
                   {isSelectedToday ? "You haven't recorded water today." : "No water logged for this day yet."}
-                </Text>
+                </ThemedText>
               ) : null}
             </View>
             <Pressable
               onPress={() => setShowDatePicker(true)}
-              className="w-11 h-11 rounded-full bg-[#eaf7f0] border border-[#b7ead1] items-center justify-center"
+              className="w-11 h-11 rounded-full items-center justify-center border"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
             >
-              <Ionicons name="calendar-outline" size={22} color="#52B69A" />
+              <Ionicons name="calendar-outline" size={22} color={theme.accentText} />
             </Pressable>
           </View>
 
@@ -336,41 +569,58 @@ export default function WaterIntakeScreen() {
             />
           )}
 
-          <Text className="text-gray-900 font-extrabold mt-6 mb-2">AMOUNT TO ADD (ml)</Text>
+          <ThemedText className="font-extrabold mt-6 mb-2">AMOUNT TO ADD (ml)</ThemedText>
           <TextInput
             value={mlText}
             onChangeText={(t) => setMlText(t.replace(/[^\d]/g, ""))}
             keyboardType="number-pad"
-            className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900 text-lg font-extrabold"
+            className="rounded-2xl px-4 py-3 text-lg font-extrabold"
+            style={inputStyle}
             placeholder="0"
+            placeholderTextColor={placeholderColor}
           />
 
           <View className="flex-row gap-2 mt-4">
-            <Pressable onPress={() => add(250)} className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center">
-              <Text className="font-extrabold text-[#52B69A]">+250 ml</Text>
+            <Pressable
+              onPress={() => add(250)}
+              className="flex-1 py-3 rounded-2xl border items-center"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+            >
+              <ThemedText variant="accent" className="font-extrabold">+250 ml</ThemedText>
             </Pressable>
-            <Pressable onPress={() => add(500)} className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center">
-              <Text className="font-extrabold text-[#52B69A]">+500 ml</Text>
+            <Pressable
+              onPress={() => add(500)}
+              className="flex-1 py-3 rounded-2xl border items-center"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+            >
+              <ThemedText variant="accent" className="font-extrabold">+500 ml</ThemedText>
             </Pressable>
           </View>
-          <Pressable onPress={() => add(1000)} className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center">
-            <Text className="font-extrabold text-[#52B69A]">+1000 ml</Text>
+          <Pressable
+            onPress={() => add(1000)}
+            className="mt-2 py-3 rounded-2xl border items-center"
+            style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+          >
+            <ThemedText variant="accent" className="font-extrabold">+1000 ml</ThemedText>
           </Pressable>
 
           <Pressable
             onPress={save}
             disabled={saving}
-            className={`mt-6 py-4 rounded-2xl bg-[#76C893] items-center ${saving ? "opacity-60" : ""}`}
+            className={`mt-6 py-4 rounded-2xl items-center ${saving ? "opacity-60" : ""}`}
+            style={{ backgroundColor: theme.accent }}
           >
-            <Text className="text-white font-extrabold text-base">{saving ? "Saving..." : "Save"}</Text>
+            <ThemedText className="font-extrabold text-base" style={{ color: "#ffffff" }}>
+              {saving ? "Saving..." : "Save"}
+            </ThemedText>
           </Pressable>
-        </View>
+        </ThemedCard>
 
-        <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-10 border border-gray-100">
-          <Text className="text-sm tracking-[0.12em] text-gray-900 font-extrabold">WATER INTAKE RECORD</Text>
-          <Text className="text-xs text-gray-500 mt-1">
+        <ThemedCard className="mt-6 p-5 pt-8 pb-10">
+          <ThemedText className="text-sm tracking-[0.12em] font-extrabold">WATER INTAKE RECORD</ThemedText>
+          <ThemedText variant="muted" className="text-xs mt-1">
             History includes today and previous days. Filter by day or pick a date.
-          </Text>
+          </ThemedText>
 
           <ScrollView
             horizontal
@@ -380,38 +630,50 @@ export default function WaterIntakeScreen() {
           >
             <Pressable
               onPress={() => setRecentViewDay(null)}
-              className={`px-4 py-2.5 rounded-full border ${
-                recentViewDay === null ? "bg-[#76C893] border-[#76C893]" : "bg-white border-gray-200"
-              }`}
+              className="px-4 py-2.5 rounded-full border"
+              style={
+                recentViewDay === null
+                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                  : cardStyle
+              }
             >
-              <Text
-                className={`font-extrabold text-sm ${recentViewDay === null ? "text-white" : "text-gray-800"}`}
+              <ThemedText
+                className="font-extrabold text-sm"
+                style={{ color: recentViewDay === null ? "#ffffff" : theme.textPrimary }}
               >
                 All days
-              </Text>
+              </ThemedText>
             </Pressable>
             <Pressable
               onPress={() => setShowRecentDayPicker(true)}
-              className={`flex-row items-center px-4 py-2.5 rounded-full border ${
-                recentViewDay !== null ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
-              }`}
+              className="px-4 py-2.5 rounded-full border flex-row items-center"
+              style={
+                recentViewDay !== null
+                  ? { backgroundColor: theme.accentSoft, borderColor: theme.accentText }
+                  : cardStyle
+              }
             >
-              <Ionicons name="calendar-outline" size={18} color={recentViewDay !== null ? "#52B69A" : "#6b7280"} />
-              <Text
-                className={`font-extrabold text-sm ml-1.5 ${recentViewDay !== null ? "text-[#52B69A]" : "text-gray-800"}`}
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={recentViewDay !== null ? theme.accentText : theme.iconMuted}
+              />
+              <ThemedText
+                variant={recentViewDay !== null ? "accent" : "primary"}
+                className="font-extrabold text-sm ml-1.5"
               >
                 Pick a day
-              </Text>
+              </ThemedText>
             </Pressable>
           </ScrollView>
 
           {recentViewDay ? (
             <View className="mt-3 flex-row items-center justify-between">
-              <Text className="text-sm text-gray-500 flex-1 pr-2">
-                Showing: <Text className="font-extrabold text-gray-800">{recentFilterLabel}</Text>
-              </Text>
+              <ThemedText variant="muted" className="text-sm flex-1 pr-2">
+                Showing: <ThemedText className="font-extrabold">{recentFilterLabel}</ThemedText>
+              </ThemedText>
               <Pressable onPress={() => setRecentViewDay(null)} hitSlop={8}>
-                <Text className="text-sm font-extrabold text-[#52B69A]">Show all</Text>
+                <ThemedText variant="accent" className="text-sm font-extrabold">Show all</ThemedText>
               </Pressable>
             </View>
           ) : null}
@@ -432,9 +694,10 @@ export default function WaterIntakeScreen() {
               {Platform.OS === "ios" ? (
                 <Pressable
                   onPress={() => setShowRecentDayPicker(false)}
-                  className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center"
+                  className="mt-2 py-3 rounded-2xl border items-center"
+                  style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                 >
-                  <Text className="font-extrabold text-[#52B69A]">Done</Text>
+                  <ThemedText variant="accent" className="font-extrabold">Done</ThemedText>
                 </Pressable>
               ) : null}
             </View>
@@ -442,76 +705,88 @@ export default function WaterIntakeScreen() {
 
           <View className="mt-4 gap-4 pb-2">
             {groupedWater.length === 0 ? (
-              <Text className="text-gray-500 text-sm">No water logs yet.</Text>
+              <ThemedText variant="muted" className="text-sm">No water logs yet.</ThemedText>
             ) : filteredGroupedWater.length === 0 ? (
-              <Text className="text-gray-500 text-sm">
+              <ThemedText variant="muted" className="text-sm">
                 No water recorded for this day. Try &quot;All days&quot; or another date.
-              </Text>
+              </ThemedText>
             ) : (
               filteredGroupedWater.map((g) => (
                 <View
                   key={g.dateKey}
-                  className="rounded-2xl border-2 border-gray-200 bg-white overflow-hidden shadow-sm shadow-black/10"
+                  className="rounded-2xl overflow-hidden border-2"
+                  style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
                 >
-                  <View className="bg-[#eaf7f0] border-b-2 border-[#b7ead1] px-4 py-3">
-                    <Text className="text-[10px] font-extrabold tracking-[0.2em] text-[#52B69A]">DAY</Text>
-                    <Text className="text-lg font-extrabold text-gray-900 mt-1">{formatLongDate(g.dayDate)}</Text>
+                  <View
+                    className="border-b-2 px-4 py-3"
+                    style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                  >
+                    <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
+                    <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
                   </View>
-                  <View className="px-3 py-3 gap-2 bg-[#fafafa]">
+                  <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
                     {g.entries.map((r) => (
                       <View
                         key={r.id}
-                        className="flex-row items-center justify-between bg-white rounded-xl px-3 py-3 border border-gray-200"
+                        className="flex-row items-center justify-between rounded-xl px-3 py-3 border"
+                        style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
                       >
-                        <Text className="text-sm text-gray-600 font-semibold">{r.createdAt.toLocaleTimeString()}</Text>
+                        <ThemedText variant="secondary" className="text-sm font-semibold">
+                          {r.createdAt.toLocaleTimeString()}
+                        </ThemedText>
                         <View className="flex-row items-center">
-                          <Text className="text-base font-extrabold text-gray-900">
+                          <ThemedText className="text-base font-extrabold">
                             +{r.amountMl.toLocaleString()} ml
-                          </Text>
+                          </ThemedText>
                           <Pressable
                             onPress={() => beginEditLog(r)}
                             disabled={saving}
                             hitSlop={10}
-                            className="ml-3 w-9 h-9 rounded-full bg-[#f3f4f3] border border-gray-200 items-center justify-center"
+                            className="ml-3 w-9 h-9 rounded-full border items-center justify-center"
+                            style={cardStyle}
                           >
-                            <Ionicons name="create-outline" size={18} color="#111827" />
+                            <Ionicons name="create-outline" size={18} color={theme.textPrimary} />
                           </Pressable>
                           <Pressable
                             onPress={() => confirmDeleteLog(r)}
                             disabled={saving}
                             hitSlop={10}
-                            className="ml-2 w-9 h-9 rounded-full bg-[#fef2f2] border border-red-100 items-center justify-center"
+                            className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
+                            style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
                           >
-                            <Ionicons name="trash-outline" size={18} color="#dc2626" />
+                            <Ionicons name="trash-outline" size={18} color={theme.danger} />
                           </Pressable>
                         </View>
                       </View>
                     ))}
                   </View>
-                  <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
-                    <Text className="text-xs font-extrabold tracking-widest text-gray-500">DAY TOTAL</Text>
-                    <Text className="text-base font-extrabold text-[#52B69A]">{g.total.toLocaleString()} ml</Text>
+                  <View
+                    className="flex-row items-center justify-between px-4 py-3 border-t-2"
+                    style={{ backgroundColor: theme.cardBg, borderTopColor: theme.cardBorder }}
+                  >
+                    <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">DAY TOTAL</ThemedText>
+                    <ThemedText variant="accent" className="text-base font-extrabold">
+                      {g.total.toLocaleString()} ml
+                    </ThemedText>
                   </View>
                 </View>
               ))
             )}
           </View>
-        </View>
+        </ThemedCard>
       </ScrollView>
 
       <Modal visible={!!editingLog} transparent animationType="fade" onRequestClose={() => setEditingLog(null)}>
         <Pressable
-          className="flex-1 bg-black/40 justify-center px-6"
+          className="flex-1 justify-center px-6"
+          style={{ backgroundColor: theme.modalOverlay }}
           onPress={() => setEditingLog(null)}
         >
-          <Pressable
-            className="bg-white rounded-3xl p-6"
-            onPress={(e) => e.stopPropagation()}
-          >
-            <Text className="text-xl font-extrabold text-gray-900">Edit water intake</Text>
-            <Text className="text-sm text-gray-500 mt-2">
+          <Pressable className="rounded-3xl p-6" style={modalCardStyle} onPress={(e) => e.stopPropagation()}>
+            <ThemedText className="text-xl font-extrabold">Edit water intake</ThemedText>
+            <ThemedText variant="muted" className="text-sm mt-2">
               Update the amount for this entry (ml).
-            </Text>
+            </ThemedText>
 
             <View className="mt-5">
               <TextInput
@@ -519,8 +794,9 @@ export default function WaterIntakeScreen() {
                 onChangeText={setEditMlText}
                 keyboardType="numeric"
                 placeholder="e.g. 500"
-                placeholderTextColor="#9ca3af"
-                className="bg-[#fafafa] border border-gray-200 rounded-2xl px-4 py-3 text-base text-gray-900"
+                placeholderTextColor={placeholderColor}
+                className="rounded-2xl px-4 py-3 text-base"
+                style={inputStyle}
               />
             </View>
 
@@ -528,23 +804,25 @@ export default function WaterIntakeScreen() {
               <Pressable
                 onPress={() => setEditingLog(null)}
                 disabled={saving}
-                className="flex-1 py-3.5 rounded-2xl bg-gray-100 items-center active:bg-gray-200"
+                className="flex-1 py-3.5 rounded-2xl items-center"
+                style={{ backgroundColor: theme.rowBg }}
               >
-                <Text className="font-extrabold text-gray-700">Cancel</Text>
+                <ThemedText variant="secondary" className="font-extrabold">Cancel</ThemedText>
               </Pressable>
               <Pressable
                 onPress={saveEditLog}
                 disabled={saving}
-                className={`flex-1 py-3.5 rounded-2xl bg-[#76C893] items-center active:opacity-90 ${
-                  saving ? "opacity-60" : ""
-                }`}
+                className={`flex-1 py-3.5 rounded-2xl items-center ${saving ? "opacity-60" : ""}`}
+                style={{ backgroundColor: theme.accent }}
               >
-                <Text className="font-extrabold text-white">{saving ? "Saving..." : "Save"}</Text>
+                <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                  {saving ? "Saving..." : "Save"}
+                </ThemedText>
               </Pressable>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </ThemedScreen>
   );
 }

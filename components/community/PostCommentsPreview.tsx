@@ -1,10 +1,12 @@
 import { Pressable } from "@/components/Pressable";
+import { ThemedText } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityComment } from "@/lib/communityTypes";
 import { subscribeComments } from "@/lib/communityService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 function CommentAvatar({ uri }: { uri: string | null }) {
   return (
@@ -29,6 +31,7 @@ export function PostCommentsPreview({
   commentCount,
   onSeeMore,
 }: PostCommentsPreviewProps) {
+  const { theme } = useThemedScreen();
   const [comments, setComments] = useState<CommunityComment[]>([]);
 
   useEffect(() => {
@@ -42,24 +45,28 @@ export function PostCommentsPreview({
   const preview = comments.slice(0, 3);
 
   return (
-    <View className="mt-3 pt-3 border-t border-gray-200">
+    <View className="mt-3 pt-3 border-t" style={{ borderTopColor: theme.cardBorder }}>
       {preview.map((comment) => (
         <View key={comment.id} className="flex-row items-start mb-2.5">
           <CommentAvatar uri={comment.authorProfileImage} />
           <View className="flex-1 ml-2">
-            <Text className="text-xs font-extrabold text-gray-900">{comment.authorName}</Text>
+            <ThemedText className="text-xs font-extrabold">{comment.authorName}</ThemedText>
             {comment.replyToAuthorName ? (
-              <Text className="text-[10px] font-bold text-[#52B69A] mt-0.5">
+              <ThemedText variant="accent" className="text-[10px] font-bold mt-0.5">
                 Replying to {comment.replyToAuthorName}
-              </Text>
+              </ThemedText>
             ) : null}
-            <Text className="text-sm text-gray-700 leading-5 mt-0.5">{comment.text}</Text>
+            <ThemedText variant="secondary" className="text-sm leading-5 mt-0.5">
+              {comment.text}
+            </ThemedText>
           </View>
         </View>
       ))}
       {commentCount > 3 ? (
         <Pressable onPress={onSeeMore} className="mt-1">
-          <Text className="text-sm font-bold text-[#52B69A]">See more comments</Text>
+          <ThemedText variant="accent" className="text-sm font-bold">
+            See more comments
+          </ThemedText>
         </Pressable>
       ) : null}
     </View>

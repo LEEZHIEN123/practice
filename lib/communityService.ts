@@ -1794,25 +1794,44 @@ export async function syncAdminConfig(): Promise<void> {
   }
 }
 
+let resolvedAdminUidCache: string | null | undefined;
+let resolveAdminUidInFlight: Promise<string | null> | null = null;
+
 export async function resolveAdminUid(): Promise<string | null> {
-  try {
-    const configSnap = await getDoc(doc(db, "communityConfig", "main"));
-    const configUid = configSnap.data()?.adminUserId;
-    if (typeof configUid === "string" && configUid.length > 0) return configUid;
-  } catch {
-    // Config may not exist yet or rules not deployed
-  }
+  if (resolvedAdminUidCache !== undefined) return resolvedAdminUidCache;
+  if (resolveAdminUidInFlight) return resolveAdminUidInFlight;
 
-  try {
-    const snap = await getDocs(
-      query(collection(db, "users"), where("email", "==", COMMUNITY_ADMIN_EMAIL))
-    );
-    if (!snap.empty) return snap.docs[0].id;
-  } catch {
-    // Fall through
-  }
+  resolveAdminUidInFlight = (async () => {
+    try {
+      const configSnap = await getDoc(doc(db, "communityConfig", "main"));
+      const configUid = configSnap.data()?.adminUserId;
+      if (typeof configUid === "string" && configUid.length > 0) {
+        resolvedAdminUidCache = configUid;
+        return configUid;
+      }
+    } catch {
+      // Config may not exist yet or rules not deployed
+    }
 
-  return null;
+    try {
+      const snap = await getDocs(
+        query(collection(db, "users"), where("email", "==", COMMUNITY_ADMIN_EMAIL))
+      );
+      if (!snap.empty) {
+        resolvedAdminUidCache = snap.docs[0].id;
+        return snap.docs[0].id;
+      }
+    } catch {
+      // Fall through
+    }
+
+    resolvedAdminUidCache = null;
+    return null;
+  })().finally(() => {
+    resolveAdminUidInFlight = null;
+  });
+
+  return resolveAdminUidInFlight;
 }
 
 export async function ensureSupportChatWithAdmin(): Promise<string | null> {

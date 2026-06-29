@@ -1,23 +1,25 @@
 import { Pressable } from "@/components/Pressable";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
+import { ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import {
-    getFriendRelation,
-    searchUsersForAdding,
-    sendFriendRequest,
+  getFriendRelation,
+  searchUsersForAdding,
+  sendFriendRequest,
 } from "@/lib/communityService";
 import type { FriendRelation, RegisteredUser } from "@/lib/communityTypes";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -51,6 +53,8 @@ type AddFriendModalProps = {
 
 export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendModalProps) {
   const insets = useSafeAreaInsets();
+  const { cardStyle, textMuted, theme } = useThemedScreen();
+  const { modalCardStyle, rowStyle } = useProfileCardStyles();
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<RegisteredUser[]>([]);
   const [searching, setSearching] = useState(false);
@@ -113,20 +117,25 @@ export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendMod
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 bg-black/40 justify-end"
+        className="flex-1 justify-end"
+        style={{ backgroundColor: theme.modalOverlay }}
       >
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className="bg-[#f3f4f3] rounded-t-[28px] border-t border-gray-200"
-          style={{ paddingBottom: insets.bottom + 16, maxHeight: "85%" }}
+          className="rounded-t-[28px]"
+          style={[
+            modalCardStyle,
+            { paddingBottom: insets.bottom + 16, maxHeight: "85%", borderBottomWidth: 0 },
+          ]}
         >
           <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
-            <Text className="text-xl font-extrabold text-gray-900">Add Friend</Text>
+            <ThemedText className="text-xl font-extrabold">Add Friend</ThemedText>
             <Pressable
               onPress={onClose}
-              className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200"
+              className="w-10 h-10 rounded-full items-center justify-center"
+              style={cardStyle}
             >
-              <Ionicons name="close" size={22} color="#6b7280" />
+              <Ionicons name="close" size={22} color={theme.iconMuted} />
             </Pressable>
           </View>
 
@@ -142,13 +151,13 @@ export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendMod
 
           <ScrollView className="px-4" keyboardShouldPersistTaps="handled">
             {searchText.trim().length < 1 ? (
-              <Text className="text-sm text-gray-500 text-center py-8">
+              <ThemedText variant="muted" className="text-sm text-center py-8">
                 Search for an account to send a friend request.
-              </Text>
+              </ThemedText>
             ) : searchResults.length === 0 && !searching ? (
-              <Text className="text-sm text-gray-500 text-center py-8">
+              <ThemedText variant="muted" className="text-sm text-center py-8">
                 No matching accounts found.
-              </Text>
+              </ThemedText>
             ) : (
               searchResults.map((user) => {
                 const relation = relationMap[user.id] ?? "none";
@@ -158,31 +167,36 @@ export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendMod
                 return (
                   <View
                     key={user.id}
-                    className="flex-row items-center bg-white rounded-xl px-3 py-3 border border-gray-200 mb-2"
+                    className="flex-row items-center rounded-xl px-3 py-3 mb-2"
+                    style={cardStyle}
                   >
                     <Pressable onPress={() => onOpenProfile(user.id)}>
                       <ProfileAvatar uri={user.profileImage} size={40} />
                     </Pressable>
                     <Pressable onPress={() => onOpenProfile(user.id)} className="flex-1 ml-3">
-                      <Text className="text-sm font-extrabold text-gray-900">{user.name}</Text>
-                      <Text className="text-xs text-gray-500 mt-0.5">{user.email}</Text>
+                      <ThemedText className="text-sm font-extrabold">{user.name}</ThemedText>
+                      <ThemedText variant="muted" className="text-xs mt-0.5">
+                        {user.email}
+                      </ThemedText>
                     </Pressable>
                     <Pressable
                       onPress={() => {
                         if (relation === "none") void handleAddFriend(user);
                       }}
                       disabled={isFriend || isPending || actionId === user.id}
-                      className={`rounded-full px-3 py-1.5 ${
-                        isFriend || isPending ? "bg-[#f3f4f3]" : "bg-[#52B69A]"
-                      }`}
+                      className="rounded-full px-3 py-1.5"
+                      style={
+                        isFriend || isPending
+                          ? rowStyle
+                          : { backgroundColor: "#52B69A" }
+                      }
                     >
                       {actionId === user.id ? (
                         <ActivityIndicator size="small" color="white" />
                       ) : (
                         <Text
-                          className={`text-xs font-extrabold ${
-                            isFriend || isPending ? "text-gray-500" : "text-white"
-                          }`}
+                          className="text-xs font-extrabold"
+                          style={{ color: isFriend || isPending ? theme.textMuted : "white" }}
                         >
                           {relationLabel(relation)}
                         </Text>

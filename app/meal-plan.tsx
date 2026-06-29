@@ -1,7 +1,14 @@
 import { Pressable } from "@/components/Pressable";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useRouter } from "expo-router";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const DAYS = [
@@ -64,30 +71,42 @@ const DAYS = [
 function MealBlock({
   title,
   items,
-  tint,
 }: {
   title: string;
   items: { name: string; recipe: string; kcal: number }[];
-  tint: string;
 }) {
+  const { rowBorderStyle } = useProfileCardStyles();
+  const { isDark } = useThemedScreen();
+
   return (
-    <View className="bg-white rounded-2xl p-4 border border-gray-100">
+    <ThemedCard rounded="2xl" className="p-4">
       <View className="flex-row items-center justify-between">
-        <Text className={`text-xs font-extrabold tracking-widest ${tint}`}>{title}</Text>
-        <Text className="text-xs font-bold text-gray-500">Choose 1 of 3</Text>
+        <ThemedText variant="accent" className="text-xs font-extrabold tracking-widest">
+          {title}
+        </ThemedText>
+        <ThemedText variant="muted" className="text-xs font-bold">
+          Choose 1 of 3
+        </ThemedText>
       </View>
       <View className="mt-2 gap-2">
         {items.map((item) => (
-          <View key={item.name} className="bg-[#fff7ed] rounded-2xl px-3 py-3 border border-[#fed7aa]">
+          <View key={item.name} className="rounded-2xl px-3 py-3" style={rowBorderStyle}>
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm text-gray-800 font-extrabold flex-1 pr-3">{item.name}</Text>
-              <Text className="text-xs font-bold text-[#c2410c]">{item.kcal} kcal</Text>
+              <ThemedText className="text-sm font-extrabold flex-1 pr-3">{item.name}</ThemedText>
+              <ThemedText
+                className="text-xs font-bold"
+                style={{ color: isDark ? "#fb923c" : "#c2410c" }}
+              >
+                {item.kcal} kcal
+              </ThemedText>
             </View>
-            <Text className="text-xs text-gray-600 mt-1 leading-5">{item.recipe}</Text>
+            <ThemedText variant="secondary" className="text-xs mt-1 leading-5">
+              {item.recipe}
+            </ThemedText>
           </View>
         ))}
       </View>
-    </View>
+    </ThemedCard>
   );
 }
 
@@ -96,40 +115,35 @@ export default function MealPlanScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingHorizontal: 12, paddingTop: insets.top + 12 }}
       >
-          <View className="flex-row items-center mb-5">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-            <Text className="text-2xl font-extrabold text-gray-900 flex-1">Nutrition Guidance</Text>
+        <View className="flex-row items-center mb-5">
+          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
+          <ThemedText className="text-2xl font-extrabold flex-1">Nutrition Guidance</ThemedText>
         </View>
 
-        <View className="bg-[#fff7ed] rounded-3xl p-5 border border-[#fed7aa]">
-          <Text className="text-2xl font-extrabold text-gray-900">Personalised Nutrition Guidance</Text>
-          <Text className="text-sm text-gray-600 mt-2 leading-6">
+        <ThemedCard className="p-5">
+          <ThemedText className="text-2xl font-extrabold">Personalised Nutrition Guidance</ThemedText>
+          <ThemedText variant="secondary" className="text-sm mt-2 leading-6">
             Choose one meal from each breakfast, lunch and dinner group.
-          </Text>
-        </View>
+          </ThemedText>
+        </ThemedCard>
 
         <View className="mt-5 gap-4">
           {DAYS.map((row) => (
-            <View key={row.day} className="bg-[#fff7ed] rounded-3xl p-5 border border-[#fed7aa]">
-              <Text className="text-lg font-extrabold text-gray-900 mb-3">{row.day}</Text>
+            <ThemedCard key={row.day} className="p-5">
+              <ThemedText className="text-lg font-extrabold mb-3">{row.day}</ThemedText>
               <View className="gap-3">
-                <MealBlock title="BREAKFAST" items={row.breakfast} tint="text-[#c2410c]" />
-                <MealBlock title="LUNCH" items={row.lunch} tint="text-[#c2410c]" />
-                <MealBlock title="DINNER" items={row.dinner} tint="text-[#c2410c]" />
+                <MealBlock title="BREAKFAST" items={row.breakfast} />
+                <MealBlock title="LUNCH" items={row.lunch} />
+                <MealBlock title="DINNER" items={row.dinner} />
               </View>
-            </View>
+            </ThemedCard>
           ))}
         </View>
       </ScrollView>
-    </View>
+    </ThemedScreen>
   );
 }

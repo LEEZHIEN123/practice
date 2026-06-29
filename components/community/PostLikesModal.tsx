@@ -1,4 +1,6 @@
 import { Pressable } from "@/components/Pressable";
+import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { LikerProfile } from "@/lib/communityService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -21,31 +23,38 @@ export function PostLikesModal({
   onOpenProfile,
 }: PostLikesModalProps) {
   const insets = useSafeAreaInsets();
+  const { textPrimary, textSecondary, theme } = useThemedScreen();
+  const { modalCardStyle, rowStyle } = useProfileCardStyles();
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 bg-black/40 justify-end">
+      <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
         <View
-          className="bg-white rounded-t-[28px] border border-gray-200"
-          style={{ paddingBottom: insets.bottom + 16, maxHeight: "70%" }}
+          className="rounded-t-[28px]"
+          style={[modalCardStyle, { paddingBottom: insets.bottom + 16, maxHeight: "70%", borderBottomWidth: 0 }]}
         >
-          <View className="px-5 pt-5 pb-3 border-b border-gray-100">
-            <Text className="text-xl font-extrabold text-gray-900">Likes</Text>
+          <View className="px-5 pt-5 pb-3 border-b" style={{ borderBottomColor: theme.cardBorder }}>
+            <Text className="text-xl font-extrabold" style={textPrimary}>
+              Likes
+            </Text>
           </View>
           {loading ? (
             <View className="py-12 items-center">
-              <ActivityIndicator color="#52B69A" />
+              <ActivityIndicator color={theme.accentText} />
             </View>
           ) : (
             <ScrollView contentContainerStyle={{ padding: 16 }}>
               {likers.length === 0 ? (
-                <Text className="text-sm text-gray-500 text-center py-8">No likes yet.</Text>
+                <Text className="text-sm text-center py-8" style={{ color: theme.textMuted }}>
+                  No likes yet.
+                </Text>
               ) : (
                 likers.map((liker) => (
                   <Pressable
                     key={liker.id}
                     onPress={() => onOpenProfile(liker.id)}
-                    className="flex-row items-center bg-[#f3f4f3] rounded-2xl px-4 py-3 mb-2 border border-gray-200 active:bg-[#ececec]"
+                    className="flex-row items-center rounded-2xl px-4 py-3 mb-2"
+                    style={rowStyle}
                   >
                     <View className="w-10 h-10 rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden">
                       {liker.profileImage ? (
@@ -58,14 +67,22 @@ export function PostLikesModal({
                         <Ionicons name="person" size={18} color="white" />
                       )}
                     </View>
-                    <Text className="ml-3 text-base font-extrabold text-gray-900">{liker.name}</Text>
+                    <Text className="ml-3 text-base font-extrabold" style={textPrimary}>
+                      {liker.name}
+                    </Text>
                   </Pressable>
                 ))
               )}
             </ScrollView>
           )}
-          <Pressable onPress={onClose} className="mx-5 mt-2 rounded-full py-3.5 items-center bg-[#f3f4f3]">
-            <Text className="text-sm font-extrabold text-gray-600">Close</Text>
+          <Pressable
+            onPress={onClose}
+            className="mx-5 mt-2 rounded-full py-3.5 items-center"
+            style={rowStyle}
+          >
+            <Text className="text-sm font-extrabold" style={textSecondary}>
+              Close
+            </Text>
           </Pressable>
         </View>
       </View>

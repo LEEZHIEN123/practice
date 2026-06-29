@@ -1,5 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
+import { ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import {
   addComment,
@@ -8,6 +9,7 @@ import {
   threadedComments,
 } from "@/lib/communityService";
 import type { CommunityComment, CommunityPost } from "@/lib/communityTypes";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useEffect, useMemo, useState } from "react";
@@ -18,7 +20,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -61,6 +62,8 @@ export function PostCommentsSheet({
   onBlockComment,
 }: PostCommentsSheetProps) {
   const insets = useSafeAreaInsets();
+  const { cardStyle, iconButtonStyle, theme } = useThemedScreen();
+  const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -141,20 +144,25 @@ export function PostCommentsSheet({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 bg-black/40 justify-end"
+        className="flex-1 justify-end"
+        style={{ backgroundColor: theme.modalOverlay }}
       >
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className="bg-[#f3f4f3] rounded-t-[28px] border-t border-gray-200 overflow-hidden flex-col"
-          style={{ height: "50%" }}
+          className="rounded-t-[28px] overflow-hidden flex-col"
+          style={[modalCardStyle, { height: "50%", borderBottomWidth: 0 }]}
         >
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-            <Text className="text-xl font-extrabold text-gray-900">Comments</Text>
+          <View
+            className="flex-row items-center justify-between px-4 py-3 border-b"
+            style={{ borderBottomColor: theme.cardBorder }}
+          >
+            <ThemedText className="text-xl font-extrabold">Comments</ThemedText>
             <Pressable
               onPress={onClose}
-              className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200"
+              className="w-10 h-10 rounded-full items-center justify-center"
+              style={iconButtonStyle}
             >
-              <Ionicons name="close" size={22} color="#6b7280" />
+              <Ionicons name="close" size={22} color={theme.iconMuted} />
             </Pressable>
           </View>
 
@@ -164,7 +172,9 @@ export function PostCommentsSheet({
             keyboardShouldPersistTaps="handled"
           >
             {displayComments.length === 0 ? (
-              <Text className="text-sm text-gray-500 text-center py-8">No comments yet.</Text>
+              <ThemedText variant="muted" className="text-sm text-center py-8">
+                No comments yet.
+              </ThemedText>
             ) : null}
 
             {displayComments.map((comment) => {
@@ -174,9 +184,14 @@ export function PostCommentsSheet({
               return (
                 <View
                   key={comment.id}
-                  className={`bg-white rounded-2xl p-4 border mb-2 ${
-                    isReply ? "ml-6 border-l-4 border-l-[#52B69A]" : ""
-                  } ${isReplyingToThis ? "border-[#52B69A] border-2" : "border-gray-200"}`}
+                  className={`rounded-2xl p-4 border mb-2 ${isReply ? "ml-6 border-l-4" : ""}`}
+                  style={[
+                    cardStyle,
+                    isReply ? { borderLeftColor: theme.accent } : undefined,
+                    isReplyingToThis
+                      ? { borderColor: theme.accent, borderWidth: 2 }
+                      : undefined,
+                  ]}
                 >
                   <View className="flex-row items-center">
                     {onOpenProfile ? (
@@ -190,18 +205,18 @@ export function PostCommentsSheet({
                       <View className="flex-row items-start justify-between gap-2">
                         {onOpenProfile ? (
                           <Pressable onPress={() => onOpenProfile(comment.authorId)} className="flex-1">
-                            <Text className="text-sm font-extrabold text-gray-900">
+                            <ThemedText className="text-sm font-extrabold">
                               {comment.authorName}
-                            </Text>
+                            </ThemedText>
                           </Pressable>
                         ) : (
-                          <Text className="text-sm font-extrabold text-gray-900 flex-1">
+                          <ThemedText className="text-sm font-extrabold flex-1">
                             {comment.authorName}
-                          </Text>
+                          </ThemedText>
                         )}
-                        <Text className="text-[10px] text-gray-400">
+                        <ThemedText variant="muted" className="text-[10px]">
                           {formatChatMessageTime(comment.createdAt)}
-                        </Text>
+                        </ThemedText>
                       </View>
                     </View>
                     {currentUserId ? (
@@ -209,18 +224,22 @@ export function PostCommentsSheet({
                         onPress={() => setMenuComment(comment)}
                         className="w-8 h-8 rounded-full items-center justify-center"
                       >
-                        <Ionicons name="ellipsis-vertical" size={18} color="#6b7280" />
+                        <Ionicons name="ellipsis-vertical" size={18} color={theme.iconMuted} />
                       </Pressable>
                     ) : null}
                   </View>
                   {comment.replyToAuthorName ? (
-                    <Text className="text-xs font-bold text-[#52B69A] mt-2">
+                    <ThemedText variant="accent" className="text-xs font-bold mt-2">
                       Replying to {comment.replyToAuthorName}
-                    </Text>
+                    </ThemedText>
                   ) : null}
                   <Pressable onPress={() => startReply(comment)}>
-                    <Text className="text-sm text-gray-700 mt-2 leading-6">{comment.text}</Text>
-                    <Text className="text-xs font-bold text-[#2563eb] mt-2">Reply</Text>
+                    <ThemedText variant="secondary" className="text-sm mt-2 leading-6">
+                      {comment.text}
+                    </ThemedText>
+                    <ThemedText className="text-xs font-bold mt-2" style={{ color: "#2563eb" }}>
+                      Reply
+                    </ThemedText>
                   </Pressable>
                 </View>
               );
@@ -261,20 +280,30 @@ export function PostCommentsSheet({
           />
 
           <View
-            className="px-4 border-t border-gray-200 bg-white"
-            style={{ paddingBottom: insets.bottom + 8, paddingTop: 12 }}
+            className="px-4 border-t"
+            style={{
+              paddingBottom: insets.bottom + 8,
+              paddingTop: 12,
+              borderTopColor: theme.cardBorder,
+              backgroundColor: theme.modalBg,
+            }}
           >
             {replyingTo ? (
-              <View className="flex-row items-center justify-between bg-[#eaf7f0] rounded-xl px-3 py-2 mb-2 border border-[#b7e4c7]">
-                <Text className="text-xs font-extrabold text-[#52B69A]">
+              <View
+                className="flex-row items-center justify-between rounded-xl px-3 py-2 mb-2 border"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+              >
+                <ThemedText variant="accent" className="text-xs font-extrabold">
                   Replying to {replyingTo.authorName}
-                </Text>
+                </ThemedText>
                 <Pressable
                   onPress={() => {
                     setReplyingTo(null);
                   }}
                 >
-                  <Text className="text-xs font-bold text-gray-500">Cancel</Text>
+                  <ThemedText variant="muted" className="text-xs font-bold">
+                    Cancel
+                  </ThemedText>
                 </Pressable>
               </View>
             ) : null}
@@ -286,15 +315,15 @@ export function PostCommentsSheet({
                   replyingTo ? `Reply to ${replyingTo.authorName}...` : "Write a comment..."
                 }
                 multiline
-                className="flex-1 bg-[#f3f4f3] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 max-h-28"
-                placeholderTextColor="#9ca3af"
+                className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
               <Pressable
                 onPress={() => void handleSend()}
                 disabled={sending || !text.trim()}
-                className={`w-11 h-11 rounded-full items-center justify-center ${
-                  text.trim() ? "bg-[#52B69A]" : "bg-gray-200"
-                }`}
+                className="w-11 h-11 rounded-full items-center justify-center"
+                style={{ backgroundColor: text.trim() ? "#52B69A" : theme.iconMuted }}
               >
                 {sending ? (
                   <ActivityIndicator color="white" size="small" />

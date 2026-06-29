@@ -1,14 +1,14 @@
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedText,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityPost, FriendRelation, PublicUserProfile } from "@/lib/communityTypes";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import {
-  ActivityIndicator,
-  Modal,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function ProfileAvatar({ uri, size = 72 }: { uri: string | null; size?: number }) {
@@ -61,19 +61,15 @@ export function UserProfileModal({
   onChat,
 }: UserProfileModalProps) {
   const insets = useSafeAreaInsets();
+  const { screenStyle, cardStyle, theme } = useThemedScreen();
   const showAddFriend = canAddFriend && !isSupportAdmin && relation === "none";
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 bg-[#f3f4f3]" style={{ paddingTop: insets.top }}>
+      <View className="flex-1" style={[screenStyle, { paddingTop: insets.top }]}>
         <View className="flex-row items-center px-4 py-3">
-          <Pressable
-            onPress={onClose}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-2xl font-extrabold text-gray-900 flex-1">Profile</Text>
+          <ThemedBackButton onPress={onClose} className="w-11 h-11 mr-3" />
+          <ThemedText className="text-2xl font-extrabold flex-1">Profile</ThemedText>
           {showAddFriend ? (
             <Pressable
               onPress={onAddFriend}
@@ -82,23 +78,25 @@ export function UserProfileModal({
               <Ionicons name="person-add" size={20} color="white" />
             </Pressable>
           ) : !isSelf && !isSupportAdmin && relation !== "none" ? (
-            <View className="rounded-full px-3 py-2 bg-white border border-gray-200">
-              <Text className="text-xs font-bold text-[#52B69A]">{friendLabel(relation)}</Text>
+            <View className="rounded-full px-3 py-2" style={cardStyle}>
+              <ThemedText variant="accent" className="text-xs font-bold">
+                {friendLabel(relation)}
+              </ThemedText>
             </View>
           ) : null}
         </View>
 
         {loading || !profile ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#52B69A" />
+            <ActivityIndicator size="large" color={theme.accentText} />
           </View>
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
             <View className="items-center mb-5">
               <ProfileAvatar uri={profile.profileImage} />
-              <Text className="text-2xl font-extrabold text-gray-900 mt-3">
+              <ThemedText className="text-2xl font-extrabold mt-3">
                 {isSupportAdmin ? "Support Admin" : profile.name}
-              </Text>
+              </ThemedText>
               {!isSelf && isSupportAdmin && onChat ? (
                 <Pressable
                   onPress={onChat}
@@ -127,68 +125,73 @@ export function UserProfileModal({
                 </Pressable>
               ) : null}
               {!isSelf && !isSupportAdmin && relation === "pending_outgoing" ? (
-                <View className="mt-3 rounded-full px-6 py-2.5 bg-white border border-gray-200">
-                  <Text className="text-sm font-extrabold text-[#52B69A]">Friend request sent</Text>
+                <View className="mt-3 rounded-full px-6 py-2.5" style={cardStyle}>
+                  <ThemedText variant="accent" className="text-sm font-extrabold">
+                    Friend request sent
+                  </ThemedText>
                 </View>
               ) : null}
               {!isSelf && !isSupportAdmin && relation === "pending_incoming" ? (
-                <View className="mt-3 rounded-full px-6 py-2.5 bg-white border border-gray-200">
-                  <Text className="text-sm font-extrabold text-gray-600">Respond in notifications</Text>
+                <View className="mt-3 rounded-full px-6 py-2.5" style={cardStyle}>
+                  <ThemedText variant="muted" className="text-sm font-extrabold">
+                    Respond in notifications
+                  </ThemedText>
                 </View>
               ) : null}
             </View>
 
             {!isSupportAdmin ? (
-              <View className="bg-white rounded-2xl p-4 border border-gray-200 mb-4 gap-2">
+              <ThemedCard rounded="2xl" className="p-4 mb-4 gap-2">
                 {profile.goal ? (
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">Goal: </Text>
+                  <ThemedText variant="secondary" className="text-sm">
+                    <ThemedText className="font-bold">Goal: </ThemedText>
                     {profile.goal}
-                  </Text>
+                  </ThemedText>
                 ) : null}
                 {profile.gender ? (
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">Gender: </Text>
+                  <ThemedText variant="secondary" className="text-sm">
+                    <ThemedText className="font-bold">Gender: </ThemedText>
                     {profile.gender === "male" ? "Male" : "Female"}
-                  </Text>
+                  </ThemedText>
                 ) : null}
                 {profile.height != null ? (
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">Height: </Text>
+                  <ThemedText variant="secondary" className="text-sm">
+                    <ThemedText className="font-bold">Height: </ThemedText>
                     {profile.height} cm
-                  </Text>
+                  </ThemedText>
                 ) : null}
                 {profile.weight != null ? (
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">Weight: </Text>
+                  <ThemedText variant="secondary" className="text-sm">
+                    <ThemedText className="font-bold">Weight: </ThemedText>
                     {profile.weight} kg
-                  </Text>
+                  </ThemedText>
                 ) : null}
                 {profile.bmi != null ? (
-                  <Text className="text-sm text-gray-700">
-                    <Text className="font-bold">BMI: </Text>
+                  <ThemedText variant="secondary" className="text-sm">
+                    <ThemedText className="font-bold">BMI: </ThemedText>
                     {profile.bmi}
-                  </Text>
+                  </ThemedText>
                 ) : null}
                 {profile.bio ? (
-                  <Text className="text-sm text-gray-700 mt-1 leading-6">
-                    <Text className="font-bold">Bio: </Text>
+                  <ThemedText variant="secondary" className="text-sm mt-1 leading-6">
+                    <ThemedText className="font-bold">Bio: </ThemedText>
                     {profile.bio}
-                  </Text>
+                  </ThemedText>
                 ) : null}
-              </View>
+              </ThemedCard>
             ) : null}
 
-            <Text className="text-lg font-extrabold text-gray-900 mb-3">Posts</Text>
+            <ThemedText className="text-lg font-extrabold mb-3">Posts</ThemedText>
             {posts.length === 0 ? (
-              <Text className="text-sm text-gray-500 text-center py-6">No posts yet.</Text>
+              <ThemedText variant="muted" className="text-sm text-center py-6">
+                No posts yet.
+              </ThemedText>
             ) : (
               posts.map((post) => (
-                <View
-                  key={post.id}
-                  className="bg-white rounded-2xl p-4 border border-gray-200 mb-3"
-                >
-                  <Text className="text-sm text-gray-700 leading-6">{post.content}</Text>
+                <ThemedCard key={post.id} rounded="2xl" className="p-4 mb-3">
+                  <ThemedText variant="secondary" className="text-sm leading-6">
+                    {post.content}
+                  </ThemedText>
                   {post.imageUrl ? (
                     <Image
                       source={{ uri: post.imageUrl }}
@@ -199,16 +202,16 @@ export function UserProfileModal({
                   {post.tags.length > 0 ? (
                     <View className="flex-row flex-wrap gap-1.5 mt-2">
                       {post.tags.map((tag) => (
-                        <Text key={tag} className="text-[10px] font-bold text-[#52B69A]">
+                        <ThemedText key={tag} variant="accent" className="text-[10px] font-bold">
                           #{tag}
-                        </Text>
+                        </ThemedText>
                       ))}
                     </View>
                   ) : null}
-                  <Text className="text-[10px] text-gray-400 mt-2">
+                  <ThemedText variant="muted" className="text-[10px] mt-2">
                     {new Date(post.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
+                  </ThemedText>
+                </ThemedCard>
               ))
             )}
           </ScrollView>

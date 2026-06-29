@@ -1,4 +1,10 @@
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedBackButton,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { ImageEditor } from "expo-dynamic-image-crop";
@@ -9,13 +15,13 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    Image,
-    Modal,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db, storage } from "../firebaseConfig";
@@ -32,6 +38,8 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 export default function EditProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { theme, screenStyle, cardStyle } = useThemedScreen();
+  const { inputStyle, rowStyle, placeholderColor } = useProfileCardStyles();
 
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -277,7 +285,6 @@ export default function EditProfile() {
     try {
       setLoading(true);
 
-      // Re-validate using text inputs too (so manual typing saves correctly)
       const parsedAge = parseInt(ageText || "", 10);
       if (!Number.isFinite(parsedAge)) {
         setAgeError("Age must be between 20 and 90.");
@@ -323,7 +330,6 @@ export default function EditProfile() {
         setWeightError("");
       }
 
-      // Keep slider values in sync with the saved values
       setAge(nextAge);
       setAgeText(String(nextAge));
       setHeight(nextHeight);
@@ -334,7 +340,6 @@ export default function EditProfile() {
       const bmi = calculateBMI(nextWeight, nextHeight);
       const pickedActivity = options.find((o) => o.key === activityLevel);
 
-      // Upload local image URI to Firebase Storage so it persists across app restarts.
       let profileImageUrl: string | null = profileImage;
       if (profileImage && !profileImage.startsWith("http")) {
         try {
@@ -344,7 +349,6 @@ export default function EditProfile() {
           profileImageUrl = await getDownloadURL(objectRef);
         } catch (e) {
           console.log("Profile image upload failed:", e);
-          // Keep existing value if upload fails; user can retry save.
         }
       }
 
@@ -378,7 +382,8 @@ export default function EditProfile() {
   return (
     <>
       <ScrollView
-        className="flex-1 bg-[#eef2f1]"
+        className="flex-1"
+        style={screenStyle}
         contentContainerStyle={{
           paddingBottom: insets.bottom + 84,
           paddingHorizontal: 12,
@@ -387,41 +392,42 @@ export default function EditProfile() {
         showsVerticalScrollIndicator={false}
       >
         <View className="relative mb-6 h-12 justify-center">
-          <Pressable
-            onPress={() => {
-              try {
-                router.back();
-              } catch {
-                router.push("/profile");
-              }
-            }}
-            hitSlop={12}
-            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
-          >
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-              <Ionicons name="arrow-back" size={24} color="#111827" />
-            </View>
-          </Pressable>
+          <View className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10">
+            <ThemedBackButton
+              onPress={() => {
+                try {
+                  router.back();
+                } catch {
+                  router.push("/profile");
+                }
+              }}
+              icon="arrow-back"
+            />
+          </View>
 
-          <Text className="text-center text-xl font-extrabold text-gray-900">
-            Edit Profile
-          </Text>
+          <ThemedText className="text-center text-xl font-extrabold">Edit Profile</ThemedText>
 
           <Pressable
             onPress={handleSave}
             disabled={loading}
             className="absolute right-0 top-0 h-14 w-20 justify-center items-end pr-2"
           >
-            <Text className={`text-base font-extrabold ${loading ? "text-gray-400" : "text-[#76C893]"}`}>
+            <ThemedText
+              variant={loading ? "muted" : "accent"}
+              className="text-base font-extrabold"
+            >
               Save
-            </Text>
+            </ThemedText>
           </Pressable>
         </View>
 
         <View className="items-center mb-6">
           <View className="relative">
             <Pressable onPress={pickImage}>
-              <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
+              <View
+                className="w-36 h-36 rounded-full border-4 items-center justify-center overflow-hidden"
+                style={{ borderColor: theme.accentSoft, backgroundColor: theme.rowBg }}
+              >
                 <Image
                   source={
                     profileImage
@@ -438,68 +444,79 @@ export default function EditProfile() {
 
             <Pressable
               onPress={pickImage}
-              className="absolute bottom-1 right-1 w-11 h-11 rounded-full bg-[#76C893] items-center justify-center border-2 border-white"
+              className="absolute bottom-1 right-1 w-11 h-11 rounded-full items-center justify-center border-2"
+              style={{ backgroundColor: theme.accent, borderColor: theme.cardBg }}
             >
               <Ionicons name="camera" size={18} color="white" />
             </Pressable>
           </View>
 
-          <Text className="text-sm text-gray-600 mt-3 mb-3">
+          <ThemedText variant="secondary" className="text-sm mt-3 mb-3">
             Tap photo icon to change profile picture
-          </Text>
+          </ThemedText>
 
           <Pressable
             onPress={reopenEditor}
-            className="flex-row items-center bg-white px-4 py-3 rounded-xl border border-gray-200"
+            className="flex-row items-center px-4 py-3 rounded-xl border"
+            style={cardStyle}
           >
-            <Ionicons name="create-outline" size={18} color="#111827" />
-            <Text className="ml-2 text-gray-800 font-medium">
-              Edit Current Photo
-            </Text>
+            <Ionicons name="create-outline" size={18} color={theme.textPrimary} />
+            <ThemedText className="ml-2 font-medium">Edit Current Photo</ThemedText>
           </Pressable>
         </View>
 
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-lg text-gray-700">Full Name</Text>
-          <Text className="text-sm text-gray-500 font-semibold">
+          <ThemedText className="text-lg">Full Name</ThemedText>
+          <ThemedText variant="muted" className="text-sm font-semibold">
             {Math.min(userName.length, 14)}/14
-          </Text>
+          </ThemedText>
         </View>
         <TextInput
           value={userName}
           onChangeText={(t) => setUserName(t.slice(0, 14))}
           maxLength={14}
-          className="bg-white rounded-xl px-4 py-3 mb-4 text-gray-700"
+          className="rounded-xl px-4 py-3 mb-4"
+          style={inputStyle}
           placeholder="Enter your full name"
+          placeholderTextColor={placeholderColor}
         />
 
         <View className="mb-4">
-          <Text className="text-lg text-gray-700 mb-2">Email Address</Text>
-          <View className="bg-gray-100 rounded-xl px-4 py-3 flex-row items-center justify-between">
-            <Text className="text-gray-500 flex-1">{userEmail}</Text>
-            <Ionicons name="lock-closed" size={18} color="#6b7280" />
+          <ThemedText className="text-lg mb-2">Email Address</ThemedText>
+          <View
+            className="rounded-xl px-4 py-3 flex-row items-center justify-between"
+            style={rowStyle}
+          >
+            <ThemedText variant="muted" className="flex-1">
+              {userEmail}
+            </ThemedText>
+            <Ionicons name="lock-closed" size={18} color={theme.iconMuted} />
           </View>
         </View>
 
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-lg text-gray-700">Bio</Text>
-          <Text className="text-sm text-gray-500 font-semibold">
+          <ThemedText className="text-lg">Bio</ThemedText>
+          <ThemedText variant="muted" className="text-sm font-semibold">
             {Math.min(userBio.length, 200)}/200
-          </Text>
+          </ThemedText>
         </View>
         <TextInput
           value={userBio}
           onChangeText={(t) => setUserBio(t.slice(0, 200))}
           maxLength={200}
-          className="bg-white rounded-xl px-4 py-3 mb-6 text-gray-700 min-h-[110px]"
+          className="rounded-xl px-4 py-3 mb-6 min-h-[110px]"
+          style={inputStyle}
           placeholder="Write your bio here"
+          placeholderTextColor={placeholderColor}
           multiline
           textAlignVertical="top"
         />
 
         <View className="mb-3">
           <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">AGE</Text>
+            <ThemedText variant="secondary" className="font-semibold ml-1">
+              AGE
+            </ThemedText>
 
             <View className="flex-row items-center">
               <TextInput
@@ -528,9 +545,12 @@ export default function EditProfile() {
                   setAgeText(String(n));
                 }}
                 keyboardType="numeric"
-                className="w-16 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+                className="w-16 rounded-lg px-3 py-2 text-center"
+                style={inputStyle}
               />
-              <Text className="ml-2 text-gray-500 mr-1">years</Text>
+              <ThemedText variant="muted" className="ml-2 mr-1">
+                years
+              </ThemedText>
             </View>
           </View>
 
@@ -545,9 +565,9 @@ export default function EditProfile() {
               setAgeText(String(v));
               setAgeError("");
             }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor={theme.cardBorder}
+            thumbTintColor={theme.accent}
           />
 
           {!!ageError && (
@@ -557,7 +577,9 @@ export default function EditProfile() {
 
         <View className="mb-3">
           <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">HEIGHT</Text>
+            <ThemedText variant="secondary" className="font-semibold ml-1">
+              HEIGHT
+            </ThemedText>
 
             <View className="flex-row items-center">
               <TextInput
@@ -586,9 +608,12 @@ export default function EditProfile() {
                   setHeightText(fixed.toFixed(1));
                 }}
                 keyboardType="decimal-pad"
-                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+                className="w-20 rounded-lg px-3 py-2 text-center"
+                style={inputStyle}
               />
-              <Text className="ml-2 text-gray-500 mr-1">cm</Text>
+              <ThemedText variant="muted" className="ml-2 mr-1">
+                cm
+              </ThemedText>
             </View>
           </View>
 
@@ -603,21 +628,21 @@ export default function EditProfile() {
               setHeightText(v.toFixed(1));
               setHeightError("");
             }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor={theme.cardBorder}
+            thumbTintColor={theme.accent}
           />
 
           {!!heightError && (
-            <Text className="text-red-500 text-sm mt-1 ml-1">
-              {heightError}
-            </Text>
+            <Text className="text-red-500 text-sm mt-1 ml-1">{heightError}</Text>
           )}
         </View>
 
         <View className="mb-4">
           <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-gray-600 font-semibold ml-1">WEIGHT</Text>
+            <ThemedText variant="secondary" className="font-semibold ml-1">
+              WEIGHT
+            </ThemedText>
 
             <View className="flex-row items-center">
               <TextInput
@@ -646,9 +671,12 @@ export default function EditProfile() {
                   setWeightText(fixed.toFixed(1));
                 }}
                 keyboardType="decimal-pad"
-                className="w-20 bg-white rounded-lg px-3 py-2 text-center text-gray-800"
+                className="w-20 rounded-lg px-3 py-2 text-center"
+                style={inputStyle}
               />
-              <Text className="ml-2 text-gray-500 mr-1">kg</Text>
+              <ThemedText variant="muted" className="ml-2 mr-1">
+                kg
+              </ThemedText>
             </View>
           </View>
 
@@ -663,19 +691,17 @@ export default function EditProfile() {
               setWeightText(v.toFixed(1));
               setWeightError("");
             }}
-            minimumTrackTintColor="#76C893"
-            maximumTrackTintColor="#0c3a23"
-            thumbTintColor="#76C893"
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor={theme.cardBorder}
+            thumbTintColor={theme.accent}
           />
 
           {!!weightError && (
-            <Text className="text-red-500 text-sm mt-1 ml-1">
-              {weightError}
-            </Text>
+            <Text className="text-red-500 text-sm mt-1 ml-1">{weightError}</Text>
           )}
         </View>
 
-        <Text className="text-lg text-gray-700 mb-3">Activity Level</Text>
+        <ThemedText className="text-lg mb-3">Activity Level</ThemedText>
 
         <View className="gap-3 mb-6">
           {options.map((o) => {
@@ -685,59 +711,61 @@ export default function EditProfile() {
               <Pressable
                 key={o.key}
                 onPress={() => setActivityLevel(o.key)}
-                className={`rounded-2xl p-4 flex-row items-center justify-between ${
+                className="rounded-2xl p-4 flex-row items-center justify-between"
+                style={
                   isActive
-                    ? "bg-[#eaf7f0] border-2 border-[#76C893]"
-                    : "bg-white"
-                }`}
+                    ? {
+                        backgroundColor: theme.accentSoft,
+                        borderColor: theme.accent,
+                        borderWidth: 2,
+                      }
+                    : cardStyle
+                }
               >
                 <View className="flex-row items-center">
                   <View
-                    className={`w-14 h-14 rounded-2xl items-center justify-center ${
-                      isActive ? "bg-[#76C893]" : "bg-gray-100"
-                    }`}
+                    className="w-14 h-14 rounded-2xl items-center justify-center"
+                    style={{ backgroundColor: isActive ? theme.accent : theme.rowBg }}
                   >
                     <Ionicons
                       name={o.icon}
                       size={24}
-                      color={isActive ? "white" : "#111827"}
+                      color={isActive ? "white" : theme.textPrimary}
                     />
                   </View>
 
                   <View className="ml-4">
-                    <Text className="text-lg font-bold text-gray-900">
-                      {o.title}
-                    </Text>
-                    <Text className="text-gray-500">{o.subtitle}</Text>
+                    <ThemedText className="text-lg font-bold">{o.title}</ThemedText>
+                    <ThemedText variant="secondary">{o.subtitle}</ThemedText>
                   </View>
                 </View>
 
                 <View
-                  className={`w-6 h-6 rounded-full border-2 items-center justify-center ${
-                    isActive ? "border-[#76C893]" : "border-gray-300"
-                  }`}
+                  className="w-6 h-6 rounded-full border-2 items-center justify-center"
+                  style={{ borderColor: isActive ? theme.accent : theme.iconMuted }}
                 >
                   {isActive && (
-                    <View className="w-3 h-3 rounded-full bg-[#76C893]" />
+                    <View
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: theme.accent }}
+                    />
                   )}
                 </View>
               </Pressable>
             );
           })}
         </View>
-
       </ScrollView>
 
       <View
-        className="absolute left-0 right-0 bg-[#eef2f1] px-3 pt-3"
-        style={{ bottom: 0, paddingBottom: insets.bottom + 12 }}
+        className="absolute left-0 right-0 px-3 pt-3"
+        style={{ bottom: 0, paddingBottom: insets.bottom + 12, backgroundColor: theme.screenBg }}
       >
         <Pressable
           onPress={handleSave}
           disabled={loading}
-          className={`bg-[#76C893] py-4 rounded-full items-center active:opacity-90 ${
-            loading ? "opacity-60" : ""
-          }`}
+          className={`py-4 rounded-full items-center active:opacity-90 ${loading ? "opacity-60" : ""}`}
+          style={{ backgroundColor: theme.accent }}
         >
           <Text className="text-white font-bold text-base">
             {loading ? "Saving..." : "Save Change"}
@@ -746,7 +774,7 @@ export default function EditProfile() {
       </View>
 
       <Modal visible={editorVisible} animationType="slide" transparent={false}>
-        <View className="flex-1 bg-black">
+        <View className="flex-1" style={{ backgroundColor: "#000000" }}>
           <View className="flex-row items-center justify-between px-3 pt-14 pb-4">
             <Pressable onPress={cancelEditor}>
               <Ionicons name="arrow-back" size={26} color="white" />
@@ -773,8 +801,11 @@ export default function EditProfile() {
             )}
           </View>
 
-          <View className="px-3 pb-10 pt-4 bg-[#111827] rounded-t-3xl">
-            <Text className="text-center text-gray-300 mb-5">
+          <View
+            className="px-3 pb-10 pt-4 rounded-t-3xl"
+            style={{ backgroundColor: theme.navBg }}
+          >
+            <Text className="text-center mb-5" style={{ color: theme.textSecondary }}>
               {processingPhoto ? "Processing..." : "Photo tools"}
             </Text>
 
@@ -782,19 +813,23 @@ export default function EditProfile() {
               <Pressable
                 onPress={rotateLeft}
                 disabled={processingPhoto}
-                className="flex-1 mr-2 bg-[#1f2937] rounded-2xl py-4 items-center"
+                className="flex-1 mr-2 rounded-2xl py-4 items-center"
+                style={{ backgroundColor: theme.rowBg }}
               >
-                <Ionicons name="refresh-outline" size={22} color="white" />
-                <Text className="text-white mt-2 font-medium">Rotate Left</Text>
+                <Ionicons name="refresh-outline" size={22} color={theme.textPrimary} />
+                <Text className="mt-2 font-medium" style={{ color: theme.textPrimary }}>
+                  Rotate Left
+                </Text>
               </Pressable>
 
               <Pressable
                 onPress={rotateRight}
                 disabled={processingPhoto}
-                className="flex-1 ml-2 bg-[#1f2937] rounded-2xl py-4 items-center"
+                className="flex-1 ml-2 rounded-2xl py-4 items-center"
+                style={{ backgroundColor: theme.rowBg }}
               >
-                <Ionicons name="reload-outline" size={22} color="white" />
-                <Text className="text-white mt-2 font-medium">
+                <Ionicons name="reload-outline" size={22} color={theme.textPrimary} />
+                <Text className="mt-2 font-medium" style={{ color: theme.textPrimary }}>
                   Rotate Right
                 </Text>
               </Pressable>
@@ -803,20 +838,22 @@ export default function EditProfile() {
             <Pressable
               onPress={openFreeCrop}
               disabled={processingPhoto}
-              className="mt-4 bg-[#1f2937] rounded-2xl py-4 items-center"
+              className="mt-4 rounded-2xl py-4 items-center"
+              style={{ backgroundColor: theme.rowBg }}
             >
-              <Ionicons name="crop-outline" size={22} color="white" />
-              <Text className="text-white mt-2 font-medium">Free Crop</Text>
+              <Ionicons name="crop-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-2 font-medium" style={{ color: theme.textPrimary }}>
+                Free Crop
+              </Text>
             </Pressable>
 
             <Pressable
               onPress={saveEditedPhoto}
               disabled={processingPhoto}
-              className="mt-4 bg-[#76C893] rounded-2xl py-4 items-center"
+              className="mt-4 rounded-2xl py-4 items-center"
+              style={{ backgroundColor: theme.accent }}
             >
-              <Text className="text-white text-base font-bold">
-                Confirm
-              </Text>
+              <Text className="text-white text-base font-bold">Confirm</Text>
             </Pressable>
           </View>
         </View>

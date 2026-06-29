@@ -53,6 +53,42 @@ export function localDateFromYmd(dayKey: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/** Hour (0–23) and minute in an IANA timezone. */
+export function getLocalTimeParts(
+  date: Date,
+  timeZone: string
+): { hour: number; minute: number } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(date);
+    const hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+    return {
+      hour: Number.isFinite(hour) ? hour : 0,
+      minute: Number.isFinite(minute) ? minute : 0,
+    };
+  } catch {
+    return { hour: date.getHours(), minute: date.getMinutes() };
+  }
+}
+
+export function getLocalMinutesSinceMidnight(date: Date, timeZone: string): number {
+  const { hour, minute } = getLocalTimeParts(date, timeZone);
+  return hour * 60 + minute;
+}
+
+/** True when local time on `dayKey` is before 6:00 AM. */
+export function isBeforeLocalSixAm(date: Date, timeZone: string, dayKey: string): boolean {
+  if (formatCalendarDayKey(date, timeZone) !== dayKey) {
+    return formatCalendarDayKey(date, timeZone) < dayKey;
+  }
+  return getLocalMinutesSinceMidnight(date, timeZone) < 6 * 60;
+}
+
 /** Whole calendar days from `earlierYmd` to `laterYmd` (YYYY-MM-DD, UTC date parts). */
 export function diffCalendarDays(earlierYmd: string, laterYmd: string): number {
   const [y1, m1, d1] = earlierYmd.split("-").map((x) => parseInt(x, 10));

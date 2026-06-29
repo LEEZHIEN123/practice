@@ -1,5 +1,11 @@
 import { Pressable } from "@/components/Pressable";
 import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import {
   defaultWelcomeMessages,
   deleteArchivedChat,
   hasUserMessages,
@@ -14,6 +20,7 @@ import {
 import { fetchCoachUserContext } from "@/lib/aiCoachContext";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import { isGeminiConfigured, sendCoachMessage, type CoachChatTurn } from "@/lib/geminiCoach";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -79,7 +86,7 @@ function MessageBubble({
   message: ChatMessage;
   onCopy: (text: string) => void;
 }) {
-  const copyBtnColor = message.role === "user" ? "#ffffff" : "#6b7280";
+  const { cardStyle, textSecondary, theme } = useThemedScreen();
 
   if (message.role === "assistant") {
     return (
@@ -88,13 +95,14 @@ function MessageBubble({
           <MaterialCommunityIcons name="robot-happy-outline" size={18} color="white" />
         </View>
         <View
-          className="flex-1 shrink bg-white rounded-2xl px-4 py-3 border border-gray-200"
-          style={{ maxWidth: "88%" }}
+          className="flex-1 shrink rounded-2xl px-4 py-3"
+          style={[{ maxWidth: "88%" }, cardStyle]}
         >
           <ChatFormattedText
             text={message.text}
-            className="text-base text-gray-800 leading-6 text-left"
-            boldClassName="font-extrabold text-gray-900"
+            className="text-base leading-6 text-left"
+            style={textSecondary}
+            boldClassName="font-extrabold"
             selectable
           />
           <Pressable
@@ -103,8 +111,10 @@ function MessageBubble({
             hitSlop={8}
             className="flex-row items-center self-end mt-2 active:opacity-70"
           >
-            <Ionicons name="copy-outline" size={15} color={copyBtnColor} />
-            <Text className="text-xs text-gray-500 ml-1 font-semibold text-left">Copy</Text>
+            <Ionicons name="copy-outline" size={15} color={theme.iconMuted} />
+            <ThemedText variant="muted" className="text-xs ml-1 font-semibold text-left">
+              Copy
+            </ThemedText>
           </Pressable>
         </View>
       </View>
@@ -138,6 +148,8 @@ export default function AICoachScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
+  const { screenStyle, cardStyle, iconButtonStyle, textSecondary, theme } = useThemedScreen();
+  const { inputStyle, modalCardStyle, placeholderColor, rowBorderStyle } = useProfileCardStyles();
   const scrollRef = useRef<ScrollView>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -383,28 +395,26 @@ export default function AICoachScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-[#f3f4f3]"
+      style={screenStyle}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? headerOffset : 0}
     >
       <View className="flex-1" style={{ paddingTop: insets.top + 12 }}>
         <View className="flex-row items-center px-3 mb-4">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-2 shrink-0"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
+          <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-2 shrink-0" />
           <View className="flex-1 min-w-0 mr-2">
-            <Text className="text-2xl font-extrabold text-gray-900 text-left">AI Chatbot</Text>
-            <Text className="text-xs font-semibold text-[#52B69A] mt-0.5 text-left">Powered by Gemini</Text>
+            <ThemedText className="text-2xl font-extrabold text-left">AI Chatbot</ThemedText>
+            <ThemedText variant="accent" className="text-xs font-semibold mt-0.5 text-left">
+              Powered by Gemini
+            </ThemedText>
           </View>
           <Pressable
             onPress={() => void openHistory()}
             hitSlop={8}
-            className="w-10 h-10 rounded-full bg-white items-center justify-center border border-gray-200 mr-2 shrink-0 active:opacity-90"
+            className="w-10 h-10 rounded-full items-center justify-center border mr-2 shrink-0 active:opacity-90"
+            style={[iconButtonStyle, { borderColor: theme.cardBorder }]}
           >
-            <Ionicons name="time-outline" size={22} color="#374151" />
+            <Ionicons name="time-outline" size={22} color={theme.textSecondary} />
           </Pressable>
           <Pressable
             onPress={() => void handleNewChat()}
@@ -434,26 +444,28 @@ export default function AICoachScreen() {
                 <MaterialCommunityIcons name="robot-happy-outline" size={18} color="white" />
               </View>
               <View
-                className="flex-1 shrink bg-white rounded-2xl px-4 py-3 border border-gray-200 flex-row items-center"
-                style={{ maxWidth: "88%" }}
+                className="flex-1 shrink rounded-2xl px-4 py-3 flex-row items-center"
+                style={[{ maxWidth: "88%" }, cardStyle]}
               >
-                <ActivityIndicator size="small" color="#76C893" />
-                <Text className="text-sm text-gray-500 ml-2 text-left">Thinking...</Text>
+                <ActivityIndicator size="small" color={theme.accent} />
+                <ThemedText variant="muted" className="text-sm ml-2 text-left">
+                  Thinking...
+                </ThemedText>
               </View>
             </View>
           ) : null}
 
           {showSuggestedPrompts ? (
             <View className="mt-2">
-              <Text className="text-sm font-extrabold text-gray-900 mb-3 text-left">Suggested prompts</Text>
+              <ThemedText className="text-sm font-extrabold mb-3 text-left">Suggested prompts</ThemedText>
               <View className="gap-2">
                 {PROMPTS.map((prompt) => (
-                  <Pressable
-                    key={prompt}
-                    onPress={() => void sendText(prompt)}
-                    className="bg-white rounded-2xl px-4 py-3 border border-gray-200 active:opacity-90"
-                  >
-                    <Text className="text-sm font-semibold text-gray-700 text-left">{prompt}</Text>
+                  <Pressable key={prompt} onPress={() => void sendText(prompt)} className="active:opacity-90">
+                    <ThemedCard rounded="2xl" className="px-4 py-3">
+                      <ThemedText variant="secondary" className="text-sm font-semibold text-left">
+                        {prompt}
+                      </ThemedText>
+                    </ThemedCard>
                   </Pressable>
                 ))}
               </View>
@@ -462,19 +474,22 @@ export default function AICoachScreen() {
         </ScrollView>
 
         <View
-          className="px-3 pt-3 border-t border-gray-200 bg-white"
-          style={{ paddingBottom: inputBarBottomPad }}
+          className="px-3 pt-3 border-t"
+          style={[
+            { paddingBottom: inputBarBottomPad, backgroundColor: theme.navBg, borderTopColor: theme.navBorder },
+          ]}
         >
           <View className="flex-row items-end gap-2">
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="Ask something..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={placeholderColor}
               multiline
               maxLength={2000}
               editable={!sending}
-              className="flex-1 min-h-[44px] max-h-28 bg-[#f3f4f3] rounded-2xl px-4 py-3 text-base text-gray-900 border border-gray-200"
+              className="flex-1 min-h-[44px] max-h-28 rounded-2xl px-4 py-3 text-base"
+              style={inputStyle}
               onSubmitEditing={() => void sendText(input)}
               blurOnSubmit={false}
               onFocus={scrollToBottom}
@@ -482,9 +497,10 @@ export default function AICoachScreen() {
             <Pressable
               onPress={() => void sendText(input)}
               disabled={sending || !input.trim()}
-              className={`w-12 h-12 rounded-full items-center justify-center ${
-                sending || !input.trim() ? "bg-gray-300" : "bg-[#76C893] active:opacity-90"
-              }`}
+              className="w-12 h-12 rounded-full items-center justify-center active:opacity-90"
+              style={{
+                backgroundColor: sending || !input.trim() ? theme.iconMuted : theme.accent,
+              }}
             >
               {sending ? (
                 <ActivityIndicator size="small" color="white" />
@@ -497,40 +513,48 @@ export default function AICoachScreen() {
       </View>
 
       <Modal visible={historyVisible} transparent animationType="fade" onRequestClose={() => setHistoryVisible(false)}>
-        <Pressable className="flex-1 bg-black/40 justify-end" onPress={() => setHistoryVisible(false)}>
+        <Pressable
+          className="flex-1 justify-end"
+          style={{ backgroundColor: theme.modalOverlay }}
+          onPress={() => setHistoryVisible(false)}
+        >
           <Pressable
-            className="bg-white rounded-t-3xl px-4 pt-5 border border-gray-100"
-            style={{ paddingBottom: insets.bottom + 16, maxHeight: "70%" }}
+            className="rounded-t-3xl px-4 pt-5"
+            style={[
+              modalCardStyle,
+              { paddingBottom: insets.bottom + 16, maxHeight: "70%", borderBottomWidth: 0 },
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xl font-extrabold text-gray-900 text-left">Chat history</Text>
+              <ThemedText className="text-xl font-extrabold text-left">Chat history</ThemedText>
               <Pressable onPress={() => setHistoryVisible(false)} hitSlop={12}>
-                <Ionicons name="close" size={26} color="#374151" />
+                <Ionicons name="close" size={26} color={theme.textSecondary} />
               </Pressable>
             </View>
             {archivedSessions.length === 0 ? (
-              <Text className="text-sm text-gray-500 leading-6 pb-4 text-left">
+              <ThemedText variant="muted" className="text-sm leading-6 pb-4 text-left">
                 Your chat title appears here after you ask a question and get a reply. Follow-up questions stay in the
                 same chat until you tap New chat.
-              </Text>
+              </ThemedText>
             ) : (
               <ScrollView className="max-h-96" keyboardShouldPersistTaps="handled">
                 {archivedSessions.map((session) => (
                   <View
                     key={session.id}
-                    className="mb-2 flex-row items-start gap-2 rounded-2xl border border-gray-200 bg-[#f9fafb] px-3 py-3"
+                    className="mb-2 flex-row items-start gap-2 rounded-2xl px-3 py-3"
+                    style={rowBorderStyle}
                   >
                     <Pressable
                       onPress={() => resumeSession(session)}
                       className="flex-1 min-w-0 active:opacity-90"
                     >
-                      <Text className="text-sm font-bold text-gray-900 text-left" numberOfLines={2}>
+                      <ThemedText className="text-sm font-bold text-left" numberOfLines={2}>
                         {session.preview}
-                      </Text>
-                      <Text className="text-xs text-gray-500 mt-1 text-left">
+                      </ThemedText>
+                      <ThemedText variant="muted" className="text-xs mt-1 text-left">
                         {formatSessionDate(session.updatedAt)}
-                      </Text>
+                      </ThemedText>
                     </Pressable>
                     <Pressable
                       onPress={() => handleDeleteSession(session.id)}

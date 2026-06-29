@@ -1,4 +1,10 @@
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+} from "@/components/themed/ThemedUi";
 import type { CommunityNotification } from "@/lib/communityTypes";
 import {
   acceptFriendRequest,
@@ -9,21 +15,23 @@ import {
   subscribeNotifications,
 } from "@/lib/communityService";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { db } from "../firebaseConfig";
 import type { FriendRequest } from "../lib/communityTypes";
 
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
+  const { theme } = useThemedScreen();
   return (
     <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
+      className="rounded-full items-center justify-center overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: theme.accent }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
@@ -37,6 +45,7 @@ function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }
 export default function CommunityNotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { cardStyle, theme } = useThemedScreen();
   const [notifications, setNotifications] = useState<CommunityNotification[]>([]);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -148,7 +157,7 @@ export default function CommunityNotificationsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
+    <ThemedScreen>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 24,
@@ -157,48 +166,49 @@ export default function CommunityNotificationsScreen() {
         }}
       >
         <View className="flex-row items-center mb-5">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-2xl font-extrabold text-gray-900 flex-1">Notifications</Text>
+          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
+          <ThemedText className="text-2xl font-extrabold flex-1">Notifications</ThemedText>
         </View>
 
-        <View className="bg-white rounded-[28px] p-5 border border-gray-200 gap-3">
+        <ThemedCard className="p-5 gap-3" rounded="2xl">
           {notifications.length === 0 ? (
-            <Text className="text-sm text-gray-500 text-center py-8">No notifications yet.</Text>
+            <ThemedText variant="muted" className="text-sm text-center py-8">
+              No notifications yet.
+            </ThemedText>
           ) : null}
 
           {notifications.map((notification) => {
             const busy = loadingAction === notification.id;
+            const unread = !notification.read;
             return (
               <Pressable
                 key={notification.id}
                 onPress={() => void handleOpen(notification)}
-                className={`rounded-2xl px-4 py-4 border ${
-                  notification.read ? "bg-[#f9fafb] border-gray-200" : "bg-[#eaf7f0] border-[#52B69A]"
-                }`}
+                className="rounded-2xl px-4 py-4 border"
+                style={
+                  unread
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accentText }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
                 <View className="flex-row items-center">
                   <ProfileAvatar uri={notification.fromUserProfileImage} size={44} />
                   <View className="flex-1 ml-3">
                     <View className="flex-row items-start justify-between gap-2">
-                      <Text className="text-sm font-extrabold text-gray-900 flex-1">
+                      <ThemedText className="text-sm font-extrabold flex-1">
                         {notification.fromUserName}
-                      </Text>
-                      <Text className="text-[10px] text-gray-400">
+                      </ThemedText>
+                      <ThemedText variant="muted" className="text-[10px]">
                         {formatChatMessageTime(notification.createdAt)}
-                      </Text>
+                      </ThemedText>
                     </View>
-                    <Text className="text-sm text-gray-600 mt-1">
+                    <ThemedText variant="secondary" className="text-sm mt-1">
                       {notificationMessage(notification)}
-                    </Text>
+                    </ThemedText>
                     {notification.postPreview ? (
-                      <Text className="text-xs text-gray-400 mt-1" numberOfLines={2}>
+                      <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
                         {notification.postPreview}
-                      </Text>
+                      </ThemedText>
                     ) : null}
                   </View>
                 </View>
@@ -215,23 +225,26 @@ export default function CommunityNotificationsScreen() {
                       {busy ? (
                         <ActivityIndicator color="white" size="small" />
                       ) : (
-                        <Text className="text-xs font-extrabold text-white">Accept</Text>
+                        <ThemedText className="text-xs font-extrabold text-white">Accept</ThemedText>
                       )}
                     </Pressable>
                     <Pressable
                       onPress={() => void handleReject(notification)}
                       disabled={busy}
-                      className="flex-1 rounded-full py-2.5 items-center bg-white border border-gray-200"
+                      className="flex-1 rounded-full py-2.5 items-center border active:opacity-90"
+                      style={cardStyle}
                     >
-                      <Text className="text-xs font-extrabold text-gray-600">Decline</Text>
+                      <ThemedText variant="secondary" className="text-xs font-extrabold">
+                        Decline
+                      </ThemedText>
                     </Pressable>
                   </View>
                 ) : null}
               </Pressable>
             );
           })}
-        </View>
+        </ThemedCard>
       </ScrollView>
-    </View>
+    </ThemedScreen>
   );
 }

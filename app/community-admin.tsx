@@ -1,5 +1,12 @@
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import type { CommunityReport } from "@/lib/communityTypes";
 import { ADMIN_BLOCK_POST_REASONS } from "@/lib/communityTypes";
 import {
@@ -8,15 +15,17 @@ import {
   dismissReport,
   subscribePendingReports,
 } from "@/lib/communityService";
-import { Ionicons } from "@expo/vector-icons";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function CommunityAdminScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { theme } = useThemedScreen();
+  const { rowBorderStyle } = useProfileCardStyles();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [reports, setReports] = useState<CommunityReport[]>([]);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -88,31 +97,31 @@ export default function CommunityAdminScreen() {
 
   if (isAdmin === null) {
     return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center">
+      <ThemedScreen className="items-center justify-center">
         <ActivityIndicator size="large" color="#52B69A" />
-      </View>
+      </ThemedScreen>
     );
   }
 
   if (!isAdmin) {
     return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center px-8">
-        <Text className="text-lg font-extrabold text-gray-900 text-center">Admin only</Text>
-        <Text className="text-sm text-gray-500 text-center mt-2">
+      <ThemedScreen className="items-center justify-center px-8">
+        <ThemedText className="text-lg font-extrabold text-center">Admin only</ThemedText>
+        <ThemedText variant="muted" className="text-sm text-center mt-2">
           You do not have permission to view moderation reports.
-        </Text>
+        </ThemedText>
         <Pressable
           onPress={() => router.back()}
           className="mt-6 rounded-full bg-[#52B69A] px-8 py-3"
         >
-          <Text className="text-sm font-extrabold text-white">Go Back</Text>
+          <ThemedText className="text-sm font-extrabold text-white">Go Back</ThemedText>
         </Pressable>
-      </View>
+      </ThemedScreen>
     );
   }
 
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
+    <ThemedScreen>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 24,
@@ -121,52 +130,51 @@ export default function CommunityAdminScreen() {
         }}
       >
         <View className="flex-row items-center mb-5">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-          >
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-2xl font-extrabold text-gray-900 flex-1">Moderation</Text>
+          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
+          <ThemedText className="text-2xl font-extrabold flex-1">Moderation</ThemedText>
         </View>
 
-        <View className="bg-white rounded-[28px] p-5 border border-gray-200 gap-3">
-          <Text className="text-sm text-gray-500 mb-1">
+        <ThemedCard className="p-5 gap-3">
+          <ThemedText variant="muted" className="text-sm mb-1">
             Review reported posts and comments. Block posts that violate community rules.
-          </Text>
+          </ThemedText>
 
           {reports.length === 0 ? (
-            <Text className="text-sm text-gray-500 text-center py-8">No pending reports.</Text>
+            <ThemedText variant="muted" className="text-sm text-center py-8">
+              No pending reports.
+            </ThemedText>
           ) : null}
 
           {reports.map((report) => {
             const busy = actionId === report.id;
             return (
-              <View
-                key={report.id}
-                className="bg-[#f3f4f3] rounded-2xl px-4 py-4 border border-gray-200"
-              >
+              <View key={report.id} className="rounded-2xl px-4 py-4" style={rowBorderStyle}>
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-xs font-extrabold text-[#52B69A] uppercase">
+                  <ThemedText variant="accent" className="text-xs font-extrabold uppercase">
                     {report.targetType}
-                  </Text>
-                  <Text className="text-xs text-gray-400">
+                  </ThemedText>
+                  <ThemedText variant="muted" className="text-xs">
                     {new Date(report.createdAt).toLocaleString()}
-                  </Text>
+                  </ThemedText>
                 </View>
 
-                <Text className="text-sm font-extrabold text-gray-900 mt-2">
+                <ThemedText className="text-sm font-extrabold mt-2">
                   Reported by {report.reporterName}
-                </Text>
-                <Text className="text-sm text-gray-600 mt-1">
+                </ThemedText>
+                <ThemedText variant="secondary" className="text-sm mt-1">
                   Reason: {report.reason}
-                </Text>
-                <Text className="text-sm text-gray-600 mt-1">
+                </ThemedText>
+                <ThemedText variant="secondary" className="text-sm mt-1">
                   Author: {report.targetAuthorName}
-                </Text>
-                <Text className="text-sm text-gray-700 mt-3 leading-6 bg-white rounded-xl px-3 py-3 border border-gray-200">
-                  {report.targetContent}
-                </Text>
+                </ThemedText>
+                <View
+                  className="mt-3 rounded-xl px-3 py-3 border"
+                  style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
+                >
+                  <ThemedText variant="secondary" className="text-sm leading-6">
+                    {report.targetContent}
+                  </ThemedText>
+                </View>
 
                 {report.targetType === "post" ? (
                   <View className="flex-row gap-2 mt-3">
@@ -178,30 +186,36 @@ export default function CommunityAdminScreen() {
                       {busy ? (
                         <ActivityIndicator color="white" size="small" />
                       ) : (
-                        <Text className="text-xs font-extrabold text-white">Block post</Text>
+                        <ThemedText className="text-xs font-extrabold text-white">Block post</ThemedText>
                       )}
                     </Pressable>
                     <Pressable
                       onPress={() => handleDismiss(report)}
                       disabled={busy}
-                      className="flex-1 rounded-full py-2.5 items-center bg-white border border-gray-200"
+                      className="flex-1 rounded-full py-2.5 items-center border"
+                      style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
                     >
-                      <Text className="text-xs font-extrabold text-gray-600">Dismiss</Text>
+                      <ThemedText variant="secondary" className="text-xs font-extrabold">
+                        Dismiss
+                      </ThemedText>
                     </Pressable>
                   </View>
                 ) : (
                   <Pressable
                     onPress={() => handleDismiss(report)}
                     disabled={busy}
-                    className="mt-3 rounded-full py-2.5 items-center bg-white border border-gray-200"
+                    className="mt-3 rounded-full py-2.5 items-center border"
+                    style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
                   >
-                    <Text className="text-xs font-extrabold text-gray-600">Dismiss report</Text>
+                    <ThemedText variant="secondary" className="text-xs font-extrabold">
+                      Dismiss report
+                    </ThemedText>
                   </Pressable>
                 )}
               </View>
             );
           })}
-        </View>
+        </ThemedCard>
       </ScrollView>
 
       <BlockReasonModal
@@ -212,6 +226,6 @@ export default function CommunityAdminScreen() {
         onClose={() => setBlockReport(null)}
         onConfirm={handleConfirmReportBlock}
       />
-    </View>
+    </ThemedScreen>
   );
 }

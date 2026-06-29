@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
 
@@ -19,26 +20,29 @@ export function CommunitySearchBar({
   loading = false,
   className = "mx-4 mb-4",
 }: CommunitySearchBarProps) {
+  const { cardStyle, textPrimary, theme } = useThemedScreen();
+
   return (
     <View className={className}>
       {label ? (
-        <Text className="text-sm font-extrabold text-gray-900 mb-2">{label}</Text>
+        <Text className="text-sm font-extrabold mb-2" style={textPrimary}>{label}</Text>
       ) : null}
-      <View className="flex-row items-center bg-white rounded-2xl px-4 py-3 border border-gray-200">
-        <Ionicons name="search" size={18} color="#9ca3af" />
+      <View className="flex-row items-center rounded-2xl px-4 py-3" style={cardStyle}>
+        <Ionicons name="search" size={18} color={theme.iconMuted} />
         <TextInput
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          className="flex-1 ml-2 text-sm text-gray-800"
-          placeholderTextColor="#9ca3af"
+          className="flex-1 ml-2 text-sm"
+          style={{ color: theme.textPrimary }}
+          placeholderTextColor={theme.textMuted}
           autoCapitalize="none"
         />
         {loading ? (
-          <ActivityIndicator size="small" color="#52B69A" />
+          <ActivityIndicator size="small" color={theme.accent} />
         ) : value ? (
           <Pressable onPress={() => onChangeText("")}>
-            <Ionicons name="close-circle" size={18} color="#9ca3af" />
+            <Ionicons name="close-circle" size={18} color={theme.iconMuted} />
           </Pressable>
         ) : null}
       </View>

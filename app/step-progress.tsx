@@ -1,6 +1,14 @@
+import {
+    ThemedBackButton,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -8,7 +16,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -47,6 +55,13 @@ function effectiveSteps(data: { stepsAuto?: unknown; stepsManual?: unknown } | u
 export default function StepProgressScreen() {
   const router = useRouter();
   const calendarTz = useUserCalendarTimezone();
+  const {
+    cardStyle,
+    segmentTrackStyle,
+    segmentActiveStyle,
+    theme,
+  } = useThemedScreen();
+  const { inputStyle, modalCardStyle, placeholderColor } = useProfileCardStyles();
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const params = useLocalSearchParams<{ period?: string }>();
   const initialPeriod = (params.period === "month" || params.period === "year" || params.period === "week"
@@ -595,39 +610,43 @@ export default function StepProgressScreen() {
   const editDayDisplay = editDayManual != null ? editDayManual : editDayAuto;
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
-          <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-extrabold text-gray-900">Step Progress</Text>
-          <View className="w-12 h-12" />
+          <ThemedBackButton onPress={() => router.back()} />
+          <ThemedText className="text-xl font-extrabold">Step Progress</ThemedText>
+          <View className="w-11 h-11" />
         </View>
 
-        <View className="bg-white rounded-3xl p-5 border border-gray-100">
+        <ThemedCard className="p-5">
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-base tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
-              <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
+              <ThemedText className="text-base tracking-widest font-extrabold">GRAPH PERIOD</ThemedText>
+              <ThemedText className="text-lg font-extrabold mt-2">{title}</ThemedText>
             </View>
-            <Pressable onPress={openEdit} className="px-4 py-2 rounded-full bg-[#76C893]">
-              <Text className="text-white font-extrabold">Edit steps</Text>
+            <Pressable onPress={openEdit} className="px-4 py-2 rounded-full" style={{ backgroundColor: theme.accent }}>
+              <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                Edit steps
+              </ThemedText>
             </Pressable>
           </View>
 
-          <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+          <View className="mt-4 rounded-full p-1 flex-row" style={segmentTrackStyle}>
             {(["week", "month", "year"] as const).map((k) => {
               const active = period === k;
               return (
                 <Pressable
                   key={k}
                   onPress={() => setPeriod(k)}
-                  className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                  className="flex-1 py-3 rounded-full items-center"
+                  style={active ? segmentActiveStyle : undefined}
                 >
-                  <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                  <ThemedText
+                    variant={active ? "accent" : "muted"}
+                    className="font-bold"
+                  >
                     {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               );
             })}
@@ -635,26 +654,29 @@ export default function StepProgressScreen() {
 
           <View className="mt-4 flex-row items-center">
             <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-              <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                <Ionicons name="chevron-back" size={18} color="#76C893" />
+              <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                <Ionicons name="chevron-back" size={18} color={theme.accent} />
               </View>
             </Pressable>
 
             <View className="flex-1 mx-2">
-              <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
-                <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+              <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
                 {!loading && stepBarTooltip ? (
                   <View className="absolute top-2 left-2 right-2 items-center px-1">
-                    <View className="px-3 py-2 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] max-w-full">
-                      <Text className="text-[11px] font-bold text-[#2f855a] text-center leading-5">
+                    <View
+                      className="px-3 py-2 rounded-2xl border max-w-full"
+                      style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                    >
+                      <ThemedText variant="accent" className="text-[11px] font-bold text-center leading-5">
                         {stepBarTooltip}
-                      </Text>
+                      </ThemedText>
                     </View>
                   </View>
                 ) : null}
                 {loading ? (
                   <View className="flex-1 items-center justify-center">
-                    <Text className="text-gray-500 font-semibold">Loading…</Text>
+                    <ThemedText variant="muted" className="font-semibold">Loading…</ThemedText>
                   </View>
                 ) : (
                   <View className="flex-1 flex-row items-end px-3 pb-5">
@@ -673,8 +695,12 @@ export default function StepProgressScreen() {
                             hitSlop={8}
                           >
                             <View
-                              style={{ height: Math.max(h, 14), width: active ? 14 : 12, borderRadius: 999 }}
-                              className={v === 0 ? "bg-gray-300" : active ? "bg-[#52B69A]" : "bg-[#76C893]"}
+                              style={{
+                                height: Math.max(h, 14),
+                                width: active ? 14 : 12,
+                                borderRadius: 999,
+                                backgroundColor: v === 0 ? theme.iconMuted : active ? theme.accentText : theme.accent,
+                              }}
                             />
                           </Pressable>
                         );
@@ -689,13 +715,16 @@ export default function StepProgressScreen() {
                   const isCurrentLabel = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
                   return (
                     <View key={`${d}-${idx}`} className="flex-1 items-center">
-                      <Text
-                        className={`text-[10px] font-bold ${isCurrentLabel ? "text-red-600" : "text-gray-500"}`}
+                      <ThemedText
+                        className="text-[10px] font-bold"
+                        style={{ color: isCurrentLabel ? theme.danger : theme.textMuted }}
                       >
                         {d}
-                      </Text>
+                      </ThemedText>
                       {isCurrentLabel ? (
-                        <Text className="text-[9px] font-extrabold text-red-600 mt-0.5">Current</Text>
+                        <ThemedText className="text-[9px] font-extrabold mt-0.5" style={{ color: theme.danger }}>
+                          Current
+                        </ThemedText>
                       ) : null}
                     </View>
                   );
@@ -705,68 +734,75 @@ export default function StepProgressScreen() {
 
             {canGoNext ? (
               <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                  <Ionicons name="chevron-forward" size={18} color="#76C893" />
+                <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                  <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                 </View>
               </Pressable>
             ) : (
               <View className="w-8 h-52" />
             )}
           </View>
-        </View>
+        </ThemedCard>
 
-        <View className="mt-5 bg-white rounded-3xl p-5 pb-6 border border-gray-100">
-          <Text className="text-base tracking-widest text-gray-900 font-extrabold">STEP RECORD</Text>
-          <Text className="text-sm text-gray-500 mt-2">Steps reset each day.</Text>
+        <ThemedCard className="mt-5 p-5 pb-6">
+          <ThemedText className="text-base tracking-widest font-extrabold">STEP RECORD</ThemedText>
+          <ThemedText variant="muted" className="text-sm mt-2">Steps reset each day.</ThemedText>
           <View className="mt-4 gap-3">
             {windowRows.length === 0 ? (
-              <Text className="text-gray-500">No step data yet.</Text>
+              <ThemedText variant="muted">No step data yet.</ThemedText>
             ) : (
               windowRows.map((r, idx) => {
                 const isCurrentRow = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
                 return (
                   <View
                     key={`${r.date.getTime()}-${idx}`}
-                    className={`flex-row items-center justify-between rounded-2xl px-4 py-4 bg-[#f3f4f3] ${
-                      isCurrentRow ? "border-2 border-red-500" : "border border-gray-200"
+                    className={`flex-row items-center justify-between rounded-2xl px-4 py-4 border ${
+                      isCurrentRow ? "border-2" : ""
                     }`}
+                    style={{
+                      backgroundColor: theme.rowBg,
+                      borderColor: isCurrentRow ? theme.danger : theme.cardBorder,
+                    }}
                   >
                     <View className="flex-row items-center flex-1 flex-wrap pr-2">
-                      <Text className="text-base font-bold text-gray-700">
+                      <ThemedText variant="secondary" className="text-base font-bold">
                         {period === "week" ? formatLongDate(r.date) : r.label}
-                      </Text>
+                      </ThemedText>
                       {isCurrentRow ? (
-                        <Text className="ml-2 text-xs font-extrabold text-red-600">Current</Text>
+                        <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
+                          Current
+                        </ThemedText>
                       ) : null}
                     </View>
-                    <Text className="text-base font-extrabold text-gray-900">
+                    <ThemedText className="text-base font-extrabold">
                       {r.steps ? `${r.steps.toLocaleString()} steps` : "—"}
-                    </Text>
+                    </ThemedText>
                   </View>
                 );
               })
             )}
           </View>
-        </View>
+        </ThemedCard>
       </ScrollView>
 
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-5">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
             <View className="flex-row items-start justify-between">
               <View className="flex-1 pr-2">
-                <Text className="text-xl font-extrabold text-gray-900">Edit steps</Text>
-                <Text className="text-gray-500 mt-1">{formatLongDate(editModalDate)}</Text>
-                <Text className="text-gray-500 mt-2 text-sm">
+                <ThemedText className="text-xl font-extrabold">Edit steps</ThemedText>
+                <ThemedText variant="muted" className="mt-1">{formatLongDate(editModalDate)}</ThemedText>
+                <ThemedText variant="muted" className="mt-2 text-sm">
                   Auto tracking: {editDayAuto.toLocaleString()} steps
                   {editDayManual != null ? " • Manual override active" : ""}
-                </Text>
+                </ThemedText>
               </View>
               <Pressable
                 onPress={() => setShowEditDatePicker(true)}
-                className="w-11 h-11 rounded-full bg-[#eaf7f0] border border-[#b7ead1] items-center justify-center"
+                className="w-11 h-11 rounded-full border items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
               >
-                <Ionicons name="calendar-outline" size={22} color="#52B69A" />
+                <Ionicons name="calendar-outline" size={22} color={theme.accentText} />
               </Pressable>
             </View>
 
@@ -785,38 +821,46 @@ export default function StepProgressScreen() {
             )}
 
             <View className="mt-5">
-              <Text className="text-gray-900 font-extrabold ml-1 mb-2">TOTAL STEPS FOR THIS DAY</Text>
+              <ThemedText className="font-extrabold ml-1 mb-2">TOTAL STEPS FOR THIS DAY</ThemedText>
               <TextInput
                 value={stepText}
                 onChangeText={(t) => setStepText(t.replace(/[^\d]/g, ""))}
                 keyboardType="number-pad"
-                className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900"
+                className="rounded-2xl px-4 py-3"
+                style={inputStyle}
                 placeholder={String(editDayDisplay || 0)}
+                placeholderTextColor={placeholderColor}
               />
             </View>
 
             <View className="flex-row justify-between mt-6">
               <Pressable onPress={resetToAuto} disabled={saving || editDayManual == null} className="px-4 py-3">
-                <Text className={`font-extrabold ${editDayManual == null ? "text-gray-300" : "text-[#52B69A]"}`}>
+                <ThemedText
+                  className="font-extrabold"
+                  style={{ color: editDayManual == null ? theme.iconMuted : theme.accentText }}
+                >
                   Reset to auto
-                </Text>
+                </ThemedText>
               </Pressable>
               <View className="flex-row">
                 <Pressable onPress={() => setEditOpen(false)} className="px-4 py-3 mr-2">
-                  <Text className="font-extrabold text-gray-500">Cancel</Text>
+                  <ThemedText variant="muted" className="font-extrabold">Cancel</ThemedText>
                 </Pressable>
                 <Pressable
                   onPress={saveManual}
                   disabled={saving}
-                  className={`px-5 py-3 rounded-2xl bg-[#76C893] ${saving ? "opacity-60" : "opacity-100"}`}
+                  className={`px-5 py-3 rounded-2xl ${saving ? "opacity-60" : "opacity-100"}`}
+                  style={{ backgroundColor: theme.accent }}
                 >
-                  <Text className="font-extrabold text-white">{saving ? "Saving..." : "Save"}</Text>
+                  <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                    {saving ? "Saving..." : "Save"}
+                  </ThemedText>
                 </Pressable>
               </View>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+    </ThemedScreen>
   );
 }

@@ -1,18 +1,28 @@
-import React, { useState } from "react";
-import { Alert, ScrollView, Text, TextInput, View } from "react-native";
 import { Pressable } from "@/components/Pressable";
+import { ThemedBackButton, ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Alert, ScrollView, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const SUPPORT_EMAIL = "leezhien@1utar.my";
 
 export default function ContactUsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { screenStyle, textPrimary, textSecondary, theme } = useThemedScreen();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+
+  const inputStyle = {
+    backgroundColor: theme.rowBg,
+    borderColor: theme.cardBorder,
+    borderWidth: 1,
+    color: theme.textPrimary,
+  };
 
   const sendMessage = async () => {
     const sub = subject.trim();
@@ -39,7 +49,7 @@ export default function ContactUsScreen() {
       await Linking.openURL(url);
       Alert.alert(
         "Opening email",
-        `We’ll reply as soon as possible via email (${SUPPORT_EMAIL}).`
+        `We'll reply as soon as possible via email (${SUPPORT_EMAIL}).`
       );
       setSubject("");
       setMessage("");
@@ -53,7 +63,7 @@ export default function ContactUsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <View className="flex-1" style={screenStyle}>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: insets.bottom + 24,
@@ -63,22 +73,20 @@ export default function ContactUsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View className="relative mb-6 h-12 justify-center">
-          <Pressable
-            onPress={() => {
-              try {
-                router.back();
-              } catch {
-                router.replace("/profile");
-              }
-            }}
-            hitSlop={12}
-            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2"
-          >
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-              <Ionicons name="arrow-back" size={24} color="#111827" />
-            </View>
-          </Pressable>
-          <Text className="text-center text-xl font-extrabold text-gray-900">
+          <View className="absolute left-0 top-0 h-14 w-20 justify-center pl-2">
+            <ThemedBackButton
+              onPress={() => {
+                try {
+                  router.back();
+                } catch {
+                  router.replace("/profile");
+                }
+              }}
+              icon="arrow-back"
+              className="w-12 h-12"
+            />
+          </View>
+          <Text className="text-center text-xl font-extrabold" style={textPrimary}>
             Contact Us
           </Text>
         </View>
@@ -87,37 +95,41 @@ export default function ContactUsScreen() {
           <View className="w-20 h-20 rounded-full bg-[#dff5e8] items-center justify-center border-2 border-[#b7ead1]">
             <MaterialCommunityIcons name="face-agent" size={40} color="#76C893" />
           </View>
-          <Text className="text-2xl font-extrabold text-gray-900 mt-4">
-            How can we help?
-          </Text>
-          <Text className="text-base text-gray-500 mt-2 text-center px-2">
+          <ThemedText className="text-2xl font-extrabold mt-4">How can we help?</ThemedText>
+          <ThemedText variant="muted" className="text-base mt-2 text-center px-2">
             Our team usually responds within 24 hours.
-          </Text>
+          </ThemedText>
         </View>
 
-        <View className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm mb-6">
-          <Text className="text-xs font-bold text-[#52B69A] tracking-[0.15em] mb-4">
+        <ThemedCard className="p-5 mb-6">
+          <ThemedText variant="accent" className="text-xs font-bold tracking-[0.15em] mb-4">
             SEND US A MESSAGE
+          </ThemedText>
+          <Text className="text-sm font-semibold mb-2" style={textSecondary}>
+            Subject
           </Text>
-          <Text className="text-sm font-semibold text-gray-700 mb-2">Subject</Text>
           <TextInput
             value={subject}
             onChangeText={setSubject}
             placeholder="e.g. Subscription issue"
-            placeholderTextColor="#9ca3af"
-            className="border border-gray-200 rounded-2xl px-4 py-3 text-base text-gray-900 mb-4 bg-[#fafafa]"
+            placeholderTextColor={theme.textMuted}
+            className="rounded-2xl px-4 py-3 text-base mb-4"
+            style={inputStyle}
           />
-          <Text className="text-sm font-semibold text-gray-700 mb-2">Message</Text>
+          <Text className="text-sm font-semibold mb-2" style={textSecondary}>
+            Message
+          </Text>
           <TextInput
             value={message}
             onChangeText={setMessage}
             placeholder="Describe your issue or feedback here..."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={theme.textMuted}
             multiline
             textAlignVertical="top"
-            className="border border-gray-200 rounded-2xl px-4 py-3 text-base text-gray-900 min-h-[120px] bg-[#fafafa]"
+            className="rounded-2xl px-4 py-3 text-base min-h-[120px]"
+            style={inputStyle}
           />
-        </View>
+        </ThemedCard>
 
         <Pressable
           onPress={sendMessage}

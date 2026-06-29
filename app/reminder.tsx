@@ -1,3 +1,11 @@
+import {
+    ThemedBackButton,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Constants from "expo-constants";
@@ -5,14 +13,13 @@ import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -81,19 +88,10 @@ const sectionMeta = {
 };
 
 /** Main icon + circle colors per section (+ button stays app green for all). */
-const sectionAccent: Record<ReminderKey, { circleClass: string; icon: string }> = {
-  workout: {
-    circleClass: "bg-[#edf5f1]",
-    icon: "#76C893",
-  },
-  meal: {
-    circleClass: "bg-[#fff4e6]",
-    icon: "#c2410c",
-  },
-  water: {
-    circleClass: "bg-[#e0f2fe]",
-    icon: "#0284c7",
-  },
+const sectionAccent: Record<ReminderKey, { icon: string }> = {
+  workout: { icon: "#76C893" },
+  meal: { icon: "#c2410c" },
+  water: { icon: "#0284c7" },
 };
 
 const DEFAULT_REPEAT = [true, false, true, false, true, false, false];
@@ -222,6 +220,8 @@ async function getNotifications() {
 export default function RemindersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { cardStyle, surfaceStyle, theme } = useThemedScreen();
+  const { inputStyle, placeholderColor } = useProfileCardStyles();
   const [reminders, setReminders] = useState<ReminderData>(defaultReminderData);
   const [repeatDays, setRepeatDays] = useState<boolean[]>(DEFAULT_REPEAT);
   const [loading, setLoading] = useState(false);
@@ -614,7 +614,7 @@ export default function RemindersScreen() {
   );
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -626,25 +626,19 @@ export default function RemindersScreen() {
       >
         <View>
           <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
-            <Pressable
-              onPress={() => {
-                try {
-                  router.back();
-                } catch {
-                  router.replace("/profile");
-                }
-              }}
-              hitSlop={12}
-              className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
-            >
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-white">
-                <Ionicons name="arrow-back" size={24} color="#111827" />
-              </View>
-            </Pressable>
-
-            <Text className="text-center text-xl font-extrabold text-gray-900">
-              Reminders
-            </Text>
+            <View className="absolute left-0 top-0 z-10">
+              <ThemedBackButton
+                icon="arrow-back"
+                onPress={() => {
+                  try {
+                    router.back();
+                  } catch {
+                    router.replace("/profile");
+                  }
+                }}
+              />
+            </View>
+            <ThemedText className="text-center text-xl font-extrabold">Reminders</ThemedText>
           </View>
 
           {cards.map(({ key }) => {
@@ -653,51 +647,36 @@ export default function RemindersScreen() {
             const accent = sectionAccent[key];
 
             return (
-              <View
-                key={key}
-                className="bg-[#f7f7f7] rounded-[30px] px-4 py-4 mb-5 shadow-sm"
-              >
+              <ThemedCard key={key} className="px-4 py-4 mb-5">
                 <View className="flex-row items-center justify-between mb-4">
                   <View className="flex-row items-center flex-1 min-w-0">
                     <View
-                      className={`w-14 h-14 rounded-full items-center justify-center shrink-0 ${accent.circleClass}`}
+                      className="w-14 h-14 rounded-full items-center justify-center shrink-0"
+                      style={{ backgroundColor: theme.accentSoft }}
                     >
                       {key === "workout" ? (
-                        <MaterialCommunityIcons
-                          name="dumbbell"
-                          size={24}
-                          color={accent.icon}
-                        />
+                        <MaterialCommunityIcons name="dumbbell" size={24} color={accent.icon} />
                       ) : key === "meal" ? (
-                        <MaterialCommunityIcons
-                          name="silverware-fork-knife"
-                          size={24}
-                          color={accent.icon}
-                        />
+                        <MaterialCommunityIcons name="silverware-fork-knife" size={24} color={accent.icon} />
                       ) : (
-                        <Ionicons
-                          name="water-outline"
-                          size={24}
-                          color={accent.icon}
-                        />
+                        <Ionicons name="water-outline" size={24} color={accent.icon} />
                       )}
                     </View>
 
                     <View className="ml-3 flex-1 min-w-0">
-                      <Text className="text-lg font-extrabold text-[#0f172a]">
-                        {meta.title}
-                      </Text>
-                      <Text className="text-xs text-[#667085] mt-0.5" numberOfLines={2}>
+                      <ThemedText className="text-lg font-extrabold">{meta.title}</ThemedText>
+                      <ThemedText variant="muted" className="text-xs mt-0.5" numberOfLines={2}>
                         {meta.subtitle}
-                      </Text>
+                      </ThemedText>
                     </View>
                   </View>
 
                   <Pressable
                     onPress={() => openAddModal(key)}
-                    className="w-12 h-12 rounded-full bg-[#edf5f1] items-center justify-center shrink-0 ml-2"
+                    className="w-12 h-12 rounded-full items-center justify-center shrink-0 ml-2"
+                    style={{ backgroundColor: theme.accentSoft }}
                   >
-                    <Ionicons name="add" size={24} color="#76C893" />
+                    <Ionicons name="add" size={24} color={theme.accent} />
                   </Pressable>
                 </View>
 
@@ -705,190 +684,172 @@ export default function RemindersScreen() {
                   {section.times.map((item) => (
                     <View
                       key={item.id}
-                      className="bg-[#eef2f1] rounded-[24px] px-4 py-4 flex-row items-center justify-between"
+                      className="rounded-[24px] px-4 py-4 flex-row items-center justify-between"
+                      style={surfaceStyle}
                     >
                       <View className="flex-1 min-w-0 mr-3">
-                        <Text className="text-[#0f172a] text-lg font-extrabold">
-                          {formatTime(item)}
-                        </Text>
+                        <ThemedText className="text-lg font-extrabold">{formatTime(item)}</ThemedText>
                         {typeof item.name === "string" && item.name.trim() ? (
-                          <Text className="text-xs text-[#667085] font-semibold mt-1" numberOfLines={1}>
+                          <ThemedText variant="muted" className="text-xs font-semibold mt-1" numberOfLines={1}>
                             {item.name}
-                          </Text>
+                          </ThemedText>
                         ) : null}
-                        <Text
-                          className="text-xs text-[#52B69A] font-semibold mt-1"
-                          numberOfLines={2}
-                        >
+                        <ThemedText variant="accent" className="text-xs font-semibold mt-1" numberOfLines={2}>
                           {formatRepeatDaysLine(repeatDays)}
-                        </Text>
+                        </ThemedText>
                       </View>
 
                       <View className="flex-row items-center shrink-0">
-                        <Pressable
-                          onPress={() => toggleEnabled(key, item.id)}
-                          className="mr-3"
-                        >
+                        <Pressable onPress={() => toggleEnabled(key, item.id)} className="mr-3">
                           <View
-                            className={`w-11 h-[26px] rounded-full px-[2px] justify-center ${
-                              item.enabled ? "bg-[#9adcb6]" : "bg-gray-300"
-                            }`}
+                            className="w-11 h-[26px] rounded-full px-[2px] justify-center"
+                            style={{ backgroundColor: item.enabled ? theme.accent : theme.iconMuted }}
                           >
                             <View
                               className={`w-[22px] h-[22px] rounded-full items-center justify-center ${
-                                item.enabled
-                                  ? "self-end bg-[#76C893]"
-                                  : "self-start bg-gray-400"
+                                item.enabled ? "self-end" : "self-start"
                               }`}
+                              style={{ backgroundColor: item.enabled ? theme.accent : theme.textMuted }}
                             >
-                              {item.enabled && (
-                                <Ionicons name="checkmark" size={12} color="white" />
-                              )}
+                              {item.enabled && <Ionicons name="checkmark" size={12} color="white" />}
                             </View>
                           </View>
                         </Pressable>
 
-                        <Pressable
-                          onPress={() => openEditModal(key, item)}
-                          className="mr-3"
-                        >
-                          <Feather name="edit-2" size={20} color="#374151" />
+                        <Pressable onPress={() => openEditModal(key, item)} className="mr-3">
+                          <Feather name="edit-2" size={20} color={theme.textSecondary} />
                         </Pressable>
 
                         <Pressable onPress={() => confirmRemoveTime(key, item.id)}>
-                          <Ionicons name="trash-outline" size={21} color="#dc2626" />
+                          <Ionicons name="trash-outline" size={21} color={theme.danger} />
                         </Pressable>
                       </View>
                     </View>
                   ))}
                 </View>
-              </View>
+              </ThemedCard>
             );
           })}
 
-          <Text className="text-center text-[11px] font-bold text-[#98a2b3] tracking-[1.5px] px-3 mt-2 leading-5">
+          <ThemedText variant="muted" className="text-center text-[11px] font-bold tracking-[1.5px] px-3 mt-2 leading-5">
             CONFIGURE INDIVIDUAL REMINDERS TO KEEP YOUR ROUTINE BALANCED. TAP THE + ICON TO ADD NEW ALERT TIMES.
-          </Text>
+          </ThemedText>
         </View>
       </ScrollView>
 
-     
-
       <Modal visible={!!editor} transparent animationType="fade">
-        <View className="flex-1 bg-black/35 justify-end">
-          <View className="bg-[#f7f7f7] rounded-t-[38px] px-3 pt-8 pb-10">
+        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="rounded-t-[38px] px-3 pt-8 pb-10" style={{ backgroundColor: theme.modalBg }}>
             <Pressable
               onPress={() => {
                 setEditor(null);
                 setShowTimePicker(false);
               }}
               hitSlop={12}
-              className="absolute right-5 top-6 w-12 h-12 rounded-full bg-white items-center justify-center border border-gray-200 z-20"
+              className="absolute right-5 top-6 w-12 h-12 rounded-full items-center justify-center border z-20"
+              style={cardStyle}
             >
-              <Ionicons name="close" size={22} color="#111827" />
+              <Ionicons name="close" size={22} color={theme.textPrimary} />
             </Pressable>
 
-            <Text className="text-center text-[26px] font-extrabold text-[#0f172a]">
-              Set New Reminder
-            </Text>
+            <ThemedText className="text-center text-[26px] font-extrabold">Set New Reminder</ThemedText>
 
-            <Text className="text-center text-[17px] text-[#667085] mt-2 mb-8">
+            <ThemedText variant="secondary" className="text-center text-[17px] mt-2 mb-8">
               {editor ? sectionMeta[editor.section].subtitle : ""}
-            </Text>
+            </ThemedText>
 
-           <View className="border border-[#b7ead1] rounded-[26px] px-4 py-6 mb-6">
-              <Text className="text-[23px] font-extrabold text-[#0f172a] mb-3">Name</Text>
-              <View className="bg-white rounded-2xl border border-gray-200 px-4 py-3 mb-6">
+            <View className="border rounded-[26px] px-4 py-6 mb-6" style={{ borderColor: theme.accent }}>
+              <ThemedText className="text-[23px] font-extrabold mb-3">Name</ThemedText>
+              <View className="rounded-2xl border px-4 py-3 mb-6" style={inputStyle}>
                 <TextInput
                   value={editor?.name ?? ""}
                   onChangeText={(t: string) => setEditor((prev) => (prev ? { ...prev, name: t } : prev))}
                   placeholder="Reminder name"
-                  placeholderTextColor="#9ca3af"
-                  className="text-[18px] font-semibold text-[#0f172a]"
+                  placeholderTextColor={placeholderColor}
+                  className="text-[18px] font-semibold"
+                  style={{ color: theme.textPrimary }}
                 />
               </View>
 
-  <View className="bg-[#eef2f1] rounded-xl items-center justify-center py-3">
-    {Platform.OS === "ios" ? (
-      <DateTimePicker
-        mode="time"
-        display="spinner"
-        value={(() => {
-          const h12 = editor?.hour ?? 5;
-          const m = editor?.minute ?? 0;
-          const p = editor?.period ?? "AM";
-          const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
-          const d = new Date();
-          d.setHours(h24, m, 0, 0);
-          return d;
-        })()}
-        onChange={(_, date) => {
-          if (!date) return;
-          const h24 = date.getHours();
-          const minute = date.getMinutes();
-          const period = h24 >= 12 ? "PM" : "AM";
-          const h12 = ((h24 + 11) % 12) + 1;
-          setEditor((prev) =>
-            prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
-          );
-        }}
-        style={{ height: 140, width: "100%" }}
-        textColor="#0f172a"
-      />
-    ) : (
-      <>
-        <Pressable
-          onPress={() => setShowTimePicker(true)}
-          className="bg-white rounded-2xl px-5 py-4 w-full active:opacity-90"
-        >
-          <Text className="text-[26px] font-extrabold text-[#0f172a] text-center">
-            {String(editor?.hour ?? 5).padStart(2, "0")}:{String(editor?.minute ?? 0).padStart(2, "0")}{" "}
-            {editor?.period ?? "AM"}
-          </Text>
-          <Text className="text-xs text-[#667085] text-center mt-1 font-semibold">
-            Tap to change time
-          </Text>
-        </Pressable>
+              <View className="rounded-xl items-center justify-center py-3" style={{ backgroundColor: theme.rowBg }}>
+                {Platform.OS === "ios" ? (
+                  <DateTimePicker
+                    mode="time"
+                    display="spinner"
+                    value={(() => {
+                      const h12 = editor?.hour ?? 5;
+                      const m = editor?.minute ?? 0;
+                      const p = editor?.period ?? "AM";
+                      const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
+                      const d = new Date();
+                      d.setHours(h24, m, 0, 0);
+                      return d;
+                    })()}
+                    onChange={(_, date) => {
+                      if (!date) return;
+                      const h24 = date.getHours();
+                      const minute = date.getMinutes();
+                      const period = h24 >= 12 ? "PM" : "AM";
+                      const h12 = ((h24 + 11) % 12) + 1;
+                      setEditor((prev) =>
+                        prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
+                      );
+                    }}
+                    style={{ height: 140, width: "100%" }}
+                    textColor={theme.textPrimary}
+                  />
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => setShowTimePicker(true)}
+                      className="rounded-2xl px-5 py-4 w-full active:opacity-90"
+                      style={cardStyle}
+                    >
+                      <ThemedText className="text-[26px] font-extrabold text-center">
+                        {String(editor?.hour ?? 5).padStart(2, "0")}:{String(editor?.minute ?? 0).padStart(2, "0")}{" "}
+                        {editor?.period ?? "AM"}
+                      </ThemedText>
+                      <ThemedText variant="muted" className="text-xs text-center mt-1 font-semibold">
+                        Tap to change time
+                      </ThemedText>
+                    </Pressable>
 
-        {showTimePicker ? (
-          <DateTimePicker
-            mode="time"
-            display="spinner"
-            value={(() => {
-              const h12 = editor?.hour ?? 5;
-              const m = editor?.minute ?? 0;
-              const p = editor?.period ?? "AM";
-              const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
-              const d = new Date();
-              d.setHours(h24, m, 0, 0);
-              return d;
-            })()}
-            onChange={(event, date) => {
-              // Android: picker is a dialog; must handle dismissal.
-              if (event?.type === "dismissed") {
-                setShowTimePicker(false);
-                return;
-              }
-              if (!date) return;
-              const h24 = date.getHours();
-              const minute = date.getMinutes();
-              const period = h24 >= 12 ? "PM" : "AM";
-              const h12 = ((h24 + 11) % 12) + 1;
-              setEditor((prev) =>
-                prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
-              );
-              setShowTimePicker(false);
-            }}
-          />
-        ) : null}
-      </>
-    )}
-  </View>
-</View>
+                    {showTimePicker ? (
+                      <DateTimePicker
+                        mode="time"
+                        display="spinner"
+                        value={(() => {
+                          const h12 = editor?.hour ?? 5;
+                          const m = editor?.minute ?? 0;
+                          const p = editor?.period ?? "AM";
+                          const h24 = p === "AM" ? (h12 === 12 ? 0 : h12) : h12 === 12 ? 12 : h12 + 12;
+                          const d = new Date();
+                          d.setHours(h24, m, 0, 0);
+                          return d;
+                        })()}
+                        onChange={(event, date) => {
+                          if (event?.type === "dismissed") {
+                            setShowTimePicker(false);
+                            return;
+                          }
+                          if (!date) return;
+                          const h24 = date.getHours();
+                          const minute = date.getMinutes();
+                          const period = h24 >= 12 ? "PM" : "AM";
+                          const h12 = ((h24 + 11) % 12) + 1;
+                          setEditor((prev) =>
+                            prev ? { ...prev, hour: h12, minute, period: period as "AM" | "PM" } : prev
+                          );
+                          setShowTimePicker(false);
+                        }}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </View>
+            </View>
 
-            <Text className="text-[23px] ml-2 font-extrabold text-xl text-[#0f172a] mb-5">
-              Repeat
-            </Text>
+            <ThemedText className="text-[23px] ml-2 font-extrabold mb-5">Repeat</ThemedText>
 
             <View className="flex-row justify-between mb-10">
               {(editor?.repeatDays || DEFAULT_REPEAT).map((active, index) => (
@@ -899,49 +860,42 @@ export default function RemindersScreen() {
                       prev
                         ? {
                             ...prev,
-                            repeatDays: prev.repeatDays.map((d, i) =>
-                              i === index ? !d : d
-                            ),
+                            repeatDays: prev.repeatDays.map((d, i) => (i === index ? !d : d)),
                           }
                         : prev
                     )
                   }
-                  className={`w-[50px] h-[50px] rounded-full items-center justify-center border ${
+                  className="w-[50px] h-[50px] rounded-full items-center justify-center border"
+                  style={
                     active
-                      ? "bg-[#76C893] border-[#76C893]"
-                      : "bg-transparent border-gray-300"
-                  }`}
+                      ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                      : { backgroundColor: "transparent", borderColor: theme.cardBorder }
+                  }
                 >
-                  <Text
-                    className={`text-[18px] font-semibold ${
-                      active ? "text-white" : "text-[#475467]"
-                    }`}
+                  <ThemedText
+                    className="text-[18px] font-semibold"
+                    style={{ color: active ? "#ffffff" : theme.textSecondary }}
                   >
                     {DAY_LABELS[index]}
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               ))}
             </View>
 
             <Pressable
               onPress={saveModalReminder}
-              className="bg-[#76C893] rounded-[24px] py-5 items-center shadow-sm"
-              style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
+              className="rounded-[24px] py-5 items-center shadow-sm"
+              style={({ pressed }) => ({ backgroundColor: theme.accent, opacity: pressed ? 0.86 : 1 })}
             >
-              <Text className="text-white text-[20px] font-extrabold">
-                Save Reminder
-              </Text>
+              <ThemedText className="text-white text-[20px] font-extrabold">Save Reminder</ThemedText>
             </Pressable>
 
             <Pressable onPress={() => setEditor(null)} className="items-center mt-5">
-              <Text className="text-[#98a2b3] text-[17px] font-semibold">
-                Cancel
-              </Text>
+              <ThemedText variant="muted" className="text-[17px] font-semibold">Cancel</ThemedText>
             </Pressable>
           </View>
         </View>
       </Modal>
-
-    </View>
+    </ThemedScreen>
   );
 }

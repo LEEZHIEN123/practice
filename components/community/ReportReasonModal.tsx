@@ -1,5 +1,7 @@
 import { Pressable } from "@/components/Pressable";
+import { useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { REPORT_REASONS } from "@/lib/communityTypes";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
@@ -23,6 +25,8 @@ type ReportReasonModalProps = {
 
 export function ReportReasonModal({ visible, title, onClose, onSubmit }: ReportReasonModalProps) {
   const insets = useSafeAreaInsets();
+  const { textPrimary, textMuted, textSecondary, theme } = useThemedScreen();
+  const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [selectedReason, setSelectedReason] = useState<string>(REPORT_REASONS[0]);
   const [customReason, setCustomReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -62,31 +66,38 @@ export function ReportReasonModal({ visible, title, onClose, onSubmit }: ReportR
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View className="flex-1 bg-black/40 justify-end">
+      <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View
-            className="bg-white rounded-t-[28px] px-5 pt-5 border border-gray-200"
-            style={{ paddingBottom: insets.bottom + 20 }}
+            className="rounded-t-[28px] px-5 pt-5"
+            style={[modalCardStyle, { paddingBottom: insets.bottom + 20, borderBottomWidth: 0 }]}
           >
-            <Text className="text-xl font-extrabold text-gray-900 mb-1">{title}</Text>
-            <Text className="text-sm text-gray-500 mb-4">Choose a reason or type your own.</Text>
+            <Text className="text-xl font-extrabold mb-1" style={textPrimary}>
+              {title}
+            </Text>
+            <Text className="text-sm mb-4" style={textMuted}>
+              Choose a reason or type your own.
+            </Text>
 
             {REPORT_REASONS.map((reason) => (
               <Pressable
                 key={reason}
                 onPress={() => setSelectedReason(reason)}
-                className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
+                className="flex-row items-center rounded-2xl px-4 py-3 mb-2 border"
+                style={
                   selectedReason === reason
-                    ? "bg-[#eaf7f0] border-[#52B69A]"
-                    : "bg-[#f9fafb] border-gray-200"
-                }`}
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
                 <Ionicons
                   name={selectedReason === reason ? "radio-button-on" : "radio-button-off"}
                   size={20}
-                  color={selectedReason === reason ? "#52B69A" : "#9ca3af"}
+                  color={selectedReason === reason ? theme.accentText : theme.iconMuted}
                 />
-                <Text className="ml-3 text-sm font-bold text-gray-800">{reason}</Text>
+                <Text className="ml-3 text-sm font-bold" style={textPrimary}>
+                  {reason}
+                </Text>
               </Pressable>
             ))}
 
@@ -96,17 +107,21 @@ export function ReportReasonModal({ visible, title, onClose, onSubmit }: ReportR
                 onChangeText={setCustomReason}
                 placeholder="Describe the issue..."
                 multiline
-                className="bg-[#f9fafb] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 min-h-[90px]"
-                placeholderTextColor="#9ca3af"
+                className="rounded-2xl px-4 py-3 text-sm min-h-[90px]"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
             ) : null}
 
             <View className="flex-row gap-3 mt-4">
               <Pressable
                 onPress={handleClose}
-                className="flex-1 rounded-full py-3.5 items-center bg-[#f3f4f3] border border-gray-200"
+                className="flex-1 rounded-full py-3.5 items-center border"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder }}
               >
-                <Text className="text-sm font-extrabold text-gray-600">Cancel</Text>
+                <Text className="text-sm font-extrabold" style={textSecondary}>
+                  Cancel
+                </Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleSubmit()}

@@ -1,5 +1,7 @@
 import { Pressable } from "@/components/Pressable";
+import { ThemedBackButton, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { DEFAULT_POST_TAGS } from "@/lib/communityTypes";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
@@ -38,6 +40,8 @@ export function PostComposerModal({
   onSubmit,
 }: PostComposerModalProps) {
   const insets = useSafeAreaInsets();
+  const { screenStyle, cardStyle, theme } = useThemedScreen();
+  const { inputStyle, placeholderColor } = useProfileCardStyles();
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
@@ -77,18 +81,14 @@ export function PostComposerModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        className="flex-1 bg-[#f3f4f3]"
+        className="flex-1"
+        style={screenStyle}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={{ paddingTop: insets.top + 8 }} className="flex-1">
           <View className="flex-row items-center px-4 mb-4">
-            <Pressable
-              onPress={onClose}
-              className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-            >
-              <Ionicons name="close" size={22} color="#111827" />
-            </Pressable>
-            <Text className="text-xl font-extrabold text-gray-900 flex-1">{title}</Text>
+            <ThemedBackButton onPress={onClose} icon="close" size={22} className="w-11 h-11 mr-3" />
+            <ThemedText className="text-xl font-extrabold flex-1">{title}</ThemedText>
             <Pressable
               onPress={() => void handleSubmit()}
               disabled={submitting}
@@ -108,11 +108,12 @@ export function PostComposerModal({
               onChangeText={setContent}
               placeholder="Share your progress, meal, workout, or thoughts..."
               multiline
-              className="bg-white rounded-2xl px-4 py-4 border border-gray-200 text-sm text-gray-800 min-h-[120px]"
-              placeholderTextColor="#9ca3af"
+              className="rounded-2xl px-4 py-4 text-sm min-h-[120px]"
+              style={inputStyle}
+              placeholderTextColor={placeholderColor}
             />
 
-            <Text className="text-sm font-extrabold text-gray-900 mt-5 mb-2">Tags</Text>
+            <ThemedText className="text-sm font-extrabold mt-5 mb-2">Tags</ThemedText>
             <View className="flex-row flex-wrap gap-2">
               {DEFAULT_POST_TAGS.map((tag) => {
                 const active = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
@@ -120,12 +121,16 @@ export function PostComposerModal({
                   <Pressable
                     key={tag}
                     onPress={() => toggleTag(tag)}
-                    className={`rounded-full px-3 py-1.5 border ${
-                      active ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
-                    }`}
+                    className="rounded-full px-3 py-1.5 border"
+                    style={
+                      active
+                        ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                        : cardStyle
+                    }
                   >
                     <Text
-                      className={`text-xs font-bold ${active ? "text-[#52B69A]" : "text-gray-600"}`}
+                      className="text-xs font-bold"
+                      style={{ color: active ? theme.accentText : theme.textSecondary }}
                     >
                       #{tag}
                     </Text>
@@ -139,8 +144,9 @@ export function PostComposerModal({
                 value={customTag}
                 onChangeText={setCustomTag}
                 placeholder="Custom tag"
-                className="flex-1 bg-white rounded-full px-4 py-2.5 border border-gray-200 text-sm"
-                placeholderTextColor="#9ca3af"
+                className="flex-1 rounded-full px-4 py-2.5 text-sm"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
                 onSubmitEditing={addCustomTag}
               />
               <Pressable
@@ -157,10 +163,13 @@ export function PostComposerModal({
                   <Pressable
                     key={tag}
                     onPress={() => toggleTag(tag)}
-                    className="flex-row items-center rounded-full px-3 py-1.5 bg-[#eaf7f0] border border-[#52B69A]"
+                    className="flex-row items-center rounded-full px-3 py-1.5 border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="text-xs font-bold text-[#52B69A]">#{tag}</Text>
-                    <Ionicons name="close" size={14} color="#52B69A" style={{ marginLeft: 4 }} />
+                    <Text className="text-xs font-bold" style={{ color: theme.accentText }}>
+                      #{tag}
+                    </Text>
+                    <Ionicons name="close" size={14} color={theme.accentText} style={{ marginLeft: 4 }} />
                   </Pressable>
                 ))}
               </View>

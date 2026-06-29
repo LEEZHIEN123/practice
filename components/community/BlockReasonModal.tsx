@@ -1,4 +1,6 @@
 import { Pressable } from "@/components/Pressable";
+import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
@@ -31,6 +33,8 @@ export function BlockReasonModal({
   onConfirm,
 }: BlockReasonModalProps) {
   const insets = useSafeAreaInsets();
+  const { textPrimary, textMuted, textSecondary, theme } = useThemedScreen();
+  const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [reason, setReason] = useState("");
   const [selectedReason, setSelectedReason] = useState("");
   const [customReason, setCustomReason] = useState("");
@@ -90,14 +94,18 @@ export function BlockReasonModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View className="flex-1 bg-black/40 justify-end">
+      <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View
-            className="bg-white rounded-t-[28px] px-5 pt-5 border border-gray-200"
-            style={{ paddingBottom: insets.bottom + 20 }}
+            className="rounded-t-[28px] px-5 pt-5"
+            style={[modalCardStyle, { paddingBottom: insets.bottom + 20, borderBottomWidth: 0 }]}
           >
-            <Text className="text-xl font-extrabold text-gray-900 mb-1">{title}</Text>
-            <Text className="text-sm text-gray-500 mb-4">{description}</Text>
+            <Text className="text-xl font-extrabold mb-1" style={textPrimary}>
+              {title}
+            </Text>
+            <Text className="text-sm mb-4" style={textMuted}>
+              {description}
+            </Text>
 
             {usePresets ? (
               <>
@@ -105,18 +113,21 @@ export function BlockReasonModal({
                   <Pressable
                     key={option}
                     onPress={() => setSelectedReason(option)}
-                    className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
+                    className="flex-row items-center rounded-2xl px-4 py-3 mb-2 border"
+                    style={
                       selectedReason === option
-                        ? "bg-[#fef2f2] border-[#ef4444]"
-                        : "bg-[#f9fafb] border-gray-200"
-                    }`}
+                        ? { backgroundColor: theme.dangerSoft, borderColor: theme.danger }
+                        : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                    }
                   >
                     <Ionicons
                       name={selectedReason === option ? "radio-button-on" : "radio-button-off"}
                       size={20}
-                      color={selectedReason === option ? "#ef4444" : "#9ca3af"}
+                      color={selectedReason === option ? theme.danger : theme.iconMuted}
                     />
-                    <Text className="ml-3 text-sm font-bold text-gray-800">{option}</Text>
+                    <Text className="ml-3 text-sm font-bold" style={textPrimary}>
+                      {option}
+                    </Text>
                   </Pressable>
                 ))}
 
@@ -127,8 +138,9 @@ export function BlockReasonModal({
                     placeholder="Describe the reason..."
                     multiline
                     textAlignVertical="top"
-                    className="bg-[#f9fafb] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 min-h-[90px]"
-                    placeholderTextColor="#9ca3af"
+                    className="rounded-2xl px-4 py-3 text-sm min-h-[90px]"
+                    style={inputStyle}
+                    placeholderTextColor={placeholderColor}
                   />
                 ) : null}
               </>
@@ -139,22 +151,27 @@ export function BlockReasonModal({
                 placeholder="Enter the reason..."
                 multiline
                 textAlignVertical="top"
-                className="bg-[#f9fafb] rounded-2xl px-4 py-3 border border-gray-200 text-sm text-gray-800 min-h-[100px]"
-                placeholderTextColor="#9ca3af"
+                className="rounded-2xl px-4 py-3 text-sm min-h-[100px]"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
               />
             )}
 
             <View className="flex-row gap-3 mt-4">
               <Pressable
                 onPress={handleClose}
-                className="flex-1 rounded-full py-3.5 items-center bg-[#f3f4f3] border border-gray-200"
+                className="flex-1 rounded-full py-3.5 items-center border"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder }}
               >
-                <Text className="text-sm font-extrabold text-gray-600">Cancel</Text>
+                <Text className="text-sm font-extrabold" style={textSecondary}>
+                  Cancel
+                </Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleConfirm()}
                 disabled={submitting}
-                className="flex-1 rounded-full py-3.5 items-center bg-[#ef4444]"
+                className="flex-1 rounded-full py-3.5 items-center"
+                style={{ backgroundColor: theme.danger }}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />

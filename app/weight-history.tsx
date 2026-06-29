@@ -1,9 +1,16 @@
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+} from "@/components/themed/ThemedUi";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -47,6 +54,11 @@ function pctDelta(series: number[]) {
 
 export default function WeightHistoryScreen() {
   const router = useRouter();
+  const {
+    segmentTrackStyle,
+    segmentActiveStyle,
+    theme,
+  } = useThemedScreen();
   const [period, setPeriod] = useState<PeriodKey>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [series, setSeries] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
@@ -179,36 +191,42 @@ export default function WeightHistoryScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
-          <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-extrabold text-gray-900">Weight History</Text>
-          <View className="w-12 h-12" />
+          <ThemedBackButton onPress={() => router.back()} />
+          <ThemedText className="text-xl font-extrabold">Weight History</ThemedText>
+          <View className="w-11 h-11" />
         </View>
 
-        <View className="bg-white rounded-3xl p-5 border border-gray-100">
+        <ThemedCard className="p-5">
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold">PERIOD</Text>
-              <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
-              <Text className="text-sm font-bold text-[#52B69A] mt-1">{delta}</Text>
+              <ThemedText variant="muted" className="text-[10px] tracking-widest font-bold">PERIOD</ThemedText>
+              <ThemedText className="text-lg font-extrabold mt-2">{title}</ThemedText>
+              <ThemedText variant="accent" className="text-sm font-bold mt-1">{delta}</ThemedText>
             </View>
             <View className="flex-row items-center">
-              <Pressable onPress={goPrev} className="w-11 h-11 rounded-full bg-[#eef7f1] items-center justify-center mr-2">
-                <Ionicons name="chevron-back" size={20} color="#76C893" />
+              <Pressable
+                onPress={goPrev}
+                className="w-11 h-11 rounded-full items-center justify-center mr-2"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="chevron-back" size={20} color={theme.accent} />
               </Pressable>
-              <Pressable onPress={goNext} className="w-11 h-11 rounded-full bg-[#eef7f1] items-center justify-center">
-                <Ionicons name="chevron-forward" size={20} color="#76C893" />
+              <Pressable
+                onPress={goNext}
+                className="w-11 h-11 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="chevron-forward" size={20} color={theme.accent} />
               </Pressable>
             </View>
           </View>
 
-          <View className="mt-5 bg-white rounded-2xl">
-            <View className="h-40 rounded-2xl bg-[#f3f4f3] overflow-hidden">
-              <View className="absolute left-0 right-0 bottom-0 h-20 bg-[#76C893] opacity-10" />
+          <View className="mt-5">
+            <View className="h-40 rounded-2xl overflow-hidden" style={{ backgroundColor: theme.rowBg }}>
+              <View className="absolute left-0 right-0 bottom-0 h-20 opacity-10" style={{ backgroundColor: theme.accent }} />
               <View className="flex-1 flex-row items-end px-4 pb-4">
                 {(() => {
                   const min = Math.min(...series);
@@ -219,8 +237,12 @@ export default function WeightHistoryScreen() {
                     return (
                       <View key={`hb-${idx}`} className="flex-1 items-center">
                         <View
-                          style={{ height: h, width: 10, borderRadius: 999 }}
-                          className={v === 0 ? "bg-gray-300" : "bg-[#76C893]"}
+                          style={{
+                            height: h,
+                            width: 10,
+                            borderRadius: 999,
+                            backgroundColor: v === 0 ? theme.iconMuted : theme.accent,
+                          }}
                         />
                       </View>
                     );
@@ -233,11 +255,16 @@ export default function WeightHistoryScreen() {
                 const isCurrentLabel = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
                 return (
                   <View key={`${d}-${idx}`} className="flex-1 items-center">
-                    <Text className={`text-[10px] font-bold ${isCurrentLabel ? "text-red-600" : "text-gray-400"}`}>
+                    <ThemedText
+                      className="text-[10px] font-bold"
+                      style={{ color: isCurrentLabel ? theme.danger : theme.textMuted }}
+                    >
                       {d}
-                    </Text>
+                    </ThemedText>
                     {isCurrentLabel ? (
-                      <Text className="text-[9px] font-extrabold text-red-600 mt-0.5">Current</Text>
+                      <ThemedText className="text-[9px] font-extrabold mt-0.5" style={{ color: theme.danger }}>
+                        Current
+                      </ThemedText>
                     ) : null}
                   </View>
                 );
@@ -246,30 +273,31 @@ export default function WeightHistoryScreen() {
           </View>
 
           {!hasAny && (
-            <Text className="text-center text-gray-500 text-sm mt-5">
+            <ThemedText variant="muted" className="text-center text-sm mt-5">
               No weight logs yet. Your chart will appear after you log a weight.
-            </Text>
+            </ThemedText>
           )}
-        </View>
+        </ThemedCard>
 
-        <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+        <View className="mt-4 rounded-full p-1 flex-row" style={segmentTrackStyle}>
           {(["week", "month", "year"] as const).map((k) => {
             const active = period === k;
             return (
               <Pressable
                 key={k}
                 onPress={() => setPeriod(k)}
-                className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                className="flex-1 py-3 rounded-full items-center"
+                style={active ? segmentActiveStyle : undefined}
               >
-                <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                <ThemedText variant={active ? "accent" : "muted"} className="font-bold">
                   {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
-                </Text>
+                </ThemedText>
               </Pressable>
             );
           })}
         </View>
       </ScrollView>
-    </View>
+    </ThemedScreen>
   );
 }
 

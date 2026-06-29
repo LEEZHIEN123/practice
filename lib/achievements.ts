@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   doc,
   getCountFromServer,
   getDoc,
@@ -100,7 +101,124 @@ type AchievementMetrics = {
   stepDays3000Count: number;
   stepDays5000Count: number;
   stepDays8000Count: number;
+  community: CommunityAchievementMetrics;
 };
+
+type CommunityAchievementMetrics = {
+  postCount: number;
+  commentCount: number;
+  chatMessageCount: number;
+  likeGivenCount: number;
+  friendCount: number;
+  activeDayCount: number;
+  challengeEngaged: boolean;
+  welcomed: boolean;
+};
+
+const EMPTY_COMMUNITY_METRICS: CommunityAchievementMetrics = {
+  postCount: 0,
+  commentCount: 0,
+  chatMessageCount: 0,
+  likeGivenCount: 0,
+  friendCount: 0,
+  activeDayCount: 0,
+  challengeEngaged: false,
+  welcomed: false,
+};
+
+function hasChallengeTag(tags: unknown): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some(
+    (tag) => typeof tag === "string" && tag.trim().toLowerCase().includes("challenge")
+  );
+}
+
+function addActivityDay(days: Set<string>, createdAt: unknown) {
+  if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return;
+  days.add(localYmd(new Date(createdAt)));
+}
+
+async function loadCommunityMetrics(uid: string): Promise<CommunityAchievementMetrics> {
+  try {
+  const [postsSnap, commentsSnap, likesSnap, messagesSnap, friendsSnap] = await Promise.all([
+    getDocs(query(collection(db, "communityPosts"), where("authorId", "==", uid))),
+    getDocs(query(collectionGroup(db, "comments"), where("authorId", "==", uid))),
+    getDocs(query(collection(db, "communityPosts"), where("likedBy", "array-contains", uid))),
+    getDocs(query(collectionGroup(db, "messages"), where("senderId", "==", uid))),
+    getCountFromServer(collection(db, "users", uid, "friends")),
+  ]);
+
+  const postCount = postsSnap.size;
+  const commentCount = commentsSnap.size;
+  const chatMessageCount = messagesSnap.size;
+  const likeGivenCount = likesSnap.size;
+  const friendCount = friendsSnap.data().count;
+
+  const activeDays = new Set<string>();
+  let challengeEngaged = false;
+
+  postsSnap.forEach((docSnap) => {
+    const data = docSnap.data() as Record<string, unknown>;
+    addActivityDay(activeDays, data.createdAt);
+    if (hasChallengeTag(data.tags)) challengeEngaged = true;
+  });
+
+  commentsSnap.forEach((docSnap) => {
+    const data = docSnap.data() as Record<string, unknown>;
+    addActivityDay(activeDays, data.createdAt);
+  });
+
+  messagesSnap.forEach((docSnap) => {
+    const data = docSnap.data() as Record<string, unknown>;
+    addActivityDay(activeDays, data.createdAt);
+  });
+
+  likesSnap.forEach((docSnap) => {
+    const data = docSnap.data() as Record<string, unknown>;
+    if (hasChallengeTag(data.tags)) challengeEngaged = true;
+  });
+
+  if (!challengeEngaged && commentCount > 0) {
+    const commentPostIds = [
+      ...new Set(
+        commentsSnap.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as { postId?: string };
+            return data.postId ?? docSnap.ref.parent.parent?.id ?? "";
+          })
+          .filter(Boolean)
+      ),
+    ];
+    for (let i = 0; i < commentPostIds.length; i += 10) {
+      const batch = commentPostIds.slice(i, i + 10);
+      const snaps = await Promise.all(
+        batch.map((postId) => getDoc(doc(db, "communityPosts", postId)))
+      );
+      if (snaps.some((snap) => snap.exists() && hasChallengeTag(snap.data().tags))) {
+        challengeEngaged = true;
+        break;
+      }
+    }
+  }
+
+  const welcomed =
+    friendCount >= 1 || postCount >= 1 || commentCount >= 1 || chatMessageCount >= 1;
+
+  return {
+    postCount,
+    commentCount,
+    chatMessageCount,
+    likeGivenCount,
+    friendCount,
+    activeDayCount: activeDays.size,
+    challengeEngaged,
+    welcomed,
+  };
+  } catch (e) {
+    console.log("Community achievement metrics unavailable:", e);
+    return { ...EMPTY_COMMUNITY_METRICS };
+  }
+}
 
 function titleFromId(id: string): string {
   const titles: Record<string, string> = {
@@ -118,13 +236,13 @@ function titleFromId(id: string): string {
     ml_water_reminder: "Water Reminder Set",
     ml_repeat_days: "Repeat Days Enabled",
     ml_water_50: "Hydration Master",
-    cm_discover_first: "Discover Starter",
-    cm_discover_5: "Discover Active",
-    cm_discover_15: "Discover Expert",
-    cm_mix_first: "Balanced Starter",
-    cm_mix_10_3: "Balanced Builder",
-    cm_mix_25_7: "Balanced Advanced",
-    cm_mix_50_15: "Balanced Master",
+    cm_welcome: "Welcome In",
+    cm_first_chat: "First Chat",
+    cm_first_reply: "Helpful Reply",
+    cm_challenge: "Challenge Joiner",
+    cm_likes_10: "Supportive Member",
+    cm_active_7: "Active Voice",
+    cm_champion: "Community Champion",
     st_steps_first: "First Step Day",
     st_steps_3: "Step Starter",
     st_steps_7: "Daily Walker",
@@ -142,9 +260,6 @@ function buildSections(
   metrics: AchievementMetrics
 ): AchievementSectionModel[] {
   const profileOk = isProfileComplete(data);
-  const weightLogCount = metrics.weightLogCount;
-  const workoutLogCount = metrics.workoutLogCount;
-  const discoverWorkoutLogCount = metrics.discoverWorkoutLogCount;
   const completedSessionCount = metrics.completedSessionCount;
   const waterLogCount = metrics.waterLogCount;
   const workoutDays = state.workoutPlanDays ?? 0;
@@ -178,7 +293,16 @@ function buildSections(
   const waterReminderCount = Array.isArray(reminders?.water?.times)
     ? reminders.water.times.length
     : 0;
-  const plannedWorkoutLogCount = Math.max(0, workoutLogCount - discoverWorkoutLogCount);
+  const community = metrics.community;
+
+  const welcomeDone = community.welcomed;
+  const firstChatDone = community.chatMessageCount >= 1;
+  const firstReplyDone = community.commentCount >= 1;
+  const challengeDone = community.challengeEngaged;
+  const likesDone = community.likeGivenCount >= 10;
+  const activeDone = community.activeDayCount >= 7;
+  const championDone =
+    welcomeDone && firstChatDone && firstReplyDone && challengeDone && likesDone && activeDone;
 
   const workoutRows: AchievementRowModel[] = [
     {
@@ -286,57 +410,53 @@ function buildSections(
 
   const communityRows: AchievementRowModel[] = [
     {
-      id: "cm_discover_first",
-      label: "Complete your first Discover workout",
+      id: "cm_welcome",
+      label: "Join your first community room",
+      variant: "done",
+      rightLabel: welcomeDone ? "DONE" : "—",
+      isComplete: welcomeDone,
+    },
+    {
+      id: "cm_first_chat",
+      label: "Send your first message",
       variant: "progress",
-      rightLabel: `${Math.min(discoverWorkoutLogCount, 1)} / 1`,
-      isComplete: discoverWorkoutLogCount >= 1,
+      rightLabel: `${Math.min(community.chatMessageCount, 1)} / 1`,
+      isComplete: firstChatDone,
     },
     {
-      id: "cm_discover_5",
-      label: "Complete 5 Discover workouts",
+      id: "cm_first_reply",
+      label: "Reply to a community post",
       variant: "progress",
-      rightLabel: `${Math.min(discoverWorkoutLogCount, 5)} / 5`,
-      isComplete: discoverWorkoutLogCount >= 5,
+      rightLabel: `${Math.min(community.commentCount, 1)} / 1`,
+      isComplete: firstReplyDone,
     },
     {
-      id: "cm_discover_15",
-      label: "Complete 15 Discover workouts",
+      id: "cm_challenge",
+      label: "Join a weekly challenge",
+      variant: "done",
+      rightLabel: challengeDone ? "DONE" : "—",
+      isComplete: challengeDone,
+    },
+    {
+      id: "cm_likes_10",
+      label: "React to 10 messages",
       variant: "progress",
-      rightLabel: `${Math.min(discoverWorkoutLogCount, 15)} / 15`,
-      isComplete: discoverWorkoutLogCount >= 15,
+      rightLabel: `${Math.min(community.likeGivenCount, 10)} / 10`,
+      isComplete: likesDone,
     },
     {
-      id: "cm_mix_first",
-      label: "Complete 1 planned + 1 Discover workout",
-      variant: "done",
-      rightLabel:
-        plannedWorkoutLogCount >= 1 && discoverWorkoutLogCount >= 1 ? "DONE" : "—",
-      isComplete: plannedWorkoutLogCount >= 1 && discoverWorkoutLogCount >= 1,
+      id: "cm_active_7",
+      label: "Participate for 7 days",
+      variant: "progress",
+      rightLabel: `${Math.min(community.activeDayCount, 7)} / 7`,
+      isComplete: activeDone,
     },
     {
-      id: "cm_mix_10_3",
-      label: "Reach 10 total workouts (3 from Discover)",
+      id: "cm_champion",
+      label: "Complete all social milestones",
       variant: "done",
-      rightLabel:
-        workoutLogCount >= 10 && discoverWorkoutLogCount >= 3 ? "DONE" : "—",
-      isComplete: workoutLogCount >= 10 && discoverWorkoutLogCount >= 3,
-    },
-    {
-      id: "cm_mix_25_7",
-      label: "Reach 25 total workouts (7 from Discover)",
-      variant: "done",
-      rightLabel:
-        workoutLogCount >= 25 && discoverWorkoutLogCount >= 7 ? "DONE" : "—",
-      isComplete: workoutLogCount >= 25 && discoverWorkoutLogCount >= 7,
-    },
-    {
-      id: "cm_mix_50_15",
-      label: "Reach 50 total workouts (15 from Discover)",
-      variant: "done",
-      rightLabel:
-        workoutLogCount >= 50 && discoverWorkoutLogCount >= 15 ? "DONE" : "—",
-      isComplete: workoutLogCount >= 50 && discoverWorkoutLogCount >= 15,
+      rightLabel: championDone ? "DONE" : "—",
+      isComplete: championDone,
     },
   ];
 
@@ -415,8 +535,8 @@ function buildSections(
 
   return [
     pack("workout", workoutRows),
-    comingSoon("meal", mealRows.length),
-    comingSoon("community", communityRows.length),
+    pack("meal", mealRows),
+    pack("community", communityRows),
     pack("streaks", streakRows),
   ];
 }
@@ -458,6 +578,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     collection(db, "users", user.uid, "waterLogs")
   );
   const dailyStatsSnapPromise = getDocs(collection(db, "users", user.uid, "dailyStats"));
+  const communityMetricsPromise = loadCommunityMetrics(user.uid);
 
   const [
     weightLogCountSnap,
@@ -466,6 +587,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     completedSessionCountSnap,
     waterLogCountSnap,
     dailyStatsSnap,
+    communityMetrics,
   ] = await Promise.all([
     weightLogCountPromise,
     workoutLogCountPromise,
@@ -473,6 +595,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     completedSessionCountPromise,
     waterLogCountPromise,
     dailyStatsSnapPromise,
+    communityMetricsPromise,
   ]);
 
   let stepDays3000Count = 0;
@@ -503,6 +626,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     stepDays3000Count,
     stepDays5000Count,
     stepDays8000Count,
+    community: communityMetrics,
   });
 }
 

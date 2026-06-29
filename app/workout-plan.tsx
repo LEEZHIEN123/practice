@@ -1,3 +1,13 @@
+import { Pressable } from "@/components/Pressable";
+import {
+    ThemedBackButton,
+    ThemedCard,
+    ThemedRow,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { plansEqual, sanitizeActiveWorkoutPlan, type WorkoutType } from "@/lib/workoutCatalog";
 import {
     bmiBandKey,
@@ -9,7 +19,6 @@ import {
     type ActiveWorkoutPlan,
     type PlanDuration,
 } from "@/lib/workoutPlan";
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
     collection,
@@ -23,7 +32,7 @@ import {
     where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
@@ -61,6 +70,8 @@ function suggestedWorkoutTypeLabel(t: WorkoutType): string {
 export default function WorkoutPlanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { cardStyle, textPrimary, textSecondary, textMuted, theme } = useThemedScreen();
+  const { modalCardStyle } = useProfileCardStyles();
   const [plan, setPlan] = useState<ActiveWorkoutPlan | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -342,157 +353,144 @@ export default function WorkoutPlanScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-        >
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </Pressable>
+        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
         <View className="flex-1">
-          <Text className="text-3xl font-extrabold text-gray-900">Workout Plan</Text>
+          <ThemedText className="text-3xl font-extrabold">Workout Plan</ThemedText>
         </View>
         <Pressable
           onPress={() => setPickerVisible(true)}
-          className="px-4 py-2 rounded-full bg-white border border-gray-200 active:opacity-90"
+          className="px-4 py-2 rounded-full active:opacity-90"
+          style={cardStyle}
         >
-          <Text className="text-base font-extrabold text-gray-900">Change</Text>
+          <ThemedText className="text-base font-extrabold">Change</ThemedText>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} className="px-3">
         {!plan ? (
-          <View className="bg-white rounded-3xl p-5 border border-gray-100">
-            <Text className="text-lg font-extrabold text-gray-900">No plan yet</Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+          <ThemedCard className="p-5">
+            <ThemedText className="text-lg font-extrabold">No plan yet</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               Go back to Home and tap “View Full Plan” to generate your first plan.
-            </Text>
-          </View>
+            </ThemedText>
+          </ThemedCard>
         ) : (
           <>
-            <View className="bg-white rounded-3xl p-5 border border-gray-100">
-              <Text className="text-xl font-extrabold text-gray-900">{durationLabel(plan.duration)}</Text>
+            <ThemedCard className="p-5">
+              <ThemedText className="text-xl font-extrabold">{durationLabel(plan.duration)}</ThemedText>
               {metaLine.bmiLine || metaLine.goalLine ? (
-                <View className="mt-3 rounded-2xl bg-[#f3f4f3] border border-gray-200 px-4 py-3">
+                <ThemedRow className="mt-3 px-4 py-3 rounded-2xl">
                   {metaLine.bmiLine ? (
-                    <Text className="text-base font-extrabold mt-0">
-                      <Text className="text-gray-900">BMI:</Text>{" "}
-                      <Text className="text-red-600">
+                    <Text className="text-base font-extrabold mt-0" style={textPrimary}>
+                      <Text style={textPrimary}>BMI:</Text>{" "}
+                      <Text style={{ color: theme.danger }}>
                         {metaLine.bmiLine.replace(/^BMI:\s*/, "")}
                       </Text>
                     </Text>
                   ) : null}
                   {metaLine.goalLine ? (
-                    <Text className="text-base font-extrabold mt-1">
-                      <Text className="text-gray-900">Goal:</Text>{" "}
-                      <Text className="text-red-600">
+                    <Text className="text-base font-extrabold mt-1" style={textPrimary}>
+                      <Text style={textPrimary}>Goal:</Text>{" "}
+                      <Text style={{ color: theme.danger }}>
                         {metaLine.goalLine.replace(/^Goal:\s*/, "")}
                       </Text>
                     </Text>
                   ) : null}
-                </View>
+                </ThemedRow>
               ) : null}
 
-              <Text className="text-sm tracking-widest text-gray-500 font-extrabold mt-5">
+              <ThemedText variant="muted" className="text-sm tracking-widest font-extrabold mt-5">
                 SUGGESTED WORKOUT TYPES
-              </Text>
+              </ThemedText>
               <View className="flex-row flex-wrap gap-2 mt-4">
                 {plan.suggestedTypes.map((t) => (
                   <View
                     key={t}
-                    className="px-4 py-2.5 rounded-full bg-[#eaf7f0] border border-[#b7ead1]"
+                    className="px-4 py-2.5 rounded-full border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="text-base font-extrabold text-[#52B69A]">
+                    <ThemedText variant="accent" className="text-base font-extrabold">
                       {suggestedWorkoutTypeLabel(t)}
-                    </Text>
+                    </ThemedText>
                   </View>
                 ))}
               </View>
-            </View>
+            </ThemedCard>
 
-            <Text className="text-2xl font-extrabold text-gray-900 mt-6 mb-3">Schedule</Text>
+            <ThemedText className="text-2xl font-extrabold mt-6 mb-3">Schedule</ThemedText>
             <View className="gap-3">
               {plan.schedule.map((row) => {
                 const isLocked = row.day > unlockedMaxDay;
-                const cardClass = `bg-white rounded-3xl p-5 border ${
-                  todayPlanDay === row.day ? "border-red-300" : "border-gray-100"
-                }`;
+                const isToday = todayPlanDay === row.day;
+                const dayCardStyle = isToday ? { borderColor: theme.danger } : undefined;
                 const navToDay = () =>
                   router.push(
                     `/day-workout?day=${row.day}&unlockedMaxDay=${unlockedMaxDay}` as any
                   );
 
+                const dayHeader = (
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                      <ThemedText
+                        className="text-lg font-extrabold"
+                        style={isToday ? { color: theme.danger } : undefined}
+                      >
+                        Day {row.day}
+                      </ThemedText>
+                      {isToday ? (
+                        <View
+                          className="ml-2 px-2 py-1 rounded-full border"
+                          style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
+                        >
+                          <Text className="text-[10px] font-extrabold" style={{ color: theme.danger }}>
+                            TODAY
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <ThemedText variant="accent" className="text-sm font-extrabold">
+                      {row.type}
+                    </ThemedText>
+                  </View>
+                );
+
                 if (isLocked) {
                   return (
-                    <Pressable key={row.day} onPress={navToDay} className={cardClass}>
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center">
-                          <Text
-                            className={`text-lg font-extrabold ${
-                              todayPlanDay === row.day ? "text-red-600" : "text-gray-900"
-                            }`}
+                    <Pressable key={row.day} onPress={navToDay}>
+                      <ThemedCard className="p-5" style={dayCardStyle}>
+                        {dayHeader}
+                        <View className="flex-row items-center justify-between mt-3">
+                          <ThemedText variant="secondary" className="flex-1 pr-3">
+                            {row.workout}
+                          </ThemedText>
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation();
+                            }}
+                            className="px-4 py-2 rounded-full bg-gray-300 active:opacity-100"
                           >
-                            Day {row.day}
-                          </Text>
-                          {todayPlanDay === row.day ? (
-                            <View className="ml-2 px-2 py-1 rounded-full bg-red-50 border border-red-200">
-                              <Text className="text-[10px] font-extrabold text-red-600">
-                                TODAY
-                              </Text>
-                            </View>
-                          ) : null}
+                            <Text className="text-white font-extrabold">Start</Text>
+                          </Pressable>
                         </View>
-                        <Text className="text-sm font-extrabold text-[#52B69A]">{row.type}</Text>
-                      </View>
-
-                      <View className="flex-row items-center justify-between mt-3">
-                        <Text className="text-gray-700 flex-1 pr-3">{row.workout}</Text>
-                        <Pressable
-                        onPress={(e) => {
-                          // Prevent tap from bubbling to the outer locked-card Pressable.
-                          e.stopPropagation();
-                        }}
-                          className="px-4 py-2 rounded-full bg-gray-300 active:opacity-100"
-                        >
-                          <Text className="text-white font-extrabold">Start</Text>
-                        </Pressable>
-                      </View>
+                      </ThemedCard>
                     </Pressable>
                   );
                 }
 
                 return (
-                  <View
-                    key={row.day}
-                    className={cardClass}
-                  >
-                    <View className="flex-row items-center justify-between">
-                      <View className="flex-row items-center">
-                        <Text
-                          className={`text-lg font-extrabold ${
-                            todayPlanDay === row.day ? "text-red-600" : "text-gray-900"
-                          }`}
-                        >
-                          Day {row.day}
-                        </Text>
-                        {todayPlanDay === row.day ? (
-                          <View className="ml-2 px-2 py-1 rounded-full bg-red-50 border border-red-200">
-                            <Text className="text-[10px] font-extrabold text-red-600">TODAY</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text className="text-sm font-extrabold text-[#52B69A]">{row.type}</Text>
-                    </View>
-
+                  <ThemedCard key={row.day} className="p-5" style={dayCardStyle}>
+                    {dayHeader}
                     <View className="flex-row items-center justify-between mt-3">
-                      <Text className="text-gray-700 flex-1 pr-3">{row.workout}</Text>
+                      <ThemedText variant="secondary" className="flex-1 pr-3">
+                        {row.workout}
+                      </ThemedText>
                       <Pressable onPress={navToDay} className="px-4 py-2 rounded-full bg-[#1e3a8a] active:opacity-90">
                         <Text className="text-white font-extrabold">Start</Text>
                       </Pressable>
                     </View>
-                  </View>
+                  </ThemedCard>
                 );
               })}
             </View>
@@ -500,72 +498,57 @@ export default function WorkoutPlanScreen() {
         )}
       </ScrollView>
 
-      {/* Change plan duration modal */}
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Switch plan</Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Switch plan</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               Choose a different duration and confirm to switch.
-            </Text>
+            </ThemedText>
 
             <View className="mt-5 gap-3">
-              <Pressable
-                disabled={busy}
-                onPress={() => setPendingDuration("week")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "week" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
-              >
-                <View className="flex-row items-center justify-between">
-                  <Text className={`text-xl font-extrabold ${pendingDuration === "week" ? "text-[#52B69A]" : "text-gray-900"}`}>
-                    One Week Plan
-                  </Text>
-                  {pendingDuration === "week" ? (
-                    <View className="px-2 py-1 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
-                      <Text className="text-[10px] font-extrabold text-[#52B69A]">CURRENT</Text>
+              {(["week", "biweekly", "monthly"] as const).map((duration) => {
+                const selected = pendingDuration === duration;
+                const label =
+                  duration === "week"
+                    ? "One Week Plan"
+                    : duration === "biweekly"
+                      ? "Biweekly Plan"
+                      : "Monthly Plan";
+                return (
+                  <Pressable
+                    key={duration}
+                    disabled={busy}
+                    onPress={() => setPendingDuration(duration)}
+                    className="rounded-3xl p-5 border active:opacity-90"
+                    style={
+                      selected
+                        ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                        : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                    }
+                  >
+                    <View className="flex-row items-center justify-between">
+                      {selected ? (
+                        <ThemedText variant="accent" className="text-xl font-extrabold">
+                          {label}
+                        </ThemedText>
+                      ) : (
+                        <ThemedText className="text-xl font-extrabold">{label}</ThemedText>
+                      )}
+                      {selected ? (
+                        <View
+                          className="px-2 py-1 rounded-full border"
+                          style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                        >
+                          <ThemedText variant="accent" className="text-[10px] font-extrabold">
+                            CURRENT
+                          </ThemedText>
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
-                </View>
-              </Pressable>
-
-              <Pressable
-                disabled={busy}
-                onPress={() => setPendingDuration("biweekly")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "biweekly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
-              >
-                <View className="flex-row items-center justify-between">
-                  <Text className={`text-xl font-extrabold ${pendingDuration === "biweekly" ? "text-[#52B69A]" : "text-gray-900"}`}>
-                    Biweekly Plan
-                  </Text>
-                  {pendingDuration === "biweekly" ? (
-                    <View className="px-2 py-1 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
-                      <Text className="text-[10px] font-extrabold text-[#52B69A]">CURRENT</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </Pressable>
-
-              <Pressable
-                disabled={busy}
-                onPress={() => setPendingDuration("monthly")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "monthly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
-              >
-                <View className="flex-row items-center justify-between">
-                  <Text className={`text-xl font-extrabold ${pendingDuration === "monthly" ? "text-[#52B69A]" : "text-gray-900"}`}>
-                    Monthly Plan
-                  </Text>
-                  {pendingDuration === "monthly" ? (
-                    <View className="px-2 py-1 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
-                      <Text className="text-[10px] font-extrabold text-[#52B69A]">CURRENT</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </Pressable>
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Pressable
@@ -588,14 +571,15 @@ export default function WorkoutPlanScreen() {
             <Pressable
               disabled={busy}
               onPress={() => setPickerVisible(false)}
-              className="mt-3 py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
+              className="mt-3 py-3 rounded-full items-center border active:opacity-90"
+              style={cardStyle}
             >
-              <Text className="text-gray-800 font-extrabold">Cancel</Text>
+              <ThemedText className="font-extrabold">Cancel</ThemedText>
             </Pressable>
           </View>
         </View>
       </Modal>
-    </View>
+    </ThemedScreen>
   );
 }
 

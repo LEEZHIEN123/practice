@@ -1,26 +1,34 @@
 import { Pressable } from "@/components/Pressable";
+import {
+    ThemedBackButton,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  Timestamp,
-  updateDoc,
+    addDoc,
+    collection,
+    doc,
+    getDocs,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    Timestamp,
+    updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Platform, ScrollView, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
@@ -92,6 +100,13 @@ const formatDurationMinSec = (durationMin: number) => {
 export default function ProgressDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string; period?: string }>();
+  const {
+    cardStyle,
+    segmentTrackStyle,
+    segmentActiveStyle,
+    theme,
+  } = useThemedScreen();
+  const { inputStyle, modalCardStyle, placeholderColor } = useProfileCardStyles();
 
   const tab = (params.tab === "workout" || params.tab === "meal" || params.tab === "weight"
     ? params.tab
@@ -677,77 +692,79 @@ export default function ProgressDetailsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
         <View className="flex-row items-center justify-between mb-6">
-          <Pressable onPress={() => router.back()} className="w-12 h-12 rounded-full bg-white items-center justify-center">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-extrabold text-gray-900">{headerTitle}</Text>
-          <View className="w-12 h-12" />
+          <ThemedBackButton onPress={() => router.back()} />
+          <ThemedText className="text-xl font-extrabold">{headerTitle}</ThemedText>
+          <View className="w-11 h-11" />
         </View>
 
         {tab === "weight" ? (
           <>
-            <View className="bg-white rounded-3xl p-5 border border-gray-100">
+            <ThemedCard className="p-5">
               <View className="flex-row items-center justify-between">
                 <View>
-                  <Text className="text-base tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
+                  <ThemedText className="text-base tracking-widest font-extrabold">GRAPH PERIOD</ThemedText>
                   <View className="flex-row items-center mt-2">
-                    <Text className="text-lg font-extrabold text-gray-900">{title}</Text>
+                    <ThemedText className="text-lg font-extrabold">{title}</ThemedText>
                     <View
-                      className={`ml-2 px-2 py-1 rounded-full ${
-                        periodWeightDeltaKg < 0 ? "bg-red-50" : "bg-[#eaf7f0]"
-                      }`}
+                      className="ml-2 px-2 py-1 rounded-full"
+                      style={{
+                        backgroundColor: periodWeightDeltaKg < 0 ? theme.dangerSoft : theme.accentSoft,
+                      }}
                     >
-                      <Text
-                        className={`text-xs font-bold ${
-                          periodWeightDeltaKg < 0 ? "text-red-600" : "text-[#52B69A]"
-                        }`}
+                      <ThemedText
+                        className="text-xs font-bold"
+                        style={{ color: periodWeightDeltaKg < 0 ? theme.danger : theme.accentText }}
                       >
                         {`${periodWeightDeltaKg >= 0 ? "+" : ""}${periodWeightDeltaKg.toFixed(1)} kg`}
-                      </Text>
+                      </ThemedText>
                     </View>
                   </View>
                 </View>
-                <Pressable onPress={openLogWeight} className="px-4 py-2 rounded-full bg-[#76C893]">
-                  <Text className="text-white font-extrabold">Log weight</Text>
+                <Pressable onPress={openLogWeight} className="px-4 py-2 rounded-full" style={{ backgroundColor: theme.accent }}>
+                  <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>Log weight</ThemedText>
                 </Pressable>
               </View>
 
-              <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+              <View className="mt-4 rounded-full p-1 flex-row" style={segmentTrackStyle}>
                 {(["week", "month", "year"] as const).map((k) => {
                   const active = period === k;
                   return (
                     <Pressable
                       key={k}
                       onPress={() => setPeriod(k)}
-                      className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                      className="flex-1 py-3 rounded-full items-center"
+                      style={active ? segmentActiveStyle : undefined}
                     >
-                      <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                      <ThemedText variant={active ? "accent" : "muted"} className="font-bold">
                         {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
-                      </Text>
+                      </ThemedText>
                     </Pressable>
                   );
                 })}
               </View>
 
               <View className="mt-4 flex-row items-center">
-                {/* Left arrow (outside chart, inside card) */}
                 <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                  <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                    <Ionicons name="chevron-back" size={18} color="#76C893" />
+                  <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                    <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
-                {/* Chart + aligned labels */}
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
-                    <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
                     {weightBarTooltip ? (
                       <View className="absolute top-2 left-2 right-2 items-center">
-                        <View className="px-3 py-1.5 rounded-full bg-[#eaf7f0] border border-[#b7ead1]">
-                          <Text className="text-[11px] font-bold text-[#2f855a]">{weightBarTooltip}</Text>
+                        <View
+                          className="px-3 py-1.5 rounded-full border"
+                          style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                        >
+                          <ThemedText variant="accent" className="text-[11px] font-bold">
+                            {weightBarTooltip}
+                          </ThemedText>
                         </View>
                       </View>
                     ) : null}
@@ -766,14 +783,17 @@ export default function ProgressDetailsScreen() {
                               hitSlop={10}
                             >
                               <View
-                                style={{ height: h, width: 12, borderRadius: 999 }}
-                                className={
-                                  idx === hoverIdx
-                                    ? "bg-[#2f855a]"
-                                    : v === 0
-                                      ? "bg-gray-300"
-                                      : "bg-[#76C893]"
-                                }
+                                style={{
+                                  height: h,
+                                  width: 12,
+                                  borderRadius: 999,
+                                  backgroundColor:
+                                    idx === hoverIdx
+                                      ? theme.accentText
+                                      : v === 0
+                                        ? theme.iconMuted
+                                        : theme.accent,
+                                }}
                               />
                             </Pressable>
                           );
@@ -782,20 +802,22 @@ export default function ProgressDetailsScreen() {
                     </View>
                   </View>
 
-                  {/* Labels must align with bars (same padding + same flex) */}
                   <View className="flex-row mt-3 px-3">
                     {chartLabels.map((d, idx) => {
                       const isCurrentLabel =
                         currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
                       return (
                         <View key={`${d}-${idx}`} className="flex-1 items-center">
-                          <Text
-                            className={`text-[10px] font-bold ${isCurrentLabel ? "text-red-600" : "text-gray-500"}`}
+                          <ThemedText
+                            className="text-[10px] font-bold"
+                            style={{ color: isCurrentLabel ? theme.danger : theme.textMuted }}
                           >
                             {d}
-                          </Text>
+                          </ThemedText>
                           {isCurrentLabel ? (
-                            <Text className="text-[9px] font-extrabold text-red-600 mt-0.5">Current</Text>
+                            <ThemedText className="text-[9px] font-extrabold mt-0.5" style={{ color: theme.danger }}>
+                              Current
+                            </ThemedText>
                           ) : null}
                         </View>
                       );
@@ -803,24 +825,23 @@ export default function ProgressDetailsScreen() {
                   </View>
                 </View>
 
-                {/* Right arrow (outside chart, inside card) */}
                 {canGoNext ? (
                   <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                    <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                      <Ionicons name="chevron-forward" size={18} color="#76C893" />
+                    <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                      <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
                   <View className="w-8 h-52" />
                 )}
               </View>
-            </View>
+            </ThemedCard>
 
-            <View className="mt-5 bg-white rounded-3xl p-5 pb-6 border border-gray-100">
-              <Text className="text-base tracking-widest text-gray-900 font-extrabold">WEIGHT RECORD</Text>
+            <ThemedCard className="mt-5 p-5 pb-6">
+              <ThemedText className="text-base tracking-widest font-extrabold">WEIGHT RECORD</ThemedText>
               <View className="mt-4 gap-3">
                 {windowWeights.length === 0 ? (
-                  <Text className="text-gray-500">No weight logs yet.</Text>
+                  <ThemedText variant="muted">No weight logs yet.</ThemedText>
                 ) : (
                   windowWeights.map((r, idx) => {
                     const isCurrentRow =
@@ -828,28 +849,35 @@ export default function ProgressDetailsScreen() {
                     return (
                     <View
                       key={`${r.date.getTime()}-${idx}`}
-                      className={`flex-row items-center justify-between rounded-2xl px-4 py-4 bg-[#f3f4f3] ${
-                        isCurrentRow ? "border-2 border-red-500" : "border border-gray-200"
+                      className={`flex-row items-center justify-between rounded-2xl px-4 py-4 border ${
+                        isCurrentRow ? "border-2" : ""
                       }`}
+                      style={{
+                        backgroundColor: theme.rowBg,
+                        borderColor: isCurrentRow ? theme.danger : theme.cardBorder,
+                      }}
                     >
                       <View className="flex-row items-center flex-1 flex-wrap pr-2">
-                        <Text className="text-base font-bold text-gray-700">
+                        <ThemedText variant="secondary" className="text-base font-bold">
                           {period === "week" ? formatLongDate(r.date) : r.label}
-                        </Text>
+                        </ThemedText>
                         {isCurrentRow ? (
-                          <Text className="ml-2 text-xs font-extrabold text-red-600">Current</Text>
+                          <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
+                            Current
+                          </ThemedText>
                         ) : null}
                       </View>
                       <View className="flex-row items-center">
-                        <Text className="text-base font-extrabold text-gray-900">
+                        <ThemedText className="text-base font-extrabold">
                           {r.weight ? `${r.weight.toFixed(1)} kg` : "—"}
-                        </Text>
+                        </ThemedText>
                         <Pressable
                           onPress={() => openEditWeightFor(r.date, r.weight)}
                           hitSlop={10}
-                          className="ml-3 w-9 h-9 rounded-full bg-white border border-gray-200 items-center justify-center"
+                          className="ml-3 w-9 h-9 rounded-full border items-center justify-center"
+                          style={cardStyle}
                         >
-                          <Ionicons name="create-outline" size={18} color="#111827" />
+                          <Ionicons name="create-outline" size={18} color={theme.textPrimary} />
                         </Pressable>
                       </View>
                     </View>
@@ -857,33 +885,34 @@ export default function ProgressDetailsScreen() {
                   })
                 )}
               </View>
-            </View>
+            </ThemedCard>
           </>
         ) : tab === "workout" ? (
           <>
-            <View className="bg-white rounded-3xl p-5 border border-gray-100">
+            <ThemedCard className="p-5">
               <View className="flex-row items-center justify-between">
                 <View>
-                  <Text className="text-base tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
-                  <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
+                  <ThemedText className="text-base tracking-widest font-extrabold">GRAPH PERIOD</ThemedText>
+                  <ThemedText className="text-lg font-extrabold mt-2">{title}</ThemedText>
                 </View>
-                <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
-                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates</Text>
+                <View className="px-3 py-2 rounded-2xl border" style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}>
+                  <ThemedText variant="accent" className="text-[11px] font-bold">Auto-updates</ThemedText>
                 </View>
               </View>
 
-              <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+              <View className="mt-4 rounded-full p-1 flex-row" style={segmentTrackStyle}>
                 {(["week", "month", "year"] as const).map((k) => {
                   const active = period === k;
                   return (
                     <Pressable
                       key={k}
                       onPress={() => setPeriod(k)}
-                      className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                      className="flex-1 py-3 rounded-full items-center"
+                      style={active ? segmentActiveStyle : undefined}
                     >
-                      <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                      <ThemedText variant={active ? "accent" : "muted"} className="font-bold">
                         {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
-                      </Text>
+                      </ThemedText>
                     </Pressable>
                   );
                 })}
@@ -891,20 +920,23 @@ export default function ProgressDetailsScreen() {
 
               <View className="mt-4 flex-row items-center">
                 <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                  <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                    <Ionicons name="chevron-back" size={18} color="#76C893" />
+                  <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                    <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
-                    <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
                     {workoutBarTooltip ? (
                       <View className="absolute top-2 left-2 right-2 items-center px-1">
-                        <View className="px-3 py-2 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] max-w-full">
-                          <Text className="text-[11px] font-bold text-[#2f855a] text-center leading-5">
+                        <View
+                          className="px-3 py-2 rounded-2xl border max-w-full"
+                          style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                        >
+                          <ThemedText variant="accent" className="text-[11px] font-bold text-center leading-5">
                             {workoutBarTooltip}
-                          </Text>
+                          </ThemedText>
                         </View>
                       </View>
                     ) : null}
@@ -923,8 +955,12 @@ export default function ProgressDetailsScreen() {
                               hitSlop={8}
                             >
                               <View
-                                style={{ height: h, width: active ? 14 : 12, borderRadius: 999 }}
-                                className={v === 0 ? "bg-gray-300" : active ? "bg-[#52B69A]" : "bg-[#76C893]"}
+                                style={{
+                                  height: h,
+                                  width: active ? 14 : 12,
+                                  borderRadius: 999,
+                                  backgroundColor: v === 0 ? theme.iconMuted : active ? theme.accentText : theme.accent,
+                                }}
                               />
                             </Pressable>
                           );
@@ -936,7 +972,7 @@ export default function ProgressDetailsScreen() {
                   <View className="flex-row mt-3 px-3">
                     {chartLabels.map((d, idx) => (
                       <View key={`${d}-${idx}`} className="flex-1 items-center">
-                        <Text className="text-[10px] text-gray-500 font-bold">{d}</Text>
+                        <ThemedText variant="muted" className="text-[10px] font-bold">{d}</ThemedText>
                       </View>
                     ))}
                   </View>
@@ -944,21 +980,21 @@ export default function ProgressDetailsScreen() {
 
                 {canGoNext ? (
                   <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                    <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                      <Ionicons name="chevron-forward" size={18} color="#76C893" />
+                    <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                      <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
                   <View className="w-8 h-52" />
                 )}
               </View>
-            </View>
+            </ThemedCard>
 
-            <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-14 border border-gray-100">
-              <Text className="text-base tracking-[0.12em] text-gray-900 font-extrabold">WORKOUT RECORD</Text>
-              <Text className="text-xs text-gray-500 mt-1">
+            <ThemedCard className="mt-6 p-5 pt-8 pb-14">
+              <ThemedText className="text-base tracking-[0.12em] font-extrabold">WORKOUT RECORD</ThemedText>
+              <ThemedText variant="muted" className="text-xs mt-1">
                 History includes today and previous days. Filter by day or pick a date.
-              </Text>
+              </ThemedText>
 
               <ScrollView
                 horizontal
@@ -968,38 +1004,50 @@ export default function ProgressDetailsScreen() {
               >
                 <Pressable
                   onPress={() => setWorkoutRecentDay(null)}
-                  className={`px-4 py-2.5 rounded-full border ${
-                    workoutRecentDay === null ? "bg-[#76C893] border-[#76C893]" : "bg-white border-gray-200"
-                  }`}
+                  className="px-4 py-2.5 rounded-full border"
+                  style={
+                    workoutRecentDay === null
+                      ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                      : cardStyle
+                  }
                 >
-                  <Text
-                    className={`font-extrabold text-sm ${workoutRecentDay === null ? "text-white" : "text-gray-800"}`}
+                  <ThemedText
+                    className="font-extrabold text-sm"
+                    style={{ color: workoutRecentDay === null ? "#ffffff" : theme.textPrimary }}
                   >
                     All days
-                  </Text>
+                  </ThemedText>
                 </Pressable>
                 <Pressable
                   onPress={() => setWorkoutDayPickerOpen(true)}
-                  className={`flex-row items-center px-4 py-2.5 rounded-full border ${
-                    workoutRecentDay !== null ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
-                  }`}
+                  className="flex-row items-center px-4 py-2.5 rounded-full border"
+                  style={
+                    workoutRecentDay !== null
+                      ? { backgroundColor: theme.accentSoft, borderColor: theme.accentText }
+                      : cardStyle
+                  }
                 >
-                  <Ionicons name="calendar-outline" size={18} color={workoutRecentDay !== null ? "#52B69A" : "#6b7280"} />
-                  <Text
-                    className={`font-extrabold text-sm ml-1.5 ${workoutRecentDay !== null ? "text-[#52B69A]" : "text-gray-800"}`}
+                  <Ionicons
+                    name="calendar-outline"
+                    size={18}
+                    color={workoutRecentDay !== null ? theme.accentText : theme.iconMuted}
+                  />
+                  <ThemedText
+                    variant={workoutRecentDay !== null ? "accent" : "primary"}
+                    className="font-extrabold text-sm ml-1.5"
                   >
                     Pick a day
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               </ScrollView>
 
               {workoutRecentDay ? (
                 <View className="mt-3 flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-500 flex-1 pr-2">
-                    Showing: <Text className="font-extrabold text-gray-800">{workoutRecentFilterLabel}</Text>
-                  </Text>
+                  <ThemedText variant="muted" className="text-sm flex-1 pr-2">
+                    Showing: <ThemedText className="font-extrabold">{workoutRecentFilterLabel}</ThemedText>
+                  </ThemedText>
                   <Pressable onPress={() => setWorkoutRecentDay(null)} hitSlop={8}>
-                    <Text className="text-sm font-extrabold text-[#52B69A]">Show all</Text>
+                    <ThemedText variant="accent" className="text-sm font-extrabold">Show all</ThemedText>
                   </Pressable>
                 </View>
               ) : null}
@@ -1020,9 +1068,10 @@ export default function ProgressDetailsScreen() {
                   {Platform.OS === "ios" ? (
                     <Pressable
                       onPress={() => setWorkoutDayPickerOpen(false)}
-                      className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center"
+                      className="mt-2 py-3 rounded-2xl border items-center"
+                      style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                     >
-                      <Text className="font-extrabold text-[#52B69A]">Done</Text>
+                      <ThemedText variant="accent" className="font-extrabold">Done</ThemedText>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1030,78 +1079,87 @@ export default function ProgressDetailsScreen() {
 
               <View className="mt-4 gap-4 pb-6">
                 {groupedWorkouts.length === 0 ? (
-                  <Text className="text-gray-500 text-sm">No workouts yet.</Text>
+                  <ThemedText variant="muted" className="text-sm">No workouts yet.</ThemedText>
                 ) : filteredGroupedWorkouts.length === 0 ? (
-                  <Text className="text-gray-500 text-sm">
+                  <ThemedText variant="muted" className="text-sm">
                     No workouts for this day. Try &quot;All days&quot; or another date.
-                  </Text>
+                  </ThemedText>
                 ) : (
                   filteredGroupedWorkouts.map((g) => (
                     <View
                       key={g.dateKey}
-                      className="rounded-2xl border-2 border-gray-200 bg-white overflow-hidden shadow-sm shadow-black/10"
+                      className="rounded-2xl overflow-hidden border-2"
+                      style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
                     >
-                      <View className="bg-[#eaf7f0] border-b-2 border-[#b7ead1] px-4 py-3">
-                        <Text className="text-[10px] font-extrabold tracking-[0.2em] text-[#52B69A]">DAY</Text>
-                        <Text className="text-lg font-extrabold text-gray-900 mt-1">{formatLongDate(g.dayDate)}</Text>
+                      <View
+                        className="border-b-2 px-4 py-3"
+                        style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                      >
+                        <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
+                        <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
                       </View>
-                      <View className="px-3 py-3 gap-2 bg-[#fafafa]">
+                      <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
                         {g.entries.map((w) => (
                           <View
                             key={w.id}
-                            className="flex-row items-start justify-between bg-white rounded-xl px-3 py-3 border border-gray-200"
+                            className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
                           >
                             <View className="flex-1 pr-3">
-                              <Text className="text-sm text-gray-600 font-semibold">
+                              <ThemedText variant="secondary" className="text-sm font-semibold">
                                 {formatTimeHms(w.createdAt)}
-                              </Text>
-                              <Text className="text-xs text-gray-500 mt-1" numberOfLines={2}>
+                              </ThemedText>
+                              <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
                                 {w.title} • {formatDurationMinSec(w.durationMin)}
-                              </Text>
+                              </ThemedText>
                             </View>
-                            <Text className="text-base font-extrabold text-gray-900">
+                            <ThemedText className="text-base font-extrabold">
                               {Math.round(w.burnedKcal).toLocaleString()} kcal
-                            </Text>
+                            </ThemedText>
                           </View>
                         ))}
                       </View>
-                      <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
-                        <Text className="text-xs font-extrabold tracking-widest text-gray-500">DAY TOTAL</Text>
-                        <Text className="text-base font-extrabold text-[#52B69A]">
+                      <View
+                        className="flex-row items-center justify-between px-4 py-3 border-t-2"
+                        style={{ backgroundColor: theme.cardBg, borderTopColor: theme.cardBorder }}
+                      >
+                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">DAY TOTAL</ThemedText>
+                        <ThemedText variant="accent" className="text-base font-extrabold">
                           {Math.round(g.total).toLocaleString()} kcal
-                        </Text>
+                        </ThemedText>
                       </View>
                     </View>
                   ))
                 )}
               </View>
-            </View>
+            </ThemedCard>
           </>
         ) : (
           <>
-            <View className="bg-white rounded-3xl p-5 border border-gray-100">
+            <ThemedCard className="p-5">
               <View className="flex-row items-center justify-between">
                 <View>
-                  <Text className="text-base tracking-widest text-gray-900 font-extrabold">GRAPH PERIOD</Text>
-                  <Text className="text-lg font-extrabold text-gray-900 mt-2">{title}</Text>
+                  <ThemedText className="text-base tracking-widest font-extrabold">GRAPH PERIOD</ThemedText>
+                  <ThemedText className="text-lg font-extrabold mt-2">{title}</ThemedText>
                 </View>
-                <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
-                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates</Text>
+                <View className="px-3 py-2 rounded-2xl border" style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}>
+                  <ThemedText variant="accent" className="text-[11px] font-bold">Auto-updates</ThemedText>
                 </View>
               </View>
 
-              <View className="mt-4 bg-white rounded-full p-1 flex-row border border-gray-100">
+              <View className="mt-4 rounded-full p-1 flex-row" style={segmentTrackStyle}>
                 {(["week", "month", "year"] as const).map((k) => {
                   const active = period === k;
                   return (
                     <Pressable
                       key={k}
                       onPress={() => setPeriod(k)}
-                      className={`flex-1 py-3 rounded-full items-center ${active ? "bg-[#eaf7f0]" : "bg-transparent"}`}
+                      className="flex-1 py-3 rounded-full items-center"
+                      style={active ? segmentActiveStyle : undefined}
                     >
-                      <Text className={`${active ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                      <ThemedText variant={active ? "accent" : "muted"} className="font-bold">
                         {k === "week" ? "Week" : k === "month" ? "Month" : "Year"}
-                      </Text>
+                      </ThemedText>
                     </Pressable>
                   );
                 })}
@@ -1109,14 +1167,14 @@ export default function ProgressDetailsScreen() {
 
               <View className="mt-4 flex-row items-center">
                 <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                  <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                    <Ionicons name="chevron-back" size={18} color="#76C893" />
+                  <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                    <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl bg-[#f3f4f3] overflow-hidden justify-center">
-                    <View className="absolute left-0 right-0 bottom-0 h-24 bg-[#76C893] opacity-10" />
+                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
                     <View className="flex-1 flex-row items-end px-3 pb-5">
                       {(() => {
                         const max = Math.max(...mealBarsForChart, 1);
@@ -1126,8 +1184,12 @@ export default function ProgressDetailsScreen() {
                           return (
                             <View key={`ml-${idx}`} className="flex-1 items-center">
                               <View
-                                style={{ height: h, width: 12, borderRadius: 999 }}
-                                className={v === 0 ? "bg-gray-300" : "bg-[#76C893]"}
+                                style={{
+                                  height: h,
+                                  width: 12,
+                                  borderRadius: 999,
+                                  backgroundColor: v === 0 ? theme.iconMuted : theme.accent,
+                                }}
                               />
                             </View>
                           );
@@ -1139,7 +1201,7 @@ export default function ProgressDetailsScreen() {
                   <View className="flex-row mt-3 px-3">
                     {chartLabels.map((d, idx) => (
                       <View key={`${d}-${idx}`} className="flex-1 items-center">
-                        <Text className="text-[10px] text-gray-500 font-bold">{d}</Text>
+                        <ThemedText variant="muted" className="text-[10px] font-bold">{d}</ThemedText>
                       </View>
                     ))}
                   </View>
@@ -1147,21 +1209,21 @@ export default function ProgressDetailsScreen() {
 
                 {canGoNext ? (
                   <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
-                    <View className="w-8 h-8 rounded-full bg-white border border-gray-200 items-center justify-center">
-                      <Ionicons name="chevron-forward" size={18} color="#76C893" />
+                    <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
+                      <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
                   <View className="w-8 h-52" />
                 )}
               </View>
-            </View>
+            </ThemedCard>
 
-            <View className="mt-6 bg-white rounded-3xl p-5 pt-8 pb-14 border border-gray-100">
-              <Text className="text-base tracking-[0.12em] text-gray-900 font-extrabold">MEAL RECORD</Text>
-              <Text className="text-xs text-gray-500 mt-1">
+            <ThemedCard className="mt-6 p-5 pt-8 pb-14">
+              <ThemedText className="text-base tracking-[0.12em] font-extrabold">MEAL RECORD</ThemedText>
+              <ThemedText variant="muted" className="text-xs mt-1">
                 History includes today and previous days. Filter by day or pick a date.
-              </Text>
+              </ThemedText>
 
               <ScrollView
                 horizontal
@@ -1171,36 +1233,50 @@ export default function ProgressDetailsScreen() {
               >
                 <Pressable
                   onPress={() => setMealRecentDay(null)}
-                  className={`px-4 py-2.5 rounded-full border ${
-                    mealRecentDay === null ? "bg-[#76C893] border-[#76C893]" : "bg-white border-gray-200"
-                  }`}
+                  className="px-4 py-2.5 rounded-full border"
+                  style={
+                    mealRecentDay === null
+                      ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                      : cardStyle
+                  }
                 >
-                  <Text className={`font-extrabold text-sm ${mealRecentDay === null ? "text-white" : "text-gray-800"}`}>
+                  <ThemedText
+                    className="font-extrabold text-sm"
+                    style={{ color: mealRecentDay === null ? "#ffffff" : theme.textPrimary }}
+                  >
                     All days
-                  </Text>
+                  </ThemedText>
                 </Pressable>
                 <Pressable
                   onPress={() => setMealDayPickerOpen(true)}
-                  className={`flex-row items-center px-4 py-2.5 rounded-full border ${
-                    mealRecentDay !== null ? "bg-[#eaf7f0] border-[#52B69A]" : "bg-white border-gray-200"
-                  }`}
+                  className="flex-row items-center px-4 py-2.5 rounded-full border"
+                  style={
+                    mealRecentDay !== null
+                      ? { backgroundColor: theme.accentSoft, borderColor: theme.accentText }
+                      : cardStyle
+                  }
                 >
-                  <Ionicons name="calendar-outline" size={18} color={mealRecentDay !== null ? "#52B69A" : "#6b7280"} />
-                  <Text
-                    className={`font-extrabold text-sm ml-1.5 ${mealRecentDay !== null ? "text-[#52B69A]" : "text-gray-800"}`}
+                  <Ionicons
+                    name="calendar-outline"
+                    size={18}
+                    color={mealRecentDay !== null ? theme.accentText : theme.iconMuted}
+                  />
+                  <ThemedText
+                    variant={mealRecentDay !== null ? "accent" : "primary"}
+                    className="font-extrabold text-sm ml-1.5"
                   >
                     Pick a day
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               </ScrollView>
 
               {mealRecentDay ? (
                 <View className="mt-3 flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-500 flex-1 pr-2">
-                    Showing: <Text className="font-extrabold text-gray-800">{mealRecentFilterLabel}</Text>
-                  </Text>
+                  <ThemedText variant="muted" className="text-sm flex-1 pr-2">
+                    Showing: <ThemedText className="font-extrabold">{mealRecentFilterLabel}</ThemedText>
+                  </ThemedText>
                   <Pressable onPress={() => setMealRecentDay(null)} hitSlop={8}>
-                    <Text className="text-sm font-extrabold text-[#52B69A]">Show all</Text>
+                    <ThemedText variant="accent" className="text-sm font-extrabold">Show all</ThemedText>
                   </Pressable>
                 </View>
               ) : null}
@@ -1221,9 +1297,10 @@ export default function ProgressDetailsScreen() {
                   {Platform.OS === "ios" ? (
                     <Pressable
                       onPress={() => setMealDayPickerOpen(false)}
-                      className="mt-2 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center"
+                      className="mt-2 py-3 rounded-2xl border items-center"
+                      style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                     >
-                      <Text className="font-extrabold text-[#52B69A]">Done</Text>
+                      <ThemedText variant="accent" className="font-extrabold">Done</ThemedText>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1231,80 +1308,88 @@ export default function ProgressDetailsScreen() {
 
               <View className="mt-4 gap-4 pb-6">
                 {groupedMeals.length === 0 ? (
-                  <Text className="text-gray-500 text-sm">No meals yet.</Text>
+                  <ThemedText variant="muted" className="text-sm">No meals yet.</ThemedText>
                 ) : filteredGroupedMeals.length === 0 ? (
-                  <Text className="text-gray-500 text-sm">
+                  <ThemedText variant="muted" className="text-sm">
                     No meals for this day. Try &quot;All days&quot; or another date.
-                  </Text>
+                  </ThemedText>
                 ) : (
                   filteredGroupedMeals.map((g) => (
                     <View
                       key={g.dateKey}
-                      className="rounded-2xl border-2 border-gray-200 bg-white overflow-hidden shadow-sm shadow-black/10"
+                      className="rounded-2xl overflow-hidden border-2"
+                      style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
                     >
-                      <View className="bg-[#eaf7f0] border-b-2 border-[#b7ead1] px-4 py-3">
-                        <Text className="text-[10px] font-extrabold tracking-[0.2em] text-[#52B69A]">DAY</Text>
-                        <Text className="text-lg font-extrabold text-gray-900 mt-1">{formatLongDate(g.dayDate)}</Text>
+                      <View
+                        className="border-b-2 px-4 py-3"
+                        style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                      >
+                        <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
+                        <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
                       </View>
-                      <View className="px-3 py-3 gap-2 bg-[#fafafa]">
+                      <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
                         {g.entries.map((m) => (
                           <View
                             key={m.id}
-                            className="flex-row items-start justify-between bg-white rounded-xl px-3 py-3 border border-gray-200"
+                            className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
                           >
                             <View className="flex-1 pr-3">
-                              <Text className="text-sm text-gray-600 font-semibold">{formatTimeHms(m.createdAt)}</Text>
-                              <Text className="text-xs text-gray-500 mt-1" numberOfLines={2}>
+                              <ThemedText variant="secondary" className="text-sm font-semibold">
+                                {formatTimeHms(m.createdAt)}
+                              </ThemedText>
+                              <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
                                 {m.title}
-                              </Text>
+                              </ThemedText>
                             </View>
-                            <Text className="text-base font-extrabold text-gray-900">
+                            <ThemedText className="text-base font-extrabold">
                               {Math.round(m.calories).toLocaleString()} kcal
-                            </Text>
+                            </ThemedText>
                           </View>
                         ))}
                       </View>
-                      <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
-                        <Text className="text-xs font-extrabold tracking-widest text-gray-500">DAY TOTAL</Text>
-                        <Text className="text-base font-extrabold text-[#52B69A]">
+                      <View
+                        className="flex-row items-center justify-between px-4 py-3 border-t-2"
+                        style={{ backgroundColor: theme.cardBg, borderTopColor: theme.cardBorder }}
+                      >
+                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">DAY TOTAL</ThemedText>
+                        <ThemedText variant="accent" className="text-base font-extrabold">
                           {Math.round(g.total).toLocaleString()} kcal
-                        </Text>
+                        </ThemedText>
                       </View>
                     </View>
                   ))
                 )}
               </View>
-            </View>
+            </ThemedCard>
           </>
         )}
       </ScrollView>
 
-      {/* Log weight modal */}
       <Modal visible={logVisible} transparent animationType="fade" onRequestClose={() => setLogVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-5">
-            <Text className="text-xl font-extrabold text-gray-900">Edit weight</Text>
-            <Text className="text-gray-500 mt-1">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
+            <ThemedText className="text-xl font-extrabold">Edit weight</ThemedText>
+            <ThemedText variant="muted" className="mt-1">
               {isEditingRecentWeight ? "Edit weight for this day." : "Pick a date and log your weight."}
-            </Text>
+            </ThemedText>
 
             <View className="mt-5">
               {isEditingRecentWeight ? (
-                <>
-                  <View className="flex-row items-center ml-1 mb-2">
-                    <Text className="text-gray-900 font-extrabold">DATE :</Text>
-                    <Text className="text-gray-700 font-bold ml-2">{formatLongDate(logDate)}</Text>
-                  </View>
-                </>
+                <View className="flex-row items-center ml-1 mb-2">
+                  <ThemedText className="font-extrabold">DATE :</ThemedText>
+                  <ThemedText variant="secondary" className="font-bold ml-2">{formatLongDate(logDate)}</ThemedText>
+                </View>
               ) : (
                 <>
-                  <Text className="text-gray-900 font-extrabold ml-1 mb-2">DATE</Text>
+                  <ThemedText className="font-extrabold ml-1 mb-2">DATE</ThemedText>
                   <Pressable
                     onPress={() => setShowDatePicker(true)}
-                    className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900 flex-row items-center justify-between"
+                    className="rounded-2xl px-4 py-3 flex-row items-center justify-between"
+                    style={inputStyle}
                   >
-                    <Text className="text-gray-900 font-bold">{formatLongDate(logDate)}</Text>
-                    <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+                    <ThemedText className="font-bold">{formatLongDate(logDate)}</ThemedText>
+                    <Ionicons name="calendar-outline" size={20} color={theme.iconMuted} />
                   </Pressable>
 
                   {showDatePicker && (
@@ -1323,13 +1408,15 @@ export default function ProgressDetailsScreen() {
                 </>
               )}
 
-              <Text className="text-gray-900 font-extrabold ml-1 mb-2 mt-4">WEIGHT (kg)</Text>
+              <ThemedText className="font-extrabold ml-1 mb-2 mt-4">WEIGHT (kg)</ThemedText>
               <TextInput
                 value={logWeightText}
                 onChangeText={(t) => setLogWeightText(sanitizeDecimal(t))}
                 keyboardType="decimal-pad"
-                className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900"
+                className="rounded-2xl px-4 py-3"
+                style={inputStyle}
                 placeholder="68.2"
+                placeholderTextColor={placeholderColor}
               />
               <Slider
                 style={{ width: "100%", marginTop: 10 }}
@@ -1338,9 +1425,9 @@ export default function ProgressDetailsScreen() {
                 step={0.1}
                 value={Number(logWeightText || 0) || 68}
                 onValueChange={(v) => setLogWeightText(v.toFixed(1))}
-                minimumTrackTintColor="#76C893"
-                maximumTrackTintColor="#d1d5db"
-                thumbTintColor="#76C893"
+                minimumTrackTintColor={theme.accent}
+                maximumTrackTintColor={theme.cardBorder}
+                thumbTintColor={theme.accent}
               />
             </View>
 
@@ -1353,20 +1440,23 @@ export default function ProgressDetailsScreen() {
                 }}
                 className="px-4 py-3 mr-2"
               >
-                <Text className="font-extrabold text-gray-500">Cancel</Text>
+                <ThemedText variant="muted" className="font-extrabold">Cancel</ThemedText>
               </Pressable>
               <Pressable
                 onPress={saveWeightLog}
                 disabled={savingLog}
-                className={`px-5 py-3 rounded-2xl bg-[#76C893] ${savingLog ? "opacity-60" : "opacity-100"}`}
+                className={`px-5 py-3 rounded-2xl ${savingLog ? "opacity-60" : "opacity-100"}`}
+                style={{ backgroundColor: theme.accent }}
               >
-                <Text className="font-extrabold text-white">{savingLog ? "Saving..." : "Save"}</Text>
+                <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                  {savingLog ? "Saving..." : "Save"}
+                </ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+    </ThemedScreen>
   );
 }
 

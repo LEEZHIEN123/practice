@@ -1,8 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { MusicTrack } from "@/context/MusicPlayerContext";
 
-const STORAGE_KEY = "local_music_library_v1";
-
 export type StoredLocalTrack = MusicTrack & {
   addedAt: number;
   /** Original file name from device import (used to block duplicates). */
@@ -14,6 +12,10 @@ export type AddLocalMusicResult = {
   added: StoredLocalTrack[];
   skippedTitles: string[];
 };
+
+export function localMusicStorageKey(uid: string): string {
+  return `local_music_library_v1:${uid}`;
+}
 
 function duplicateKey(track: Pick<StoredLocalTrack, "sourceFileName" | "title">): string {
   const raw = (track.sourceFileName ?? track.title).trim().toLowerCase();
@@ -29,10 +31,9 @@ export function titleFromFileName(name: string): string {
   return base.replace(/[_-]+/g, " ").trim() || "Unknown track";
 }
 
-export async function loadLocalMusicLibrary(): Promise<StoredLocalTrack[]> {
+function parseStoredTracks(raw: string | null): StoredLocalTrack[] {
+  if (!raw) return [];
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
@@ -47,14 +48,33 @@ export async function loadLocalMusicLibrary(): Promise<StoredLocalTrack[]> {
   }
 }
 
-export async function saveLocalMusicLibrary(tracks: StoredLocalTrack[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(tracks));
+export async function loadLocalMusicLibrary(uid: string | null): Promise<StoredLocalTrack[]> {
+  if (!uid) return [];
+  try {
+    const raw = await AsyncStorage.getItem(localMusicStorageKey(uid));
+    return parseStoredTracks(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveLocalMusicLibrary(
+  uid: string | null,
+  tracks: StoredLocalTrack[]
+): Promise<void> {
+  if (!uid) return;
+  await AsyncStorage.setItem(localMusicStorageKey(uid), JSON.stringify(tracks));
 }
 
 export async function addLocalMusicTracks(
+  uid: string | null,
   incoming: Array<MusicTrack & { sourceFileName?: string }>
 ): Promise<AddLocalMusicResult> {
-  const existing = await loadLocalMusicLibrary();
+  if (!uid) {
+    throw new Error("Sign in to add music to your library.");
+  }
+
+  const existing = await loadLocalMusicLibrary(uid);
   const byId = new Map(existing.map((t) => [t.id, t]));
   const existingKeys = new Set(existing.map((t) => duplicateKey(t)));
   const now = Date.now();
@@ -87,13 +107,17 @@ export async function addLocalMusicTracks(
 
   const merged = [...byId.values()].sort((a, b) => b.addedAt - a.addedAt);
   if (added.length > 0) {
-    await saveLocalMusicLibrary(merged);
+    await saveLocalMusicLibrary(uid, merged);
   }
   return { tracks: merged, added, skippedTitles };
 }
 
-export async function removeLocalMusicTrack(id: string): Promise<StoredLocalTrack[]> {
-  const next = (await loadLocalMusicLibrary()).filter((t) => t.id !== id);
-  await saveLocalMusicLibrary(next);
+export async function removeLocalMusicTrack(
+  uid: string | null,
+  id: string
+): Promise<StoredLocalTrack[]> {
+  if (!uid) return [];
+  const next = (await loadLocalMusicLibrary(uid)).filter((t) => t.id !== id);
+  await saveLocalMusicLibrary(uid, next);
   return next;
 }

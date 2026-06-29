@@ -1,4 +1,7 @@
 import { Pressable } from "@/components/Pressable";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
+import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
+import { useLightScreen } from "@/lib/useLightScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -8,12 +11,21 @@ import {
 } from "firebase/auth";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Modal, Text, TextInput, View } from "react-native";
-import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
-import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { auth } from "../firebaseConfig";
 
 export default function Login() {
   const router = useRouter();
+  const {
+    theme,
+    cardStyle,
+    inputStyle,
+    modalCardStyle,
+    placeholderColor,
+    screenStyle,
+    textPrimary,
+    textSecondary,
+    textAccent,
+  } = useLightScreen();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +39,6 @@ export default function Login() {
   const [forgotEmailError, setForgotEmailError] = useState("");
 
   const isValidEmailFormat = (v: string) => {
-    // Simple, practical email format check (no RFC-perfect validation needed for UI).
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   };
 
@@ -52,7 +63,6 @@ export default function Login() {
     return ok;
   };
 
-  // ✅ Login
   const login = async () => {
     const cleanEmail = email.trim().toLowerCase();
 
@@ -93,7 +103,6 @@ export default function Login() {
     }
   };
 
-  // ✅ Forgot Password (more reliable + better errors)
   const openForgotPassword = () => {
     setForgotEmail(email.trim().toLowerCase());
     setForgotEmailError("");
@@ -137,29 +146,31 @@ export default function Login() {
   };
 
   return (
-    <View className="flex-1 bg-[#f4fcf7] justify-center px-3">
-      {/* Profile Icon */}
+    <View className="flex-1 justify-center px-3" style={screenStyle}>
       <View className="items-center mb-6">
-        <View className="w-28 h-28 bg-white rounded-full items-center justify-center shadow-lg">
-          <Ionicons name="person" size={50} color="#76C893" />
+        <View
+          className="w-28 h-28 rounded-full items-center justify-center shadow-lg"
+          style={cardStyle}
+        >
+          <Ionicons name="person" size={50} color={theme.accent} />
         </View>
       </View>
 
-      {/* Title */}
-      <Text className="text-3xl font-bold text-center text-gray-800 mb-2">
+      <Text className="text-3xl font-bold text-center mb-2" style={textPrimary}>
         Login
       </Text>
 
-      <Text className="text-center text-lg text-gray-500 mb-8">
+      <Text className="text-center text-lg mb-8" style={textSecondary}>
         Welcome back!{"\n"}Please enter your email and password to login.
       </Text>
-    
-      {/* Email */}
-      <Text className="text-gray-800 mb-2 ml-2">Email Address</Text>
+
+      <Text className="mb-2 ml-2" style={textPrimary}>
+        Email Address
+      </Text>
       <View className="mb-5">
         <TextInput
           placeholder="hello123@gmail.com"
-          placeholderTextColor="#b8c4bd"
+          placeholderTextColor={placeholderColor}
           value={email}
           onChangeText={(v) => {
             setEmail(v);
@@ -167,35 +178,39 @@ export default function Login() {
           }}
           autoCapitalize="none"
           keyboardType="email-address"
-          className="rounded-xl bg-white px-4 py-4 text-gray-700"
+          className="rounded-xl px-4 py-4"
+          style={inputStyle}
         />
-        {!!emailError && <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>}
+        {!!emailError && (
+          <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>
+        )}
       </View>
 
-      {/* Password Label + Forgot */}
       <View className="flex-row justify-between items-center mb-2">
-        <Text className="text-gray-800 ml-2">Password</Text>
+        <Text className="ml-2" style={textPrimary}>
+          Password
+        </Text>
 
         <Pressable onPress={openForgotPassword} hitSlop={10}>
-          <Text className="text-[#76C893] font-semibold">
+          <Text className="font-semibold" style={textAccent}>
             Forgot Password?
           </Text>
         </Pressable>
       </View>
 
-      {/* Password Input + Eye Toggle */}
       <View className="mb-6">
         <View className="relative">
           <TextInput
             placeholder="Enter your password here"
-            placeholderTextColor="#b8c4bd"
+            placeholderTextColor={placeholderColor}
             value={password}
             onChangeText={(v) => {
               setPassword(v);
               if (passwordError) setPasswordError("");
             }}
             secureTextEntry={!showPassword}
-            className="rounded-xl bg-white px-4 py-4 pr-12 text-gray-700"
+            className="rounded-xl px-4 py-4 pr-12"
+            style={inputStyle}
           />
 
           <Pressable
@@ -206,40 +221,35 @@ export default function Login() {
             <Ionicons
               name={showPassword ? "eye-off-outline" : "eye-outline"}
               size={22}
-              color="gray"
+              color={theme.iconMuted}
             />
           </Pressable>
         </View>
-        {!!passwordError && <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>}
+        {!!passwordError && (
+          <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>
+        )}
       </View>
 
-      {/* Login Button */}
       <Pressable
         onPress={login}
         className={`rounded-full overflow-hidden mb-6 ${loading ? "opacity-60" : "opacity-100"}`}
         disabled={loading}
       >
         <LinearGradient
-          colors={["#76C893", "#52B69A"]}
+          colors={[theme.accent, theme.accentText]}
           className="py-4 items-center rounded-2xl"
         >
           {loading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text className="text-white text-lg font-semibold">
-              Login
-            </Text>
+            <Text className="text-white text-lg font-semibold">Login</Text>
           )}
         </LinearGradient>
       </Pressable>
 
-      {/* Sign Up Link */}
-      <Text className="text-center text-gray-500">
+      <Text className="text-center" style={textSecondary}>
         New here?{" "}
-        <Text
-          className="text-[#76C893] font-semibold"
-          onPress={() => router.push("/register")}
-        >
+        <Text className="font-semibold" style={textAccent} onPress={() => router.push("/register")}>
           Click Here to Register
         </Text>
       </Text>
@@ -250,16 +260,21 @@ export default function Login() {
         animationType="fade"
         onRequestClose={() => setForgotVisible(false)}
       >
-        <View className="flex-1 items-center justify-center bg-black/35 px-6">
-          <View className="w-full rounded-3xl bg-white p-5 border border-gray-100">
-            <Text className="text-xl font-extrabold text-gray-900">Reset password</Text>
-            <Text className="text-gray-500 mt-2">
+        <View
+          className="flex-1 items-center justify-center px-6"
+          style={{ backgroundColor: theme.modalOverlay }}
+        >
+          <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
+            <Text className="text-xl font-extrabold" style={textPrimary}>
+              Reset password
+            </Text>
+            <Text className="mt-2" style={textSecondary}>
               Enter your email and we will send you a reset link.
             </Text>
 
             <TextInput
               placeholder="hello123@gmail.com"
-              placeholderTextColor="#b8c4bd"
+              placeholderTextColor={placeholderColor}
               value={forgotEmail}
               onChangeText={(v) => {
                 setForgotEmail(v);
@@ -267,9 +282,12 @@ export default function Login() {
               }}
               autoCapitalize="none"
               keyboardType="email-address"
-              className="mt-4 rounded-xl bg-[#f7faf8] px-4 py-4 text-gray-700 border border-gray-200"
+              className="mt-4 rounded-xl px-4 py-4"
+              style={inputStyle}
             />
-            {!!forgotEmailError && <Text className="text-red-500 text-xs mt-2 ml-2">{forgotEmailError}</Text>}
+            {!!forgotEmailError && (
+              <Text className="text-red-500 text-xs mt-2 ml-2">{forgotEmailError}</Text>
+            )}
 
             <Pressable
               onPress={handleForgotPassword}
@@ -277,7 +295,7 @@ export default function Login() {
               className={`mt-4 rounded-full overflow-hidden ${sendingReset ? "opacity-60" : "opacity-100"}`}
             >
               <LinearGradient
-                colors={["#76C893", "#52B69A"]}
+                colors={[theme.accent, theme.accentText]}
                 className="py-4 items-center rounded-2xl"
               >
                 {sendingReset ? (
@@ -291,9 +309,12 @@ export default function Login() {
             <Pressable
               onPress={() => setForgotVisible(false)}
               disabled={sendingReset}
-              className="mt-3 rounded-full py-3.5 items-center border border-gray-200 bg-white"
+              className="mt-3 rounded-full py-3.5 items-center border"
+              style={cardStyle}
             >
-              <Text className="text-gray-700 font-semibold">Cancel</Text>
+              <Text className="font-semibold" style={textPrimary}>
+                Cancel
+              </Text>
             </Pressable>
           </View>
         </View>

@@ -1,6 +1,10 @@
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
+import { prefetchCommunityScreen } from "@/lib/communityBootstrap";
+import { prefetchFoodDataset } from "@/lib/foodDataset";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useCommunityUnread } from "@/lib/useCommunityUnread";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -12,6 +16,8 @@ export default function DiscoverScreen() {
   const router = useRouter();
   useAdminRedirect();
   const { totalUnread } = useCommunityUnread();
+  const { cardStyle, screenStyle, textPrimary, iconButtonStyle } = useThemedScreen();
+  const tabBarPadding = useBottomTabBarScrollPadding();
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,18 +36,23 @@ export default function DiscoverScreen() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    void prefetchCommunityScreen();
+    void prefetchFoodDataset();
+  }, []);
+
   return (
-    <View className="flex-1 bg-[#f3f4f3]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
+    <View style={screenStyle}>
+      <ScrollView contentContainerStyle={{ paddingBottom: tabBarPadding }}>
         <View className="px-3 pt-10">
-          {/* Header */}
           <View className="flex-row justify-between items-center mb-8">
-            <Text className="text-4xl font-extrabold text-gray-900">
+            <Text className="text-4xl font-extrabold" style={textPrimary}>
               Discover
             </Text>
             <Pressable
               onPress={() => router.push("/profile")}
-              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
+              style={iconButtonStyle}
             >
               {profileImage ? (
                 <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
@@ -51,8 +62,7 @@ export default function DiscoverScreen() {
             </Pressable>
           </View>
 
-          {/* Explore Workouts */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
+          <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Workouts
           </Text>
 
@@ -78,11 +88,12 @@ export default function DiscoverScreen() {
           </Pressable>
 
           {/* Explore Nutrition */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
+          <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Nutrition
           </Text>
 
           <Pressable
+            onPressIn={() => void prefetchFoodDataset()}
             onPress={() => router.push("/all-nutrition" as any)}
             className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
           >
@@ -100,7 +111,7 @@ export default function DiscoverScreen() {
           </Pressable>
 
           {/* Explore Mind */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-3">
+          <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Mind
           </Text>
 
@@ -122,12 +133,13 @@ export default function DiscoverScreen() {
           </Pressable>
 
           {/* Connect & Help */}
-          <Text className="text-2xl font-extrabold text-gray-900 mb-4">
+          <Text className="text-2xl font-extrabold mb-4" style={textPrimary}>
             Connect & Help
           </Text>
 
           <View className="flex-row justify-between">
             <Pressable
+              onPressIn={() => void prefetchCommunityScreen()}
               onPress={() => router.push("/community" as any)}
               className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
             >
@@ -168,39 +180,7 @@ export default function DiscoverScreen() {
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
-        <Pressable onPress={() => router.replace("/home")} className="items-center">
-          <Ionicons name="home-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">HOME</Text>
-        </Pressable>
-
-        
-
-        <Pressable className="items-center">
-          <CommunityUnreadBadge count={totalUnread}>
-            <Ionicons name="compass" size={24} color="#76C893" />
-          </CommunityUnreadBadge>
-          <Text className="text-[10px] text-[#76C893] font-bold mt-1">
-            DISCOVER
-          </Text>
-        </Pressable>
-
-          <Pressable onPress={() => router.replace("/progress")} className="items-center">
-                  <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
-                  <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
-                </Pressable>
-        
-                <Pressable
-                onPress={() => router.push("/profile")}
-                className="items-center"
-              >
-                <Ionicons name="person-outline" size={20} color="#9ca3af" />
-                <Text className="text-[10px] text-gray-400 font-bold mt-1">
-                  PROFILE
-                </Text>
-              </Pressable>
-      </View>
+      <BottomTabBar active="discover" />
     </View>
   );
 }

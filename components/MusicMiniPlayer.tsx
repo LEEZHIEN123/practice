@@ -1,6 +1,8 @@
 import { useMusicPlayer } from "@/context/MusicPlayerContext";
+import { BOTTOM_TAB_BAR_CORE_HEIGHT, isBottomTabRoute } from "@/components/navigation/BottomTabBar";
 import { getMusicCategoryIcon } from "@/lib/musicCategoryIcons";
 import { useMusicModeToast } from "@/lib/useMusicModeToast";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { usePathname } from "expo-router";
@@ -72,6 +74,7 @@ export function MusicMiniPlayer() {
   const pathname = usePathname();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { cardStyle, textPrimary, textSecondary, textMuted, theme } = useThemedScreen();
   const {
     currentTrack,
     isPlaying,
@@ -104,6 +107,11 @@ export function MusicMiniPlayer() {
   const [slideValue, setSlideValue] = useState(0);
   const { toast, showToast } = useMusicModeToast();
 
+  const bottomInset = useMemo(() => {
+    const tabBarReserve = isBottomTabRoute(pathname) ? BOTTOM_TAB_BAR_CORE_HEIGHT + 8 : 0;
+    return insets.bottom + tabBarReserve;
+  }, [pathname, insets.bottom]);
+
   useEffect(() => {
     posRef.current = pos;
   }, [pos]);
@@ -125,13 +133,13 @@ export function MusicMiniPlayer() {
         screenW,
         screenH,
         insets.top,
-        insets.bottom
+        bottomInset
       );
       setPos(next);
       posRef.current = next;
       posReadyRef.current = true;
     }
-  }, [currentTrack, screenW, screenH, insets.top, insets.bottom]);
+  }, [currentTrack, screenW, screenH, insets.top, bottomInset]);
 
   const dur = Math.max(durationMillis || currentTrack?.durationMs || 0, 1);
   const progress = useMemo(() => Math.min(1, Math.max(0, positionMillis / dur)), [positionMillis, dur]);
@@ -152,11 +160,11 @@ export function MusicMiniPlayer() {
         screenW,
         screenH,
         insets.top,
-        insets.bottom
+        bottomInset
       );
       setPos(next);
     },
-    [cardW, cardH, expanded, screenW, screenH, insets.top, insets.bottom]
+    [cardW, cardH, expanded, screenW, screenH, insets.top, bottomInset]
   );
 
   const panCollapsed = useMemo(
@@ -176,7 +184,7 @@ export function MusicMiniPlayer() {
           if (!movedRef.current && Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10) {
             setExpanded(true);
             setPos((p) => {
-              const c = clampPos(p.x, p.y, cardW, cardH, screenW, screenH, insets.top, insets.bottom);
+              const c = clampPos(p.x, p.y, cardW, cardH, screenW, screenH, insets.top, bottomInset);
               return snapToSideIfInCenterZone(
                 c.x,
                 c.y,
@@ -185,7 +193,7 @@ export function MusicMiniPlayer() {
                 screenW,
                 screenH,
                 insets.top,
-                insets.bottom
+                bottomInset
               );
             });
           } else if (movedRef.current) {
@@ -198,14 +206,14 @@ export function MusicMiniPlayer() {
                 screenW,
                 screenH,
                 insets.top,
-                insets.bottom
+                bottomInset
               )
             );
           }
           movedRef.current = false;
         },
       }),
-    [applyDrag, cardW, cardH, screenW, screenH, insets.top, insets.bottom]
+    [applyDrag, cardW, cardH, screenW, screenH, insets.top, bottomInset]
   );
 
   const panHeader = useMemo(
@@ -232,14 +240,14 @@ export function MusicMiniPlayer() {
                 screenW,
                 screenH,
                 insets.top,
-                insets.bottom
+                bottomInset
               )
             );
           }
           headerMovedRef.current = false;
         },
       }),
-    [applyDrag, cardW, cardH, screenW, screenH, insets.top, insets.bottom]
+    [applyDrag, cardW, cardH, screenW, screenH, insets.top, bottomInset]
   );
 
   const canNext = repeatOne || playlist.length > 1;
@@ -252,7 +260,7 @@ export function MusicMiniPlayer() {
   const handleShrink = () => {
     setExpanded(false);
     setPos((p) => {
-      const c = clampPos(p.x, p.y, COLLAPSED, COLLAPSED, screenW, screenH, insets.top, insets.bottom);
+      const c = clampPos(p.x, p.y, COLLAPSED, COLLAPSED, screenW, screenH, insets.top, bottomInset);
       return snapToSideIfInCenterZone(
         c.x,
         c.y,
@@ -261,7 +269,7 @@ export function MusicMiniPlayer() {
         screenW,
         screenH,
         insets.top,
-        insets.bottom
+        bottomInset
       );
     });
   };
@@ -297,42 +305,58 @@ export function MusicMiniPlayer() {
           </View>
         ) : (
           <View
-            className="bg-white rounded-2xl border border-gray-200 shadow-xl shadow-black/20 overflow-hidden"
-            style={{ width: cardW }}
+            className="rounded-2xl shadow-xl shadow-black/20 overflow-hidden"
+            style={[cardStyle, { width: cardW }]}
           >
-            <View className="flex-row items-center justify-between border-b border-gray-100 bg-[#f9faf9]">
+            <View
+              className="flex-row items-center justify-between border-b"
+              style={{ backgroundColor: theme.rowBg, borderBottomColor: theme.cardBorder }}
+            >
               <View {...panHeader.panHandlers} className="flex-row items-center flex-1 px-2 py-2 gap-1">
-                <Ionicons name="menu" size={20} color="#9ca3af" />
-                <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Drag</Text>
+                <Ionicons name="menu" size={20} color={theme.iconMuted} />
+                <Text className="text-[10px] font-bold uppercase tracking-wide" style={textMuted}>
+                  Drag
+                </Text>
               </View>
               <View className="flex-row items-center pr-1">
                 <Pressable
                   onPress={handleShrink}
                   hitSlop={10}
-                  className="w-9 h-9 rounded-full items-center justify-center active:bg-gray-200"
+                  className="w-9 h-9 rounded-full items-center justify-center"
+                  style={({ pressed }) => (pressed ? { backgroundColor: theme.rowBg } : undefined)}
                 >
-                  <Ionicons name="chevron-down" size={22} color="#374151" />
+                  <Ionicons name="chevron-down" size={22} color={theme.textPrimary} />
                 </Pressable>
                 <Pressable
                   onPress={handleClose}
                   hitSlop={10}
-                  className="w-9 h-9 rounded-full items-center justify-center active:bg-red-50"
+                  className="w-9 h-9 rounded-full items-center justify-center"
+                  style={({ pressed }) =>
+                    pressed ? { backgroundColor: theme.dangerSoft } : undefined
+                  }
                 >
-                  <Ionicons name="close" size={22} color="#dc2626" />
+                  <Ionicons name="close" size={22} color={theme.danger} />
                 </Pressable>
               </View>
             </View>
 
             <View className="p-2.5 pt-2">
               <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-[10px] bg-[#eaf7f0] items-center justify-center">
-                  <Ionicons name={categoryIcon} size={22} color="#76C893" />
+                <View
+                  className="w-10 h-10 rounded-[10px] items-center justify-center"
+                  style={{ backgroundColor: theme.accentSoft }}
+                >
+                  <Ionicons name={categoryIcon} size={22} color={theme.accent} />
                 </View>
                 <View className="flex-1 ml-2 min-w-0">
-                  <Text className="text-xs font-extrabold text-gray-900" numberOfLines={1}>
+                  <Text className="text-xs font-extrabold" style={textPrimary} numberOfLines={1}>
                     {currentTrack.title}
                   </Text>
-                  <Text className="text-[10px] text-gray-500 font-semibold mt-0.5" numberOfLines={1}>
+                  <Text
+                    className="text-[10px] font-semibold mt-0.5"
+                    style={textSecondary}
+                    numberOfLines={1}
+                  >
                     {currentTrack.artistName}
                   </Text>
                 </View>
@@ -353,15 +377,17 @@ export function MusicMiniPlayer() {
                     setSliding(false);
                     await seekTo(v * dur);
                   }}
-                  minimumTrackTintColor="#76C893"
-                  maximumTrackTintColor="#e5e7eb"
-                  thumbTintColor="#52B69A"
+                  minimumTrackTintColor={theme.accent}
+                  maximumTrackTintColor={theme.cardBorder}
+                  thumbTintColor={theme.accentText}
                 />
                 <View className="flex-row justify-between px-0.5 -mt-1">
-                  <Text className="text-[9px] font-bold text-gray-400">
+                  <Text className="text-[9px] font-bold" style={textMuted}>
                     {fmtMmSs(sliding ? slideValue * dur : positionMillis)}
                   </Text>
-                  <Text className="text-[9px] font-bold text-gray-400">{fmtMmSs(dur)}</Text>
+                  <Text className="text-[9px] font-bold" style={textMuted}>
+                    {fmtMmSs(dur)}
+                  </Text>
                 </View>
               </View>
 
@@ -382,10 +408,10 @@ export function MusicMiniPlayer() {
                   hitSlop={8}
                   className="w-8 h-8 rounded-full items-center justify-center ml-2"
                 >
-                  <Ionicons name="shuffle" size={18} color={shuffle ? "#52B69A" : "#9ca3af"} />
+                  <Ionicons name="shuffle" size={18} color={shuffle ? theme.accentText : theme.iconMuted} />
                 </Pressable>
                 <Pressable onPress={() => void skipPrevious()} hitSlop={8} className="p-1">
-                  <Ionicons name="play-skip-back" size={22} color="#111827" />
+                  <Ionicons name="play-skip-back" size={22} color={theme.textPrimary} />
                 </Pressable>
                 <Pressable
                   onPress={() => void togglePlayPause()}
@@ -400,7 +426,7 @@ export function MusicMiniPlayer() {
                   hitSlop={8}
                   className={`p-1 ${!canNext ? "opacity-30" : ""}`}
                 >
-                  <Ionicons name="play-skip-forward" size={22} color="#111827" />
+                  <Ionicons name="play-skip-forward" size={22} color={theme.textPrimary} />
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -410,7 +436,7 @@ export function MusicMiniPlayer() {
                   hitSlop={8}
                   className="w-8 h-8 rounded-full items-center justify-center mr-2"
                 >
-                  <Ionicons name="repeat" size={18} color={repeatOne ? "#52B69A" : "#9ca3af"} />
+                  <Ionicons name="repeat" size={18} color={repeatOne ? theme.accentText : theme.iconMuted} />
                 </Pressable>
               </View>
             </View>

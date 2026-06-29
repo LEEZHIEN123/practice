@@ -1,5 +1,13 @@
 import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
   calcExerciseKcal,
@@ -36,7 +44,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -242,6 +249,12 @@ function mapSessionDoc(
 function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMaxDay: number }) {
   const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
+  const { theme, navStyle, segmentTrackStyle, segmentActiveStyle, cardStyle } = useThemedScreen();
+  const workoutControlLabelColor = (running: boolean, disabled: boolean) => {
+    if (disabled) return theme.textMuted;
+    return "#ffffff";
+  };
+  const { modalCardStyle, inputStyle, rowBorderStyle, placeholderColor } = useProfileCardStyles();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
   const canStartThisDay = dayNum <= unlockedMaxDay;
@@ -808,17 +821,11 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
+    <ThemedScreen>
       <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <Pressable
-          onPress={requestBack}
-          hitSlop={12}
-          className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-        >
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </Pressable>
+        <ThemedBackButton onPress={requestBack} className="mr-3" />
         <View className="flex-1">
-          <Text className="text-3xl font-extrabold text-gray-900">Day {dayNum} Workout</Text>
+          <ThemedText className="text-3xl font-extrabold">Day {dayNum} Workout</ThemedText>
         </View>
       </View>
 
@@ -829,13 +836,13 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
         keyboardShouldPersistTaps="handled"
       >
         <View className="px-3 pb-0">
-          <View className="bg-white rounded-3xl p-5 border border-gray-100">
+          <ThemedCard className="p-5">
             <View className="flex-row items-start justify-between">
               <View className="flex-1 pr-3 min-w-0">
-                <Text className="text-base font-extrabold text-gray-900 tracking-wide">WORKOUT TYPE</Text>
-                <Text className="text-xl font-extrabold mt-2" style={{ color: "#2563eb" }}>
+                <ThemedText className="text-base font-extrabold tracking-wide">WORKOUT TYPE</ThemedText>
+                <ThemedText className="text-xl font-extrabold mt-2" style={{ color: "#2563eb" }}>
                   {row?.type ? workoutTypeFullLabel(row.type) : "—"}
-                </Text>
+                </ThemedText>
               </View>
               <View className="items-center shrink-0 justify-center">
                 <View
@@ -847,50 +854,55 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               </View>
             </View>
 
-            {/* WORKOUT label + example name (same rhythm as WORKOUT TYPE / type); MET aligns top-right; tighter gap from row above */}
             <View className="flex-row items-start justify-between mt-2 gap-2">
               <View className="flex-1 min-w-0 pr-2">
-                <Text className="text-base font-extrabold text-gray-900 tracking-wide">WORKOUT</Text>
-                <Text
+                <ThemedText className="text-base font-extrabold tracking-wide">WORKOUT</ThemedText>
+                <ThemedText
                   className="text-xl font-extrabold mt-2 leading-7"
                   style={{ color: "#dc2626" }}
                   numberOfLines={6}
                 >
                   {row?.workout ?? "—"}
-                </Text>
+                </ThemedText>
               </View>
-              <View className="shrink-0 items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 min-w-[96px]">
-                <Text className="text-base font-extrabold tracking-wide text-emerald-800">MET VALUE</Text>
-                <Text className="text-xl font-extrabold text-emerald-950 mt-2">
+              <View
+                className="shrink-0 items-center rounded-2xl border px-3 py-2.5 min-w-[96px]"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+              >
+                <ThemedText variant="accent" className="text-base font-extrabold tracking-wide">
+                  MET VALUE
+                </ThemedText>
+                <ThemedText variant="accent" className="text-xl font-extrabold mt-2">
                   {workoutDetail != null ? String(workoutDetail.met) : "—"}
-                </Text>
+                </ThemedText>
               </View>
             </View>
 
-            {/* Same segmented style as Progress (Weight / Workout / Meal); slightly wider track */}
             <View className="mt-5 -mx-2">
-              <View className="bg-white rounded-full p-1.5 flex-row border border-gray-100">
+              <View className="rounded-full p-1.5 flex-row" style={segmentTrackStyle}>
                 <Pressable
                   onPress={() => setContentTab("instruction")}
-                  className={`flex-1 py-3.5 px-3 rounded-full items-center ${
-                    contentTab === "instruction" ? "bg-[#eaf7f0]" : "bg-transparent"
-                  }`}
+                  className="flex-1 py-3.5 px-3 rounded-full items-center"
+                  style={contentTab === "instruction" ? segmentActiveStyle : undefined}
                 >
-                  <Text
-                    className={`${contentTab === "instruction" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}
+                  <ThemedText
+                    variant={contentTab === "instruction" ? "accent" : "muted"}
+                    className="font-bold"
                   >
                     Instructions
-                  </Text>
+                  </ThemedText>
                 </Pressable>
                 <Pressable
                   onPress={() => setContentTab("record")}
-                  className={`flex-1 py-3.5 px-3 rounded-full items-center ${
-                    contentTab === "record" ? "bg-[#eaf7f0]" : "bg-transparent"
-                  }`}
+                  className="flex-1 py-3.5 px-3 rounded-full items-center"
+                  style={contentTab === "record" ? segmentActiveStyle : undefined}
                 >
-                  <Text className={`${contentTab === "record" ? "text-[#52B69A]" : "text-gray-500"} font-bold`}>
+                  <ThemedText
+                    variant={contentTab === "record" ? "accent" : "muted"}
+                    className="font-bold"
+                  >
                     Workout record
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               </View>
 
@@ -910,11 +922,11 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                       );
                     })()}
                     <View className="mt-5">
-                      <Text className="text-base font-extrabold text-gray-900 tracking-wide">INSTRUCTIONS</Text>
-                      <Text className="text-gray-700 mt-3 leading-6 text-[15px]">
+                      <ThemedText className="text-base font-extrabold tracking-wide">INSTRUCTIONS</ThemedText>
+                      <ThemedText variant="secondary" className="mt-3 leading-6 text-[15px]">
                         {workoutDetail?.instruction ??
                           "Follow a steady pace, focus on form, and stop if you feel pain. You can pause anytime and your time will be recorded."}
-                      </Text>
+                      </ThemedText>
                     </View>
                   </>
                 ) : (
@@ -928,14 +940,13 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 )}
               </View>
             </View>
-          </View>
+          </ThemedCard>
         </View>
       </ScrollView>
 
-      {/* bottom timer display */}
       <View
-        style={{ paddingBottom: insets.bottom + 6 }}
-        className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-3 py-3"
+        style={{ paddingBottom: insets.bottom + 6, ...navStyle }}
+        className="absolute bottom-0 left-0 right-0 px-3 py-3"
       >
         <View className="flex-row items-center justify-between">
           <Pressable
@@ -944,7 +955,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
             if (!canStartThisDay && !running && !canResume) return;
               if (!running) {
                 if (canResume) {
-                  // Resume after "Stop"
                   startedAtRef.current = Date.now();
                   setRunning(true);
                   startTicker();
@@ -971,28 +981,37 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 : "bg-[#76C893]"
           } ${!canStartThisDay && !running && !canResume ? "" : "active:opacity-90"}`}
           >
-            <Text className="text-white font-extrabold text-lg text-center">
+            <ThemedText
+              className="font-extrabold text-lg text-center"
+              style={{
+                color: workoutControlLabelColor(
+                  running,
+                  !canStartThisDay && !running && !canResume
+                ),
+              }}
+            >
               {running ? "Pause" : canResume ? "Resume" : "Start Workout"}
-            </Text>
+            </ThemedText>
           </Pressable>
 
           <View className="items-start ml-5">
-            <Text className="text-[10px] tracking-widest font-bold" style={{ color: TIMER_RED }}>
+            <ThemedText className="text-[10px] tracking-widest font-bold" style={{ color: TIMER_RED }}>
               TIMER
-            </Text>
-            <Text className="text-3xl font-extrabold" style={{ color: TIMER_RED }}>
+            </ThemedText>
+            <ThemedText className="text-3xl font-extrabold" style={{ color: TIMER_RED }}>
               {fmtHms(elapsed)}
-            </Text>
+            </ThemedText>
           </View>
         </View>
       </View>
 
-      {/* Start choice modal */}
       <Modal visible={startChoiceVisible} transparent animationType="fade" onRequestClose={() => setStartChoiceVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Start workout</Text>
-            <Text className="text-gray-500 mt-2 leading-6">Choose how you want to start.</Text>
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Start workout</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
+              Choose how you want to start.
+            </ThemedText>
 
             <View className="mt-5 gap-3">
               <Pressable
@@ -1008,9 +1027,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                   void startWithCountdown();
                 }}
                 disabled={!canStartThisDay}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Start from 0</Text>
+                <ThemedText className="text-xl font-extrabold">Start from 0</ThemedText>
               </Pressable>
 
               <Pressable
@@ -1020,57 +1040,71 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                   setTimerPickerVisible(true);
                 }}
                 disabled={!canStartThisDay}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Set a timer</Text>
+                <ThemedText className="text-xl font-extrabold">Set a timer</ThemedText>
               </Pressable>
             </View>
 
             <View className="flex-row justify-end mt-6">
               <Pressable onPress={() => setStartChoiceVisible(false)} className="px-4 py-3">
-                <Text className="font-extrabold text-gray-500">Cancel</Text>
+                <ThemedText variant="muted" className="font-extrabold">
+                  Cancel
+                </ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Timer picker modal */}
       <Modal visible={timerPickerVisible} transparent animationType="fade" onRequestClose={() => setTimerPickerVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Set a timer</Text>
-            <Text className="text-gray-500 mt-2 leading-6">Choose a duration (mm:ss).</Text>
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Set a timer</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
+              Choose a duration (mm:ss).
+            </ThemedText>
 
             <View className="flex-row gap-3 mt-5">
               <View className="flex-1">
-                <Text className="text-[10px] tracking-widest text-gray-400 font-bold mb-2">MINUTES</Text>
+                <ThemedText variant="muted" className="text-[10px] tracking-widest font-bold mb-2">
+                  MINUTES
+                </ThemedText>
                 <TextInput
                   value={timerMinText}
                   onChangeText={(t) => setTimerMinText(t.replace(/[^\d]/g, "").slice(0, 3))}
                   keyboardType="number-pad"
-                  className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900 text-lg font-extrabold"
+                  className="rounded-2xl px-4 py-3 text-lg font-extrabold"
+                  style={inputStyle}
+                  placeholderTextColor={placeholderColor}
                 />
               </View>
               <View className="flex-1">
-                <Text className="text-[10px] tracking-widest text-gray-400 font-bold mb-2">SECONDS</Text>
+                <ThemedText variant="muted" className="text-[10px] tracking-widest font-bold mb-2">
+                  SECONDS
+                </ThemedText>
                 <TextInput
                   value={timerSecText}
                   onChangeText={setTimerSecondsNormalized}
                   keyboardType="number-pad"
-                  className="bg-[#f3f4f3] rounded-2xl px-4 py-3 text-gray-900 text-lg font-extrabold"
+                  className="rounded-2xl px-4 py-3 text-lg font-extrabold"
+                  style={inputStyle}
+                  placeholderTextColor={placeholderColor}
                 />
               </View>
             </View>
 
             {timerTotalSeconds > 0 && timerTotalSeconds < MIN_RECORD_SECONDS ? (
-              <Text className="text-xs font-semibold text-red-600 mt-3">
+              <ThemedText className="text-xs font-semibold mt-3" style={{ color: theme.danger }}>
                 Minimum is {MIN_RECORD_SECONDS} seconds.
-              </Text>
+              </ThemedText>
             ) : null}
 
             <View className="mt-4">
-              <Text className="text-[10px] tracking-widest text-gray-400 font-bold mb-2">CUSTOM DURATION</Text>
+              <ThemedText variant="muted" className="text-[10px] tracking-widest font-bold mb-2">
+                CUSTOM DURATION
+              </ThemedText>
               <View className="gap-2">
                 <View className="flex-row gap-2">
                   <Pressable
@@ -1078,18 +1112,24 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                       setTimerMinText("10");
                       setTimerSecText("00");
                     }}
-                    className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center active:opacity-90"
+                    className="flex-1 py-3 rounded-2xl items-center active:opacity-90 border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="font-extrabold text-[#52B69A]">10 min</Text>
+                    <ThemedText variant="accent" className="font-extrabold">
+                      10 min
+                    </ThemedText>
                   </Pressable>
                   <Pressable
                     onPress={() => {
                       setTimerMinText("20");
                       setTimerSecText("00");
                     }}
-                    className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center active:opacity-90"
+                    className="flex-1 py-3 rounded-2xl items-center active:opacity-90 border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="font-extrabold text-[#52B69A]">20 min</Text>
+                    <ThemedText variant="accent" className="font-extrabold">
+                      20 min
+                    </ThemedText>
                   </Pressable>
                 </View>
                 <View className="flex-row gap-2">
@@ -1098,18 +1138,24 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                       setTimerMinText("30");
                       setTimerSecText("00");
                     }}
-                    className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center active:opacity-90"
+                    className="flex-1 py-3 rounded-2xl items-center active:opacity-90 border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="font-extrabold text-[#52B69A]">30 min</Text>
+                    <ThemedText variant="accent" className="font-extrabold">
+                      30 min
+                    </ThemedText>
                   </Pressable>
                   <Pressable
                     onPress={() => {
                       setTimerMinText("60");
                       setTimerSecText("00");
                     }}
-                    className="flex-1 py-3 rounded-2xl bg-[#eaf7f0] border border-[#b7ead1] items-center active:opacity-90"
+                    className="flex-1 py-3 rounded-2xl items-center active:opacity-90 border"
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
                   >
-                    <Text className="font-extrabold text-[#52B69A]">60 min</Text>
+                    <ThemedText variant="accent" className="font-extrabold">
+                      60 min
+                    </ThemedText>
                   </Pressable>
                 </View>
               </View>
@@ -1118,45 +1164,49 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
             <View className="flex-row gap-3 mt-6">
               <Pressable
                 onPress={() => setTimerPickerVisible(false)}
-                className="flex-1 py-3.5 rounded-2xl bg-gray-100 items-center active:bg-gray-200"
+                className="flex-1 py-3.5 rounded-2xl items-center"
+                style={{ backgroundColor: theme.rowBg }}
               >
-                <Text className="font-extrabold text-gray-700">Cancel</Text>
+                <ThemedText variant="secondary" className="font-extrabold">
+                  Cancel
+                </ThemedText>
               </Pressable>
               <Pressable
                 onPress={startCountdownWithPicker}
                 className="flex-1 py-3.5 rounded-2xl bg-[#76C893] items-center active:opacity-90"
               >
-                <Text className="font-extrabold text-white">Start</Text>
+                <ThemedText className="font-extrabold text-white">Start</ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Countdown overlay */}
       {countdown != null ? (
-        <View className="absolute inset-0 bg-black/50 items-center justify-center">
+        <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: theme.modalOverlay }}>
           <View className="w-full px-10 items-center">
-            <Text className="text-white text-lg font-extrabold mb-6 text-center">
+            <ThemedText className="text-white text-lg font-extrabold mb-6 text-center">
               Your workout will begin in
-            </Text>
-            <View className="w-40 h-40 rounded-full bg-white items-center justify-center border-2" style={{ borderColor: TIMER_RED }}>
-              <Text className="text-6xl font-extrabold" style={{ color: TIMER_RED }}>
+            </ThemedText>
+            <View
+              className="w-40 h-40 rounded-full items-center justify-center border-2"
+              style={{ backgroundColor: theme.modalBg, borderColor: TIMER_RED }}
+            >
+              <ThemedText className="text-6xl font-extrabold" style={{ color: TIMER_RED }}>
                 {countdown}
-              </Text>
+              </ThemedText>
             </View>
           </View>
         </View>
       ) : null}
 
-      {/* Pause menu modal (Switch-plan style) */}
       <Modal visible={pauseMenuVisible} transparent animationType="fade" onRequestClose={() => setPauseMenuVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Workout paused</Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Workout paused</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               Choose what you want to do next.
-            </Text>
+            </ThemedText>
 
             <View className="mt-5 gap-3">
               <Pressable
@@ -1173,9 +1223,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                     });
                   }
                 }}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Resume</Text>
+                <ThemedText className="text-xl font-extrabold">Resume</ThemedText>
               </Pressable>
 
               <Pressable
@@ -1183,23 +1234,26 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                   setPauseMenuVisible(false);
                   void stopWorkout();
                 }}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Stop</Text>
+                <ThemedText className="text-xl font-extrabold">Stop</ThemedText>
               </Pressable>
 
               <Pressable
                 onPress={() => setConfirmAction("restart")}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Restart</Text>
+                <ThemedText className="text-xl font-extrabold">Restart</ThemedText>
               </Pressable>
 
               <Pressable
                 onPress={() => setConfirmAction("complete")}
-                className="bg-[#f3f4f3] rounded-3xl p-5 border border-gray-200 active:opacity-90"
+                className="rounded-3xl p-5 active:opacity-90"
+                style={rowBorderStyle}
               >
-                <Text className="text-xl font-extrabold text-gray-900">Complete</Text>
+                <ThemedText className="text-xl font-extrabold">Complete</ThemedText>
               </Pressable>
             </View>
 
@@ -1207,18 +1261,17 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
         </View>
       </Modal>
 
-      {/* Confirm dialog modal for Restart/Complete */}
       <Modal visible={confirmAction != null} transparent animationType="fade" onRequestClose={() => setConfirmAction(null)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">
               {confirmAction === "restart" ? "Restart workout?" : "Complete workout?"}
-            </Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+            </ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               {confirmAction === "restart"
                 ? "This will reset your timer to 0."
                 : "This will finish the workout and save your time."}
-            </Text>
+            </ThemedText>
 
             <View className="mt-5 gap-3">
               <Pressable
@@ -1240,28 +1293,28 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 }}
                 className="py-4 rounded-full items-center active:opacity-90 bg-red-600"
               >
-                <Text className="text-white text-lg font-extrabold">Confirm</Text>
+                <ThemedText className="text-white text-lg font-extrabold">Confirm</ThemedText>
               </Pressable>
 
               <Pressable
                 onPress={() => setConfirmAction(null)}
-                className="py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
+                className="py-3 rounded-full items-center border active:opacity-90"
+                style={cardStyle}
               >
-                <Text className="text-gray-800 font-extrabold">Cancel</Text>
+                <ThemedText className="font-extrabold">Cancel</ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Back confirmation: finishes workout on exit */}
       <Modal visible={backConfirmVisible} transparent animationType="fade" onRequestClose={() => setBackConfirmVisible(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Finish workout?</Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Finish workout?</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               If you go back now, we will finish the workout and save your time.
-            </Text>
+            </ThemedText>
 
             <View className="mt-5 gap-3">
               <Pressable
@@ -1271,21 +1324,22 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 }}
                 className="py-4 rounded-full items-center active:opacity-90 bg-red-600"
               >
-                <Text className="text-white text-lg font-extrabold">Confirm</Text>
+                <ThemedText className="text-white text-lg font-extrabold">Confirm</ThemedText>
               </Pressable>
 
               <Pressable
                 onPress={() => setBackConfirmVisible(false)}
-                className="py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
+                className="py-3 rounded-full items-center border active:opacity-90"
+                style={cardStyle}
               >
-                <Text className="text-gray-800 font-extrabold">Cancel</Text>
+                <ThemedText className="font-extrabold">Cancel</ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-    </View>
+    </ThemedScreen>
   );
 }
 

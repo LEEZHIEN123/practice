@@ -1,9 +1,10 @@
 import { AdminCommunityHub } from "@/components/community/AdminCommunityHub";
+import { ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
 import { checkIsAdmin, isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator } from "react-native";
 import { auth } from "../firebaseConfig";
 
 function canEnterAdminImmediately(): boolean {
@@ -50,10 +51,12 @@ export default function AdminScreen() {
 
   if (!ready) {
     return (
-      <View className="flex-1 bg-[#f3f4f3] items-center justify-center">
+      <ThemedScreen className="items-center justify-center">
         <ActivityIndicator size="large" color="#52B69A" />
-        <Text className="text-sm text-gray-500 mt-3">Loading admin panel…</Text>
-      </View>
+        <ThemedText variant="muted" className="text-sm mt-3">
+          Loading admin panel…
+        </ThemedText>
+      </ThemedScreen>
     );
   }
 

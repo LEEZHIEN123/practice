@@ -1,5 +1,12 @@
 import { AllMusicBottomPlayer, ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD } from "@/components/AllMusicBottomPlayer";
 import { Pressable } from "@/components/Pressable";
+import {
+  ThemedBackButton,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
+} from "@/components/themed/ThemedUi";
 import { useMusicPlayer, type MusicTrack } from "@/context/MusicPlayerContext";
 import {
   addLocalMusicTracks,
@@ -8,19 +15,21 @@ import {
   titleFromFileName,
   type StoredLocalTrack,
 } from "@/lib/localMusicLibrary";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { auth } from "../firebaseConfig";
 
 function fmtMmSs(ms: number) {
   const totalSec = Math.max(0, Math.round(ms / 1000));
@@ -33,24 +42,45 @@ export default function AllMusicScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { playPlaylistAt, isPlaying, currentTrack, stop } = useMusicPlayer();
+  const { theme } = useThemedScreen();
+  const accentButtonLabelColor = "#ffffff";
+  const { inputStyle, placeholderColor } = useProfileCardStyles();
 
   const [tracks, setTracks] = useState<StoredLocalTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const prevAuthUidRef = useRef<string | null | undefined>(undefined);
 
   const listBottomPad =
     insets.bottom + 24 + (currentTrack ? ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD : 0);
 
-  const refreshLibrary = useCallback(async () => {
-    const list = await loadLocalMusicLibrary();
-    setTracks(list);
-    return list;
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUid(user?.uid ?? null);
+    });
+    return unsub;
   }, []);
 
+  const refreshLibrary = useCallback(async () => {
+    if (!authUid) {
+      setTracks([]);
+      return [];
+    }
+    const list = await loadLocalMusicLibrary(authUid);
+    setTracks(list);
+    return list;
+  }, [authUid]);
+
   useEffect(() => {
+    if (prevAuthUidRef.current !== undefined && prevAuthUidRef.current !== authUid) {
+      void stop();
+    }
+    prevAuthUidRef.current = authUid;
+    setLoading(true);
     void refreshLibrary().finally(() => setLoading(false));
-  }, [refreshLibrary]);
+  }, [authUid, refreshLibrary, stop]);
 
   const filteredTracks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -62,6 +92,10 @@ export default function AllMusicScreen() {
   }, [tracks, searchQuery]);
 
   const importFromDevice = async () => {
+    if (!authUid) {
+      Alert.alert("Sign in required", "Log in to add music to your library.");
+      return;
+    }
     try {
       setImporting(true);
       const result = await DocumentPicker.getDocumentAsync({
@@ -83,7 +117,7 @@ export default function AllMusicScreen() {
         sourceFileName: asset.name ?? undefined,
       }));
 
-      const { tracks: merged, added, skippedTitles } = await addLocalMusicTracks(incoming);
+      const { tracks: merged, added, skippedTitles } = await addLocalMusicTracks(authUid, incoming);
       setTracks(merged);
 
       if (added.length === 0 && skippedTitles.length > 0) {
@@ -122,7 +156,7 @@ export default function AllMusicScreen() {
         style: "destructive",
         onPress: () => {
           void (async () => {
-            const next = await removeLocalMusicTrack(track.id);
+            const next = await removeLocalMusicTrack(authUid, track.id);
             setTracks(next);
             if (currentTrack?.id === track.id) {
               await stop();
@@ -141,21 +175,14 @@ export default function AllMusicScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#f3f4f3] relative">
-      <View
-        style={{ paddingTop: insets.top + 8 }}
-        className="px-3 pb-4 flex-row items-center bg-[#f3f4f3]"
-      >
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          className="w-11 h-11 rounded-full bg-white items-center justify-center border border-gray-200 mr-3"
-        >
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </Pressable>
+    <ThemedScreen className="relative">
+      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
+        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
         <View className="flex-1 min-w-0">
-          <Text className="text-2xl font-extrabold text-gray-900">All Music</Text>
-          <Text className="text-xs text-gray-500 font-semibold mt-0.5">From your phone</Text>
+          <ThemedText className="text-2xl font-extrabold">All Music</ThemedText>
+          <ThemedText variant="muted" className="text-xs font-semibold mt-0.5">
+            From your phone
+          </ThemedText>
         </View>
         <Pressable
           onPress={() => void importFromDevice()}
@@ -163,11 +190,16 @@ export default function AllMusicScreen() {
           className="rounded-full px-4 py-2.5 bg-[#76C893] flex-row items-center"
         >
           {importing ? (
-            <ActivityIndicator color="white" size="small" />
+            <ActivityIndicator color={accentButtonLabelColor} size="small" />
           ) : (
             <>
-              <Ionicons name="add" size={20} color="white" />
-              <Text className="text-sm font-extrabold text-white ml-1">Add</Text>
+              <Ionicons name="add" size={20} color={accentButtonLabelColor} />
+              <ThemedText
+                className="text-sm font-extrabold ml-1"
+                style={{ color: accentButtonLabelColor }}
+              >
+                Add
+              </ThemedText>
             </>
           )}
         </Pressable>
@@ -175,14 +207,15 @@ export default function AllMusicScreen() {
 
       {tracks.length > 0 ? (
         <View className="px-3 pb-2">
-          <View className="flex-row items-center bg-white rounded-2xl px-4 py-3 border border-gray-200">
-            <Ionicons name="search" size={18} color="#9ca3af" />
+          <View className="flex-row items-center rounded-2xl px-4 py-3" style={inputStyle}>
+            <Ionicons name="search" size={18} color={theme.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search your music..."
-              placeholderTextColor="#9ca3af"
-              className="flex-1 ml-2 text-sm text-gray-800"
+              placeholderTextColor={placeholderColor}
+              className="flex-1 ml-2 text-sm"
+              style={{ color: theme.textPrimary }}
             />
           </View>
         </View>
@@ -191,35 +224,47 @@ export default function AllMusicScreen() {
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#76C893" />
-          <Text className="text-gray-500 mt-4">Loading your music…</Text>
+          <ThemedText variant="muted" className="mt-4">
+            Loading your music…
+          </ThemedText>
         </View>
       ) : tracks.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
-          <View className="w-20 h-20 rounded-full bg-[#eaf7f0] items-center justify-center mb-4">
+          <View
+            className="w-20 h-20 rounded-full items-center justify-center mb-4"
+            style={{ backgroundColor: theme.accentSoft }}
+          >
             <Ionicons name="musical-notes" size={40} color="#76C893" />
           </View>
-          <Text className="text-lg font-extrabold text-gray-900 text-center">No music yet</Text>
-          <Text className="text-sm text-gray-500 text-center mt-2 leading-6">
-            Tap Add to import songs from your phone. Your library stays on this device.
-          </Text>
+          <ThemedText className="text-lg font-extrabold text-center">No music yet</ThemedText>
+          <ThemedText variant="muted" className="text-sm text-center mt-2 leading-6">
+            Tap Add to import songs from your phone. Each account has its own library on this device.
+          </ThemedText>
           <Pressable
             onPress={() => void importFromDevice()}
             disabled={importing}
             className="mt-6 px-8 py-3.5 rounded-full bg-[#76C893] flex-row items-center"
           >
             {importing ? (
-              <ActivityIndicator color="white" />
+              <ActivityIndicator color={accentButtonLabelColor} />
             ) : (
               <>
-                <Ionicons name="folder-open-outline" size={20} color="white" />
-                <Text className="text-white font-extrabold ml-2">Import from phone</Text>
+                <Ionicons name="folder-open-outline" size={20} color={accentButtonLabelColor} />
+                <ThemedText
+                  className="font-extrabold ml-2"
+                  style={{ color: accentButtonLabelColor }}
+                >
+                  Import from phone
+                </ThemedText>
               </>
             )}
           </Pressable>
         </View>
       ) : filteredTracks.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-gray-600 text-center font-semibold">No songs match your search.</Text>
+          <ThemedText variant="secondary" className="text-center font-semibold">
+            No songs match your search.
+          </ThemedText>
         </View>
       ) : (
         <FlatList
@@ -230,21 +275,24 @@ export default function AllMusicScreen() {
           renderItem={({ item }) => {
             const playing = isPlaying && currentTrack?.id === item.id;
             return (
-              <View className="bg-white rounded-2xl p-3 flex-row items-center border border-gray-100">
+              <ThemedCard rounded="2xl" className="p-3 flex-row items-center">
                 <Pressable
                   onPress={() => void startPlayback(item, "snippet")}
                   className="flex-1 flex-row items-center active:opacity-90"
                 >
-                  <View className="w-12 h-12 rounded-xl bg-[#eaf7f0] items-center justify-center mr-3 shrink-0">
+                  <View
+                    className="w-12 h-12 rounded-xl items-center justify-center mr-3 shrink-0"
+                    style={{ backgroundColor: theme.accentSoft }}
+                  >
                     <Ionicons name="musical-notes" size={24} color="#76C893" />
                   </View>
                   <View className="flex-1 pr-2 min-w-0">
-                    <Text className="text-base font-extrabold text-gray-900" numberOfLines={2}>
+                    <ThemedText className="text-base font-extrabold" numberOfLines={2}>
                       {item.title}
-                    </Text>
-                    <Text className="text-sm text-gray-500 mt-0.5" numberOfLines={1}>
+                    </ThemedText>
+                    <ThemedText variant="muted" className="text-sm mt-0.5" numberOfLines={1}>
                       {item.artistName}
-                    </Text>
+                    </ThemedText>
                   </View>
                 </Pressable>
 
@@ -253,12 +301,15 @@ export default function AllMusicScreen() {
                   hitSlop={10}
                   className="items-center justify-center ml-1"
                 >
-                  <View className="w-10 h-10 rounded-full bg-[#eaf7f0] items-center justify-center">
+                  <View
+                    className="w-10 h-10 rounded-full items-center justify-center"
+                    style={{ backgroundColor: theme.accentSoft }}
+                  >
                     <Ionicons name={playing ? "pause" : "play"} size={20} color="#76C893" />
                   </View>
-                  <Text className="text-[10px] text-gray-400 font-bold mt-1">
+                  <ThemedText variant="muted" className="text-[10px] font-bold mt-1">
                     {item.durationMs ? fmtMmSs(item.durationMs) : "—"}
-                  </Text>
+                  </ThemedText>
                 </Pressable>
 
                 <Pressable
@@ -266,15 +317,15 @@ export default function AllMusicScreen() {
                   hitSlop={10}
                   className="w-9 h-9 rounded-full items-center justify-center ml-2"
                 >
-                  <Ionicons name="trash-outline" size={18} color="#9ca3af" />
+                  <Ionicons name="trash-outline" size={18} color={theme.iconMuted} />
                 </Pressable>
-              </View>
+              </ThemedCard>
             );
           }}
         />
       )}
 
       <AllMusicBottomPlayer />
-    </View>
+    </ThemedScreen>
   );
 }

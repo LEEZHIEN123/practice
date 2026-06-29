@@ -1,6 +1,7 @@
-import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
+import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
-import { useCommunityUnread } from "@/lib/useCommunityUnread";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { CaloriesDonut } from "@/components/CaloriesDonut";
 import { bumpWorkoutPlanDay } from "@/lib/achievements";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
@@ -40,6 +41,7 @@ function HomeSectionHeading({
   iconColor: string;
   labelTextClassName?: string;
 }) {
+  const { textPrimary } = useThemedScreen();
   return (
     <View className="mt-4 flex-row items-center">
       <View
@@ -48,7 +50,10 @@ function HomeSectionHeading({
         <Ionicons name={icon} size={21} color={iconColor} />
       </View>
       <View className="flex-1 ml-3">
-        <Text className={`${labelTextClassName ?? "text-lg"} font-extrabold text-gray-900 tracking-[0.06em] mt-0.5`}>
+        <Text
+          className={`${labelTextClassName ?? "text-lg"} font-extrabold tracking-[0.06em] mt-0.5`}
+          style={textPrimary}
+        >
           {label}
         </Text>
       </View>
@@ -64,8 +69,10 @@ function HomeSectionHeading({
 export default function HomeScreen() {
   const router = useRouter();
   useAdminRedirect();
-  const { totalUnread } = useCommunityUnread();
   const calendarTz = useUserCalendarTimezone();
+  const { cardStyle, screenStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
+    useThemedScreen();
+  const tabBarPadding = useBottomTabBarScrollPadding();
   const [dayRoll, setDayRoll] = useState(0);
   const dayKey = useMemo(() => formatCalendarDayKey(new Date(), calendarTz), [calendarTz, dayRoll]);
   const [userName, setUserName] = useState("");
@@ -315,21 +322,20 @@ export default function HomeScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#eef2f1]">
-      <ScrollView contentContainerStyle={{ paddingBottom: 110 }}>
+    <View style={screenStyle}>
+      <ScrollView contentContainerStyle={{ paddingBottom: tabBarPadding }}>
         <View className="px-3 pt-10">
-          {/* Header */}
           <View className="flex-row justify-between items-center">
             <View>
-                
-              <Text className="text-4xl font-extrabold text-gray-900">
-                Hello, {userName }
+              <Text className="text-4xl font-extrabold" style={textPrimary}>
+                Hello, {userName}
               </Text>
             </View>
 
             <Pressable
               onPress={() => router.push("/profile")}
-              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden bg-white items-center justify-center"
+              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
+              style={iconButtonStyle}
             >
               {profileImage ? (
                 <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
@@ -339,14 +345,19 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          {/* BMI Score (moved from Progress) */}
-          <View className="mt-4 bg-white rounded-3xl p-4 border border-gray-100">
+          <View className="mt-4 rounded-3xl p-4" style={cardStyle}>
             <View className="flex-row items-start justify-between">
               <View className="flex-1 pr-3">
-                <Text className="text-base font-extrabold tracking-wide text-gray-900">BMI SCORE</Text>
+                <Text className="text-base font-extrabold tracking-wide" style={textPrimary}>
+                  BMI SCORE
+                </Text>
                 <View className="flex-row items-end mt-1">
-                  <Text className="text-4xl font-extrabold text-gray-900">{bmi ? bmi.toFixed(1) : "—"}</Text>
-                  <Text className="text-gray-500 ml-2 mb-1 text-sm">kg/m²</Text>
+                  <Text className="text-4xl font-extrabold" style={textPrimary}>
+                    {bmi ? bmi.toFixed(1) : "—"}
+                  </Text>
+                  <Text className="ml-2 mb-1 text-sm" style={{ color: theme.textMuted }}>
+                    kg/m²
+                  </Text>
                 </View>
               </View>
               <View className={`px-3 py-1.5 rounded-full border ${bmi ? bmiCategoryPillClass : "bg-gray-50 border-gray-200"}`}>
@@ -398,15 +409,14 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <Text className="text-base text-gray-900 mt-3 leading-6">
+            <Text className="text-base mt-3 leading-6" style={textPrimary}>
               To improve your health, we recommended a{" "}
               <Text className="font-extrabold text-red-600 text-lg tracking-wide">{bmiPlanCaps}</Text> plan.
             </Text>
           </View>
 
-          {/* Calories: donut (orange food, green exercise) + Goal/Food/Exercise row + calculation */}
-          <View className="relative mt-4 bg-white rounded-3xl p-4 border border-gray-100 shadow-sm shadow-black/5">
-            <Text className="text-xl font-extrabold text-gray-900">Today Calorie</Text>
+          <View className="relative mt-4 rounded-3xl p-4 shadow-sm shadow-black/5" style={cardStyle}>
+            <ThemedText className="text-xl font-extrabold">Today Calorie</ThemedText>
 
             {caloriesOverBudget ? (
               <View className="absolute top-3 right-3 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
@@ -419,8 +429,12 @@ export default function HomeScreen() {
                 <View className="relative w-[120px] h-[120px] items-center justify-center">
                   <CaloriesDonut goal={intakeTarget} food={consumed} exercise={burned} size={120} strokeWidth={10} />
                   <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
-                    <Text className="text-3xl font-extrabold text-gray-900">{caloriesCenterDisplay}</Text>
-                    <Text className="text-sm text-gray-900 font-medium mt-0.5">{caloriesCenterLabel}</Text>
+                    <Text className="text-3xl font-extrabold" style={textPrimary}>
+                      {caloriesCenterDisplay}
+                    </Text>
+                    <Text className="text-sm font-medium mt-0.5" style={textPrimary}>
+                      {caloriesCenterLabel}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -428,31 +442,39 @@ export default function HomeScreen() {
               <View className="flex-1 min-w-0">
                 <View className="flex-row justify-between">
                   <View className="flex-1 items-center px-0.5">
-                    <Ionicons name="flag-outline" size={20} color="#9ca3af" />
-                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Goal</Text>
-                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                    <Ionicons name="flag-outline" size={20} color={theme.iconMuted} />
+                    <Text className="text-[10px] mt-1 text-center" style={textMuted}>
+                      Goal
+                    </Text>
+                    <Text className="text-sm font-bold mt-0.5 text-center" style={textPrimary} numberOfLines={1}>
                       {intakeTarget ? formatKcal(intakeTarget) : "—"}
                     </Text>
                   </View>
                   <View className="flex-1 items-center px-0.5">
                     <Ionicons name="restaurant" size={20} color="#f97316" />
-                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Food</Text>
-                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                    <Text className="text-[10px] mt-1 text-center" style={textMuted}>
+                      Food
+                    </Text>
+                    <Text className="text-sm font-bold mt-0.5 text-center" style={textPrimary} numberOfLines={1}>
                       {formatKcal(consumed)}
                     </Text>
                   </View>
                   <View className="flex-1 items-center px-0.5">
                     <Ionicons name="flame" size={20} color="#22c55e" />
-                    <Text className="text-[10px] text-gray-500 mt-1 text-center">Exercise</Text>
-                    <Text className="text-sm font-bold text-gray-900 mt-0.5 text-center" numberOfLines={1}>
+                    <Text className="text-[10px] mt-1 text-center" style={textMuted}>
+                      Exercise
+                    </Text>
+                    <Text className="text-sm font-bold mt-0.5 text-center" style={textPrimary} numberOfLines={1}>
                       {formatKcal(burned)}
                     </Text>
                   </View>
                 </View>
 
-                <View className="mt-3 pt-3 border-t border-gray-100">
-                  <Text className="text-xs ml-4 text-gray-500 leading-5">Remaining = Goal − Food + Exercise</Text>
-                  <Text className="text-sm ml-4 text-gray-800 font-semibold mt-1 leading-5">
+                <View className="mt-3 pt-3 border-t" style={{ borderTopColor: theme.cardBorder }}>
+                  <Text className="text-xs ml-4 leading-5" style={textMuted}>
+                    Remaining = Goal − Food + Exercise
+                  </Text>
+                  <Text className="text-sm ml-4 font-semibold mt-1 leading-5" style={textSecondary}>
                     {intakeTarget
                       ? `${formatKcal(intakeTarget)} − ${formatKcal(consumed)} + ${formatKcal(burned)} = ${formatKcal(remainingCalories)} kcal`
                       : "—"}
@@ -524,17 +546,20 @@ export default function HomeScreen() {
             iconColor="#c2410c"
             labelTextClassName="text-base"
           />
-          <View className="mt-2 rounded-3xl overflow-hidden border border-[#fed7aa] shadow-sm shadow-black/5 bg-[#fff7ed]">
+          <View className="mt-2 rounded-3xl overflow-hidden shadow-sm shadow-black/5" style={cardStyle}>
             <View className="p-5">
               <View className="flex-row items-center">
-                <View className="w-14 h-14 rounded-2xl bg-white items-center justify-center">
+                <View
+                  className="w-14 h-14 rounded-2xl items-center justify-center"
+                  style={{ backgroundColor: theme.rowBg }}
+                >
                   <Ionicons name="restaurant" size={26} color="#c2410c" />
                 </View>
                 <View className="ml-4 flex-1">
-                  <Text className="text-lg font-extrabold text-gray-900">Personalised Nutrition Guidance</Text>
-                  <Text className="text-sm text-gray-700 mt-1">
+                  <ThemedText className="text-lg font-extrabold">Personalised Nutrition Guidance</ThemedText>
+                  <ThemedText variant="secondary" className="text-sm mt-1">
                     Explore your personalised meal ideas and daily recipe suggestions.
-                  </Text>
+                  </ThemedText>
                 </View>
               </View>
 
@@ -563,44 +588,53 @@ export default function HomeScreen() {
       {/* Plan duration picker (first time) */}
       <Modal visible={planPickerVisible} transparent animationType="fade" onRequestClose={() => setPlanPickerVisible(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full bg-white rounded-3xl p-6 border border-gray-100">
-            <Text className="text-2xl font-extrabold text-gray-900">Choose your plan</Text>
-            <Text className="text-gray-500 mt-2 leading-6">
+          <View className="w-full rounded-3xl p-6" style={cardStyle}>
+            <ThemedText className="text-2xl font-extrabold">Choose your plan</ThemedText>
+            <ThemedText variant="muted" className="mt-2 leading-6">
               Select a duration and we will generate a personalised workout plan for you.
-            </Text>
+            </ThemedText>
 
             <View className="mt-5 gap-3">
               <Pressable
                 disabled={savingPlan}
                 onPress={() => setPendingDuration("week")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "week" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
+                className="rounded-3xl p-5 border active:opacity-90"
+                style={
+                  pendingDuration === "week"
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
-                <Text className="text-xl font-extrabold text-gray-900">One Week Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">7 days · Short Term Schedule</Text>
+                <ThemedText className="text-xl font-extrabold">One Week Plan</ThemedText>
+                <ThemedText variant="muted" className="text-sm mt-1">7 days · Short Term Schedule</ThemedText>
               </Pressable>
 
               <Pressable
                 disabled={savingPlan}
                 onPress={() => setPendingDuration("biweekly")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "biweekly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
+                className="rounded-3xl p-5 border active:opacity-90"
+                style={
+                  pendingDuration === "biweekly"
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
-                <Text className="text-xl font-extrabold text-gray-900">Biweekly Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">14 days · Medium Term Schedule</Text>
+                <ThemedText className="text-xl font-extrabold">Biweekly Plan</ThemedText>
+                <ThemedText variant="muted" className="text-sm mt-1">14 days · Medium Term Schedule</ThemedText>
               </Pressable>
 
               <Pressable
                 disabled={savingPlan}
                 onPress={() => setPendingDuration("monthly")}
-                className={`rounded-3xl p-5 border active:opacity-90 ${
-                  pendingDuration === "monthly" ? "bg-[#eaf7f0] border-[#76C893]" : "bg-[#f3f4f3] border-gray-200"
-                }`}
+                className="rounded-3xl p-5 border active:opacity-90"
+                style={
+                  pendingDuration === "monthly"
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                }
               >
-                <Text className="text-xl font-extrabold text-gray-900">Monthly Plan</Text>
-                <Text className="text-sm text-gray-500 mt-1">30 days · Long Term Schedule</Text>
+                <ThemedText className="text-xl font-extrabold">Monthly Plan</ThemedText>
+                <ThemedText variant="muted" className="text-sm mt-1">30 days · Long Term Schedule</ThemedText>
               </Pressable>
             </View>
 
@@ -624,49 +658,16 @@ export default function HomeScreen() {
             <Pressable
               disabled={savingPlan}
               onPress={() => setPlanPickerVisible(false)}
-              className="mt-5 py-3 rounded-full items-center border border-gray-200 bg-white active:opacity-90"
+              className="mt-5 py-3 rounded-full items-center border active:opacity-90"
+              style={cardStyle}
             >
-              <Text className="text-gray-800 font-extrabold">Cancel</Text>
+              <ThemedText className="font-extrabold">Cancel</ThemedText>
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      {/* Bottom Navigation */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex-row justify-around py-3">
-        <Pressable className="items-center">
-          <Ionicons name="home" size={20} color="#76C893" />
-          <Text className="text-[10px] text-[#76C893] font-bold mt-1">HOME</Text>
-        </Pressable>
-
-         
-        <Pressable
-          onPress={() => router.push("/discover")}
-          className="items-center"
-        >
-          <CommunityUnreadBadge count={totalUnread}>
-            <Ionicons name="compass-outline" size={20} color="#9ca3af" />
-          </CommunityUnreadBadge>
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">
-            DISCOVER
-          </Text>
-        </Pressable>
-
-        <Pressable onPress={() => router.replace("/progress")} className="items-center">
-          <Ionicons name="stats-chart-outline" size={20} color="#9ca3af" />
-          <Text className="text-[10px] text-gray-400 font-bold mt-1">PROGRESS</Text>
-        </Pressable>
-
-        <Pressable
-  onPress={() => router.push("/profile")}
-  className="items-center"
->
-  <Ionicons name="person-outline" size={20} color="#9ca3af" />
-  <Text className="text-[10px] text-gray-400 font-bold mt-1">
-    PROFILE
-  </Text>
-</Pressable>
-      </View>
+      <BottomTabBar active="home" />
     </View>
   );
 }

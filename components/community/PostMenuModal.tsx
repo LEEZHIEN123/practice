@@ -1,10 +1,9 @@
 import { Pressable } from "@/components/Pressable";
+import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityPost } from "@/lib/communityTypes";
 import { Modal, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const DANGER_COLOR = "#dc2626";
-const DEFAULT_COLOR = "#1f2937";
 
 type PostMenuModalProps = {
   visible: boolean;
@@ -34,6 +33,8 @@ export function PostMenuModal({
   onBlock,
 }: PostMenuModalProps) {
   const insets = useSafeAreaInsets();
+  const { textMuted, theme } = useThemedScreen();
+  const { modalCardStyle } = useProfileCardStyles();
   if (!post) return null;
 
   const options = isOwnPost
@@ -53,13 +54,12 @@ export function PostMenuModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 bg-black/40 justify-center px-8">
+      <View className="flex-1 justify-center px-8" style={{ backgroundColor: theme.modalOverlay }}>
         <Pressable className="absolute inset-0" onPress={onClose} />
         <View
-          className="bg-white rounded-[24px] overflow-hidden border border-gray-200"
-          style={{ marginBottom: insets.bottom }}
+          className="rounded-[24px] overflow-hidden"
+          style={[modalCardStyle, { marginBottom: insets.bottom }]}
         >
-          
           {options.map((opt) => (
             <Pressable
               key={opt.label}
@@ -67,18 +67,21 @@ export function PostMenuModal({
                 onClose();
                 opt.onPress();
               }}
-              className="px-5 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="px-5 py-4 border-b"
+              style={{ borderBottomColor: theme.cardBorder }}
             >
               <Text
                 className="text-center text-base font-bold"
-                style={{ color: opt.danger ? DANGER_COLOR : DEFAULT_COLOR }}
+                style={{ color: opt.danger ? theme.danger : theme.textPrimary }}
               >
                 {opt.label}
               </Text>
             </Pressable>
           ))}
-          <Pressable onPress={onClose} className="px-5 py-4 active:bg-gray-50">
-            <Text className="text-center text-base font-bold text-gray-500">Cancel</Text>
+          <Pressable onPress={onClose} className="px-5 py-4">
+            <Text className="text-center text-base font-bold" style={textMuted}>
+              Cancel
+            </Text>
           </Pressable>
         </View>
       </View>

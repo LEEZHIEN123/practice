@@ -221,5 +221,19 @@ service cloud.firestore {
     match /communityInvites/{inviteId} {
       allow read, create: if isAdmin();
     }
+
+    match /appConfig/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Collection group queries used by achievements (own comments / messages only).
+    match /{path=**}/comments/{commentId} {
+      allow read: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    match /{path=**}/messages/{messageId} {
+      allow read: if isSignedIn() && resource.data.senderId == request.auth.uid;
+    }
   }
 }
