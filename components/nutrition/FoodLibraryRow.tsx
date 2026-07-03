@@ -1,9 +1,11 @@
+import { FavouriteButton } from "@/components/FavouriteButton";
 import { Pressable } from "@/components/Pressable";
 import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import type { FoodListItem } from "@/lib/foodDataset";
+import { buildNutritionFavouriteItem } from "@/lib/favourites";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { View } from "react-native";
 
 type FoodLibraryRowProps = {
@@ -21,6 +23,16 @@ function FoodLibraryRow({
   rowBg,
   onPress,
 }: FoodLibraryRowProps) {
+  const favouriteItem = useMemo(
+    () =>
+      buildNutritionFavouriteItem(
+        food.id,
+        food.name,
+        food.servingSize?.trim() || food.category || "Recipe"
+      ),
+    [food.category, food.id, food.name, food.servingSize]
+  );
+
   return (
     <Pressable onPress={() => onPress(food.id)}>
       <ThemedCard className="p-3 flex-row items-center">
@@ -41,9 +53,12 @@ function FoodLibraryRow({
           </View>
         )}
         <View className="flex-1 pr-2">
-          <ThemedText className="text-base font-extrabold" numberOfLines={2}>
-            {food.name}
-          </ThemedText>
+          <View className="flex-row items-start">
+            <ThemedText className="text-base font-extrabold flex-1 pr-2" numberOfLines={2}>
+              {food.name}
+            </ThemedText>
+            <FavouriteButton compact item={favouriteItem} />
+          </View>
           {food.servingSize?.trim() ? (
             <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={1}>
               {food.servingSize}

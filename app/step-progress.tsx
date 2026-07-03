@@ -1,5 +1,5 @@
 import {
-    ThemedBackButton,
+    ProfileScreenHeader,
     ThemedCard,
     ThemedScreen,
     ThemedText,
@@ -17,6 +17,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -54,6 +55,7 @@ function effectiveSteps(data: { stepsAuto?: unknown; stepsManual?: unknown } | u
 
 export default function StepProgressScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
   const {
     cardStyle,
@@ -611,12 +613,8 @@ export default function StepProgressScreen() {
 
   return (
     <ThemedScreen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
-        <View className="flex-row items-center justify-between mb-6">
-          <ThemedBackButton onPress={() => router.back()} />
-          <ThemedText className="text-xl font-extrabold">Step Progress</ThemedText>
-          <View className="w-11 h-11" />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
+        <ProfileScreenHeader title="Step Progress" onBack={() => router.back()} titleClassName="text-xl" />
 
         <ThemedCard className="p-5">
           <View className="flex-row items-center justify-between">

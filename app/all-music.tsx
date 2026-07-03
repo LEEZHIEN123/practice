@@ -1,6 +1,7 @@
-import { AllMusicBottomPlayer, ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD } from "@/components/AllMusicBottomPlayer";
+import { ALL_MUSIC_BOTTOM_PLAYER_EXTRA_PAD, AllMusicBottomPlayer } from "@/components/AllMusicBottomPlayer";
 import { Pressable } from "@/components/Pressable";
 import {
+  ProfileScreenHeader,
   ThemedBackButton,
   ThemedCard,
   ThemedScreen,
@@ -176,33 +177,35 @@ export default function AllMusicScreen() {
 
   return (
     <ThemedScreen className="relative">
-      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-        <View className="flex-1 min-w-0">
-          <ThemedText className="text-2xl font-extrabold">All Music</ThemedText>
-          <ThemedText variant="muted" className="text-xs font-semibold mt-0.5">
-            From your phone
-          </ThemedText>
-        </View>
-        <Pressable
-          onPress={() => void importFromDevice()}
-          disabled={importing}
-          className="rounded-full px-4 py-2.5 bg-[#76C893] flex-row items-center"
-        >
-          {importing ? (
-            <ActivityIndicator color={accentButtonLabelColor} size="small" />
-          ) : (
-            <>
-              <Ionicons name="add" size={20} color={accentButtonLabelColor} />
-              <ThemedText
-                className="text-sm font-extrabold ml-1"
-                style={{ color: accentButtonLabelColor }}
-              >
-                Add
-              </ThemedText>
-            </>
-          )}
-        </Pressable>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader
+          title="All Music"
+          onBack={() => router.back()}
+          rightSlot={
+            <Pressable
+              onPress={() => void importFromDevice()}
+              disabled={importing}
+              className="rounded-full px-4 py-2.5 bg-[#76C893] flex-row items-center"
+            >
+              {importing ? (
+                <ActivityIndicator color={accentButtonLabelColor} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="add" size={20} color={accentButtonLabelColor} />
+                  <ThemedText
+                    className="text-sm font-extrabold ml-1"
+                    style={{ color: accentButtonLabelColor }}
+                  >
+                    Add
+                  </ThemedText>
+                </>
+              )}
+            </Pressable>
+          }
+        />
+        <ThemedText variant="muted" className="text-xs text-center font-semibold -mt-1 mb-2">
+          From your phone
+        </ThemedText>
       </View>
 
       {tracks.length > 0 ? (

@@ -87,3 +87,17 @@ export const appearanceThemes: Record<AppearanceMode, AppearanceTheme> = {
     navBorder: "#334155",
   },
 };
+
+const DARK_IMAGE_OVERLAY_BOOST = 0.18;
+const MAX_IMAGE_CARD_OVERLAY_OPACITY = 0.72;
+
+/** Slightly darken photo card backgrounds in dark mode. */
+export function imageCardOverlayOpacity(baseOpacity: number, isDark: boolean): number {
+  if (!isDark) return baseOpacity;
+  return Math.min(MAX_IMAGE_CARD_OVERLAY_OPACITY, baseOpacity + DARK_IMAGE_OVERLAY_BOOST);
+}
+
+/** Tint overlay for full-bleed hero images (e.g. home workout plan card). */
+export function imageCardTintOverlay(isDark: boolean): string {
+  return isDark ? "rgba(15, 23, 42, 0.48)" : "rgba(255, 255, 255, 0.2)";
+}

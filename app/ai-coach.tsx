@@ -1,10 +1,11 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedText,
-  useProfileCardStyles,
+  useProfileCardStyles
 } from "@/components/themed/ThemedUi";
+import { fetchCoachUserContext } from "@/lib/aiCoachContext";
 import {
   defaultWelcomeMessages,
   deleteArchivedChat,
@@ -17,7 +18,6 @@ import {
   type ArchivedChatSession,
   type StoredChatMessage,
 } from "@/lib/aiCoachStorage";
-import { fetchCoachUserContext } from "@/lib/aiCoachContext";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import { isGeminiConfigured, sendCoachMessage, type CoachChatTurn } from "@/lib/geminiCoach";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -400,29 +400,31 @@ export default function AICoachScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? headerOffset : 0}
     >
       <View className="flex-1" style={{ paddingTop: insets.top + 12 }}>
-        <View className="flex-row items-center px-3 mb-4">
-          <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-2 shrink-0" />
-          <View className="flex-1 min-w-0 mr-2">
-            <ThemedText className="text-2xl font-extrabold text-left">AI Chatbot</ThemedText>
-            <ThemedText variant="accent" className="text-xs font-semibold mt-0.5 text-left">
-              Powered by Gemini
-            </ThemedText>
-          </View>
-          <Pressable
-            onPress={() => void openHistory()}
-            hitSlop={8}
-            className="w-10 h-10 rounded-full items-center justify-center border mr-2 shrink-0 active:opacity-90"
-            style={[iconButtonStyle, { borderColor: theme.cardBorder }]}
-          >
-            <Ionicons name="time-outline" size={22} color={theme.textSecondary} />
-          </Pressable>
-          <Pressable
-            onPress={() => void handleNewChat()}
-            disabled={sending}
-            className="px-3 py-2 rounded-full bg-[#76C893] border border-[#5fb07d] shrink-0 active:opacity-90"
-          >
-            <Text className="text-xs font-extrabold text-white">New chat</Text>
-          </Pressable>
+        <View className="px-3">
+          <ProfileScreenHeader
+            title="AI Chatbot"
+            onBack={() => router.back()}
+            rightSlot={
+              <View className="flex-row items-center">
+                <Pressable
+                  onPress={() => void openHistory()}
+                  hitSlop={8}
+                  className="w-10 h-10 rounded-full items-center justify-center border mr-2 shrink-0 active:opacity-90"
+                  style={[iconButtonStyle, { borderColor: theme.cardBorder }]}
+                >
+                  <Ionicons name="time-outline" size={20} color={theme.textSecondary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleNewChat()}
+                  disabled={sending}
+                  className="px-3 py-2 rounded-full bg-[#76C893] border border-[#5fb07d] shrink-0 active:opacity-90"
+                >
+                  <Text className="text-xs font-extrabold text-white">New chat</Text>
+                </Pressable>
+              </View>
+            }
+          />
+        
         </View>
 
         <ScrollView

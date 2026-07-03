@@ -6,7 +6,7 @@ import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { AppearanceModal } from "@/components/profile/AppearanceModal";
-import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ThemedBackButton, ProfileScreenHeader, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
@@ -608,13 +608,7 @@ export function AdminCommunityHub() {
             </View>
             {tagFilterView && activeTagFilter ? (
               <View className="flex-row items-center mb-3 mt-4">
-                <Pressable
-                  onPress={exitTagView}
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={iconButtonStyle}
-                >
-                  <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
-                </Pressable>
+                <ThemedBackButton onPress={exitTagView} className="mr-3" />
                 <Text className="text-lg font-extrabold" style={textPrimary}>
                   #{activeTagFilter}
                 </Text>
@@ -911,27 +905,7 @@ export function AdminCommunityHub() {
       contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}
       style={{ backgroundColor: theme.screenBg }}
     >
-      <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
-        >
-          <View
-            className="h-12 w-12 items-center justify-center rounded-full"
-            style={{ backgroundColor: theme.cardBg }}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-          </View>
-        </Pressable>
-        <Text
-          pointerEvents="none"
-          className="absolute left-0 right-0 text-center text-3xl font-extrabold"
-          style={{ color: theme.textPrimary }}
-        >
-          Profile
-        </Text>
-      </View>
+      <ProfileScreenHeader title="Profile" onBack={() => router.back()} titleClassName="text-3xl" />
 
       <View className="items-center mb-6">
         <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">

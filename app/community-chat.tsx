@@ -11,7 +11,7 @@ import {
 } from "@/components/themed/ThemedUi";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import type { ChatMessage, CommunityPost } from "@/lib/communityTypes";
-import { getChatSticker, type ChatSticker } from "@/lib/chatStickers";
+import { getChatSticker, CHAT_STICKER_MESSAGE_SIZE, CHAT_STICKER_QUOTE_SIZE, type ChatSticker } from "@/lib/chatStickers";
 import {
   buildMessageQuote,
   canModifyOwnChatMessage,
@@ -103,7 +103,7 @@ function QuoteBlock({
       {quotedSticker ? (
         <Image
           source={quotedSticker.source}
-          style={{ width: 36, height: 36, marginTop: 4 }}
+          style={{ width: CHAT_STICKER_QUOTE_SIZE, height: CHAT_STICKER_QUOTE_SIZE, marginTop: 4 }}
           contentFit="contain"
         />
       ) : (
@@ -544,7 +544,7 @@ export default function CommunityChatScreen() {
         >
           <ThemedBackButton
             onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
-            className="w-11 h-11 mr-3"
+            className="mr-3"
           />
           <Pressable
             onPress={() => void openOtherProfile()}
@@ -621,7 +621,10 @@ export default function CommunityChatScreen() {
                         {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
                         <Image
                           source={sticker.source}
-                          style={{ width: 120, height: 120 }}
+                          style={{
+                            width: CHAT_STICKER_MESSAGE_SIZE,
+                            height: CHAT_STICKER_MESSAGE_SIZE,
+                          }}
                           contentFit="contain"
                         />
                       </View>
@@ -705,9 +708,6 @@ export default function CommunityChatScreen() {
           </View>
           ) : null}
 
-          {stickerPickerVisible && !editingMessage ? (
-            <ChatStickerPicker onSelect={(sticker) => void handleSendSticker(sticker)} />
-          ) : null}
           <View className="flex-row items-end gap-2">
             <Pressable
               onPress={toggleStickerPicker}
@@ -757,6 +757,10 @@ export default function CommunityChatScreen() {
               )}
             </Pressable>
           </View>
+
+          {stickerPickerVisible && !editingMessage ? (
+            <ChatStickerPicker onSelect={(sticker) => void handleSendSticker(sticker)} />
+          ) : null}
         </View>
         ) : (
           <View

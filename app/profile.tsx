@@ -1,6 +1,7 @@
 import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
 import { AppearanceModal } from "@/components/profile/AppearanceModal";
 import { ProfileStatsCards } from "@/components/profile/ProfileStatsCards";
+import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
 import { useAppearance } from "@/context/AppearanceContext";
 import {
   deleteAccountAfterReauth,
@@ -65,6 +66,7 @@ export default function ProfileScreen() {
   const [showDeletePassword, setShowDeletePassword] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [appearanceVisible, setAppearanceVisible] = useState(false);
+  const [profileViewerVisible, setProfileViewerVisible] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -281,6 +283,17 @@ export default function ProfileScreen() {
 
   const appearanceLabel = mode === "dark" ? "Dark mode" : "Light mode";
 
+  const profilePhotoSource = profileImage
+    ? { uri: profileImage }
+    : gender === "male"
+      ? require("../assets/images/malefitnesspic.avif")
+      : require("../assets/images/femalefitnesspic.avif");
+
+  const openEditProfile = () => {
+    setProfileViewerVisible(false);
+    router.push("/EditProfile");
+  };
+
   return (
     <View className="flex-1" style={{ backgroundColor: theme.screenBg }}>
       <ScrollView
@@ -290,41 +303,20 @@ export default function ProfileScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={12}
-            className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10"
-          >
-            <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: theme.cardBg }}>
-              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-            </View>
-          </Pressable>
-          <Text
-            pointerEvents="none"
-            className="absolute left-0 right-0 text-center text-2xl font-extrabold"
-            style={{ color: theme.textPrimary }}
-          >
-            Profile
-          </Text>
-        </View>
+        <ProfileScreenHeader title="Profile" onBack={() => router.back()} />
 
         <View>
           <View className="items-center mb-6">
             <View className="relative">
-              <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
-                <Image
-                  source={
-                    profileImage
-                      ? { uri: profileImage }
-                      : gender === "male"
-                        ? require("../assets/images/malefitnesspic.avif")
-                        : require("../assets/images/femalefitnesspic.avif")
-                  }
-                  className="w-full h-full"
-                  resizeMode="cover"
-                />
-              </View>
+              <Pressable onPress={() => setProfileViewerVisible(true)} accessibilityLabel="View profile photo">
+                <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
+                  <Image
+                    source={profilePhotoSource}
+                    className="w-full h-full"
+                    resizeMode="cover"
+                  />
+                </View>
+              </Pressable>
             </View>
 
             <Text className="text-3xl font-extrabold mt-4" style={{ color: theme.textPrimary }}>
@@ -362,6 +354,25 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
+            onPress={() => router.push("/my-report" as any)}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
+            <View className="flex-row items-center flex-1">
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="document-text-outline" size={20} color={theme.accent} />
+              </View>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                My Report
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+          </Pressable>
+
+          <Pressable
             onPress={() => router.push("/reminder")}
             className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
             style={rowStyle}
@@ -375,6 +386,25 @@ export default function ProfileScreen() {
               </View>
               <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
                 Reminders
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push("/favourites")}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
+            <View className="flex-row items-center flex-1">
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="heart-outline" size={20} color={theme.accent} />
+              </View>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Favourites
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
@@ -675,6 +705,43 @@ export default function ProfileScreen() {
       </Modal>
 
       <AppearanceModal visible={appearanceVisible} onClose={() => setAppearanceVisible(false)} />
+
+      <Modal
+        visible={profileViewerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProfileViewerVisible(false)}
+      >
+        <View className="flex-1 bg-black">
+          <Image source={profilePhotoSource} className="flex-1" resizeMode="contain" />
+
+          <View
+            className="absolute left-0 right-0 flex-row items-center justify-between px-4"
+            style={{ top: insets.top + 12 }}
+          >
+            <Pressable
+              onPress={() => setProfileViewerVisible(false)}
+              hitSlop={8}
+              className="w-10 h-10 rounded-full items-center justify-center"
+              style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+              accessibilityLabel="Close profile photo"
+            >
+              <Ionicons name="close" size={24} color="#ffffff" />
+            </Pressable>
+
+            <Pressable
+              onPress={openEditProfile}
+              hitSlop={8}
+              className="flex-row items-center px-3.5 py-2 rounded-full"
+              style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+              accessibilityLabel="Edit profile"
+            >
+              <Ionicons name="create-outline" size={20} color="#ffffff" />
+              <Text className="text-white text-sm font-extrabold ml-1.5">Edit</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <BottomTabBar active="profile" />
     </View>

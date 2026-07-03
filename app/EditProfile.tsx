@@ -1,5 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
+  ProfileScreenHeader,
   ThemedBackButton,
   ThemedText,
   useProfileCardStyles,
@@ -391,35 +392,24 @@ export default function EditProfile() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="relative mb-6 h-12 justify-center">
-          <View className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10">
-            <ThemedBackButton
-              onPress={() => {
-                try {
-                  router.back();
-                } catch {
-                  router.push("/profile");
-                }
-              }}
-              icon="arrow-back"
-            />
-          </View>
-
-          <ThemedText className="text-center text-xl font-extrabold">Edit Profile</ThemedText>
-
-          <Pressable
-            onPress={handleSave}
-            disabled={loading}
-            className="absolute right-0 top-0 h-14 w-20 justify-center items-end pr-2"
-          >
-            <ThemedText
-              variant={loading ? "muted" : "accent"}
-              className="text-base font-extrabold"
-            >
-              Save
-            </ThemedText>
-          </Pressable>
-        </View>
+        <ProfileScreenHeader
+          title="Edit Profile"
+          onBack={() => {
+            try {
+              router.back();
+            } catch {
+              router.push("/profile");
+            }
+          }}
+          titleClassName="text-xl"
+          rightSlot={
+            <Pressable onPress={handleSave} disabled={loading} hitSlop={8}>
+              <ThemedText variant={loading ? "muted" : "accent"} className="text-base font-extrabold">
+                Save
+              </ThemedText>
+            </Pressable>
+          }
+        />
 
         <View className="items-center mb-6">
           <View className="relative">

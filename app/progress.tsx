@@ -1,4 +1,12 @@
 import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
+import { ProgressFeatureCard } from "@/components/progress/ProgressFeatureCard";
+import {
+  ProgressMetricCard,
+  ProgressMetricDetail,
+  ProgressMetricLabel,
+  ProgressMetricLink,
+  ProgressMetricValue,
+} from "@/components/progress/ProgressMetricCard";
 import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
@@ -7,6 +15,15 @@ import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { useWaterIntakeSuggestion } from "@/lib/useWaterIntakeSuggestion";
+import {
+  buildLatestWeightByDay,
+  buildWeightBucketSeries,
+  buildWeightSeriesForDays,
+  syncWeightAutoFillAtMidnight,
+  weightBarHeight,
+  weightLogDayKey,
+  type WeightLogRow,
+} from "@/lib/weightAutoFill";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -83,9 +100,7 @@ export default function ProgressScreen() {
   const [logDate, setLogDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   /** Raw weight logs for the Progress weight chart + current metric (kept in sync via onSnapshot). */
-  const [weightProgressLogRows, setWeightProgressLogRows] = useState<
-    { weight: number; createdAt: Date }[]
-  >([]);
+  const [weightProgressLogRows, setWeightProgressLogRows] = useState<WeightLogRow[]>([]);
   const [dayTick, setDayTick] = useState(0);
   const [weightSeries, setWeightSeries] = useState<number[]>([]);
   const [workoutLogRows, setWorkoutLogRows] = useState<WorkoutLogRowProgress[]>([]);
@@ -105,7 +120,6 @@ export default function ProgressScreen() {
 
 
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const sameDayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   const startOfWeekMon = (d: Date) => {
     // Monday as start of week
     const day = d.getDay(); // 0=Sun..6=Sat
@@ -159,7 +173,12 @@ export default function ProgressScreen() {
     [heightCm, profileActivityLevel, profileAge, profileGender, weightKg]
   );
 
-  const { suggestedMl: waterSuggestedMl, loading: waterSuggestionLoading } = useWaterIntakeSuggestion({
+  const {
+    suggestedMl: waterSuggestedMl,
+    previousPlaceName: waterPreviousPlaceName,
+    previousSuggestedMl: waterPreviousSuggestedMl,
+    loading: waterSuggestionLoading,
+  } = useWaterIntakeSuggestion({
       uid: authUid,
       calendarTz,
       calendarDayKey: todayDayKey,
@@ -175,15 +194,6 @@ export default function ProgressScreen() {
     if (waterFromLogs.count <= 0) return 0;
     return Math.max(0, waterFromLogs.sum);
   }, [waterFromLogs]);
-
-  const hasWaterLogsToday = useMemo(() => (waterFromLogs?.count ?? 0) > 0, [waterFromLogs]);
-
-  /** True if today has any water (logs and/or dailyStats total). Do not reset from dailyStats snapshots — that caused the reminder to flash after other fields updated. */
-  const waterRecordedToday = useMemo(() => {
-    if (hasWaterLogsToday) return true;
-    if (waterMlToday > 0) return true;
-    return false;
-  }, [hasWaterLogsToday, waterMlToday]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -636,6 +646,17 @@ export default function ProgressScreen() {
   }, [authUid, tab]);
 
   useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || user.uid !== authUid || weightKg <= 0) return;
+    void syncWeightAutoFillAtMidnight({
+      uid: user.uid,
+      weightKg,
+      calendarTz,
+      existingRows: weightProgressLogRows,
+    }).catch((e) => console.log("weight auto-fill failed:", e));
+  }, [authUid, calendarTz, dayTick, weightKg, weightProgressLogRows]);
+
+  useEffect(() => {
     const applyWeightProgressLogs = () => {
       if (tab !== "weight") return;
 
@@ -649,56 +670,37 @@ export default function ProgressScreen() {
           setTodayLoggedWeight(null);
           const zeros = period === "week" ? 7 : period === "month" ? 4 : 12;
           setLatestLoggedWeight(0);
-          if (weightKg > 0) {
-            const fallback = Array.from({ length: zeros }, () => 0);
-            if (period === "week") {
-              const weekStart = startOfWeekMon(new Date());
-              const idx = Math.floor((startOfDay(new Date()).getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
-              if (idx >= 0 && idx < fallback.length) fallback[idx] = weightKg;
-            } else if (period === "month") {
-              const dayOfMonth = new Date().getDate();
-              const weekIdx = Math.min(3, Math.floor((dayOfMonth - 1) / 7));
-              fallback[weekIdx] = weightKg;
-            } else {
-              const monthIdx = new Date().getMonth();
-              fallback[monthIdx] = weightKg;
-            }
-            setWeightSeries(fallback);
-          } else {
-            setWeightSeries(Array.from({ length: zeros }, () => 0));
-          }
+          setWeightSeries(Array.from({ length: zeros }, () => 0));
           return;
         }
 
         // rows are newest-first due to query
         setLatestLoggedWeight(rows[0].weight);
         const now = new Date();
-        const todayKey = sameDayKey(now);
-        const todayRow = rows.find((r) => sameDayKey(r.createdAt) === todayKey);
+        const todayKey = formatCalendarDayKey(now, calendarTz);
+        const todayRow = rows.find((r) => weightLogDayKey(r.createdAt, calendarTz) === todayKey);
         setTodayLoggedWeight(todayRow ? todayRow.weight : null);
 
+        const currentSlotIndex =
+          period === "week"
+            ? Math.min(6, Math.max(0, now.getDay() === 0 ? 6 : now.getDay() - 1))
+            : period === "month"
+              ? Math.min(3, Math.floor((now.getDate() - 1) / 7))
+              : now.getMonth();
+
         if (period === "week") {
-          // 7 daily points (Mon..Sun) using latest weight logged per day, fallback 0
           const weekStart = startOfWeekMon(now);
           const keys = Array.from({ length: 7 }, (_, i) => {
             const d = new Date(weekStart);
             d.setDate(d.getDate() + i);
-            return sameDayKey(d);
+            return formatCalendarDayKey(d, calendarTz);
           });
-          const latestByDay = new Map<string, number>();
-          for (const r of rows) {
-            const key = sameDayKey(r.createdAt);
-            if (!latestByDay.has(key)) latestByDay.set(key, r.weight);
-          }
-          if (!todayRow && weightKg > 0) {
-            latestByDay.set(todayKey, weightKg);
-          }
-          setWeightSeries(keys.map((k) => latestByDay.get(k) ?? 0));
+          const latestByDay = buildLatestWeightByDay(rows, calendarTz);
+          setWeightSeries(buildWeightSeriesForDays(keys, latestByDay, weightKg, todayKey));
           return;
         }
 
         if (period === "month") {
-          // 4 weekly points (W1..W4) for current month; use average per week, fallback 0
           const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
           const buckets = [0, 0, 0, 0];
           const counts = [0, 0, 0, 0];
@@ -711,17 +713,12 @@ export default function ProgressScreen() {
             buckets[weekIdx] += r.weight;
             counts[weekIdx] += 1;
           }
-          if (!todayRow && weightKg > 0) {
-            const dayOfMonth = now.getDate();
-            const weekIdx = Math.min(3, Math.floor((dayOfMonth - 1) / 7));
-            buckets[weekIdx] += weightKg;
-            counts[weekIdx] += 1;
-          }
-          setWeightSeries(buckets.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
+          const bucketValues = buckets.map((sum, i) => (counts[i] ? sum / counts[i] : null));
+          setWeightSeries(buildWeightBucketSeries(bucketValues, currentSlotIndex, weightKg));
           return;
         }
 
-        // year: 12 monthly points (Jan..Dec) for current year; use average per month, fallback 0
+        // year: 12 monthly points (Jan..Dec) for current year
         const year = now.getFullYear();
         const sums = Array.from({ length: 12 }, () => 0);
         const counts = Array.from({ length: 12 }, () => 0);
@@ -731,12 +728,8 @@ export default function ProgressScreen() {
           sums[m] += r.weight;
           counts[m] += 1;
         }
-        if (!todayRow && weightKg > 0) {
-          const m = now.getMonth();
-          sums[m] += weightKg;
-          counts[m] += 1;
-        }
-        setWeightSeries(sums.map((sum, i) => (counts[i] ? sum / counts[i] : 0)));
+        const bucketValues = sums.map((sum, i) => (counts[i] ? sum / counts[i] : null));
+        setWeightSeries(buildWeightBucketSeries(bucketValues, currentSlotIndex, weightKg));
       } catch (e) {
         console.log("Failed to compute weight series:", e);
         setTodayLoggedWeight(null);
@@ -748,7 +741,7 @@ export default function ProgressScreen() {
     };
 
     applyWeightProgressLogs();
-  }, [period, tab, weightKg, weightProgressLogRows]);
+  }, [calendarTz, period, tab, weightKg, weightProgressLogRows]);
 
   useEffect(() => {
     if (tab !== "workout") return;
@@ -861,15 +854,21 @@ export default function ProgressScreen() {
     };
   }, [period, tab, workoutLogRows, workoutSeries]);
 
-  /** Under THIS WEEK: show today’s burn from logs (same bucketing as the chart). */
-  const workoutWeekTodayKcal = useMemo(() => {
-    if (tab !== "workout" || period !== "week") return null;
+  /** Today’s burn from workout logs (falls back to dailyStats). */
+  const workoutTodayBurnKcal = useMemo(() => {
+    if (tab !== "workout") return null;
     const todayKey = formatCalendarDayKey(new Date(), calendarTz);
-    const todayKcal = workoutLogRows
+    const fromLogs = workoutLogRows
       .filter((r) => r.dayKey === todayKey)
       .reduce((s, r) => s + r.burnedKcal, 0);
-    return Math.round(todayKcal).toLocaleString();
-  }, [calendarTz, period, tab, workoutLogRows]);
+    const total = fromLogs > 0 ? fromLogs : burnedToday;
+    return Math.round(total).toLocaleString();
+  }, [burnedToday, calendarTz, tab, workoutLogRows]);
+
+  const mealTodayConsumeKcal = useMemo(() => {
+    if (tab !== "meal") return null;
+    return Math.round(consumedToday).toLocaleString();
+  }, [consumedToday, tab]);
 
   /** Profile `weight` (Edit Profile, home, etc.) is the live “current weight” and should drive the headline. */
   const effectiveWeightKg = useMemo(() => {
@@ -1204,52 +1203,63 @@ export default function ProgressScreen() {
         {/* Metric + chart card */}
         <View className="mt-4 rounded-3xl p-5" style={cardStyle}>
           <View className="flex-row items-start justify-between">
-            <View className="flex-1 pr-2">
-              <Text className="text-base font-extrabold tracking-wide" style={textPrimary}>
-                {metricLabel}
+            <Text className="text-base font-extrabold tracking-wide flex-1 pr-2" style={textPrimary}>
+              {metricLabel}
+            </Text>
+            {tab === "weight" ? (
+              <Pressable
+                onPress={openLogWeight}
+                className="px-4 py-2 rounded-full bg-[#76C893]"
+              >
+                <Text className="font-extrabold" style={{ color: "#ffffff" }}>Log weight +</Text>
+              </Pressable>
+            ) : (
+              <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
+                <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates</Text>
+              </View>
+            )}
+          </View>
+
+          <View className="flex-row items-end justify-between mt-2 gap-3">
+            <View className="flex-row items-end flex-wrap flex-1 min-w-0 gap-x-3 gap-y-1">
+              <Text className="text-3xl font-extrabold shrink" style={textPrimary}>
+                {metricValue.main}
               </Text>
-              <View className="flex-row items-end mt-2 flex-wrap">
-                <Text className="text-3xl font-extrabold shrink" style={textPrimary}>
-                  {metricValue.main}
-                </Text>
-                <View
-                  className={`ml-3 px-2 py-1 rounded-full mb-1 ${
-                    metricValue.delta.trim().startsWith("-") ? "bg-red-50" : "bg-[#eaf7f0]"
+              <View
+                className={`px-2 py-1 rounded-full mb-1 ${
+                  metricValue.delta.trim().startsWith("-") ? "bg-red-50" : "bg-[#eaf7f0]"
+                }`}
+              >
+                <Text
+                  className={`text-xs font-bold ${
+                    metricValue.delta.trim().startsWith("-") ? "text-red-600" : "text-[#52B69A]"
                   }`}
                 >
-                  <Text
-                    className={`text-xs font-bold ${
-                      metricValue.delta.trim().startsWith("-") ? "text-red-600" : "text-[#52B69A]"
-                    }`}
-                  >
-                    {metricValue.delta}
-                  </Text>
-                </View>
+                  {metricValue.delta}
+                </Text>
               </View>
-              {workoutWeekTodayKcal ? (
-                <Text className="text-base font-semibold mt-1.5" style={textMuted}>
-                  Today burned <Text className="text-lg font-extrabold" style={{ color: theme.accentText }}>{workoutWeekTodayKcal}</Text> kcal
+              {tab === "workout" && workoutTodayBurnKcal ? (
+                <Text className="text-sm font-semibold mb-1" style={textMuted}>
+                  Today burned{" "}
+                  <Text className="font-extrabold" style={{ color: theme.accentText }}>
+                    {workoutTodayBurnKcal}
+                  </Text>{" "}
+                  kcal
+                </Text>
+              ) : null}
+              {tab === "meal" && mealTodayConsumeKcal ? (
+                <Text className="text-sm font-semibold mb-1" style={textMuted}>
+                  Today consumed{" "}
+                  <Text className="font-extrabold" style={{ color: theme.accentText }}>
+                    {mealTodayConsumeKcal}
+                  </Text>{" "}
+                  kcal
                 </Text>
               ) : null}
             </View>
-
-            <View className="items-end">
-              {tab === "weight" ? (
-                <Pressable
-                  onPress={openLogWeight}
-                  className="px-4 py-2 rounded-full bg-[#76C893]"
-                >
-                  <Text className="font-extrabold" style={{ color: "#ffffff" }}>Log weight +</Text>
-                </Pressable>
-              ) : (
-                <View className="px-3 py-2 rounded-2xl bg-[#eef7f1] border border-[#b7ead1]">
-                  <Text className="text-[11px] font-bold text-[#52B69A]">Auto-updates</Text>
-                </View>
-              )}
-              <Pressable onPress={openDetails} className="mt-2 active:opacity-80">
-                <Text className="text-base font-extrabold text-[#52B69A]">SEE ALL &gt;</Text>
-              </Pressable>
-            </View>
+            <Pressable onPress={openDetails} className="active:opacity-80 shrink-0 mb-1">
+              <Text className="text-base font-extrabold text-[#52B69A]">SEE ALL &gt;</Text>
+            </Pressable>
           </View>
 
           {/* Chart */}
@@ -1269,13 +1279,10 @@ export default function ProgressScreen() {
               {tab === "weight" ? (
                 <View className="flex-1 flex-row items-end px-4 pb-2">
                   {(() => {
-                    const min = Math.min(...weightSeries);
-                    const max = Math.max(...weightSeries);
-                    const span = max - min || 1;
                     const padded = weightSeries.length ? weightSeries : chartLabels.map(() => 0);
 
                     return padded.map((v, idx) => {
-                      const h = 10 + Math.round(((v - min) / span) * 50);
+                      const h = weightBarHeight(v, padded);
                       const active = hoverIdx === idx;
                       return (
                         <View key={`bar-${idx}`} className="flex-1 items-center justify-end">
@@ -1350,95 +1357,70 @@ export default function ProgressScreen() {
         {/* Daily steps + water */}
         <View className="mt-4 gap-3">
           <View className="flex-row justify-between gap-4">
-            <Pressable
+            <ProgressMetricCard
+              cardKey="dailySteps"
+              title="Daily Steps"
+              icon={<Ionicons name="walk-outline" size={18} color="#ffffff" />}
               onPress={() => router.push("/step-progress" as any)}
-              className="flex-1 rounded-3xl p-4 pb-5 active:opacity-90"
-              style={cardStyle}
             >
-              <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold" style={textPrimary}>Daily Steps</Text>
-                <Ionicons name="walk-outline" size={18} color={theme.accent} />
-              </View>
-              <Text className="text-[10px] tracking-widest font-bold mt-2" style={textMuted}>TODAY&apos;S TOTAL</Text>
-              <Text className="text-3xl font-extrabold mt-1" style={textPrimary}>
-                {displaySteps.toLocaleString()} steps
-              </Text>
-              <Text className="text-sm mt-2" style={textMuted}>
+              <ProgressMetricLabel>TODAY&apos;S TOTAL</ProgressMetricLabel>
+              <ProgressMetricValue>{displaySteps.toLocaleString()} steps</ProgressMetricValue>
+              <ProgressMetricDetail>
                 {stepSource === "pedometer"
                   ? "Phone step counter (walking & daily movement)"
                   : stepSource === "accelerometer"
                     ? "Estimated steps while walking"
                     : "Not available on this device"}
-              </Text>
+              </ProgressMetricDetail>
               {stepSource !== "unavailable" ? (
-                <Text className="text-sm font-semibold text-blue-600 mt-1.5">Tap for progress</Text>
+                <ProgressMetricLink bright>Tap for progress</ProgressMetricLink>
               ) : null}
-            </Pressable>
+            </ProgressMetricCard>
 
-            <Pressable
+            <ProgressMetricCard
+              cardKey="waterIntake"
+              title="Water Intake"
+              icon={<Ionicons name="water-outline" size={18} color="#ffffff" />}
               onPress={() => router.push("/water-intake" as any)}
-              className="flex-1 rounded-3xl p-4 pb-5 active:opacity-90"
-              style={cardStyle}
             >
-              <View className="flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold" style={textPrimary}>Water Intake</Text>
-                <Ionicons name="water-outline" size={18} color={theme.accent} />
-              </View>
-              <Text className="text-[10px] tracking-widest font-bold mt-2" style={textMuted}>TODAY&apos;S TOTAL</Text>
-              <Text className="text-3xl font-extrabold mt-1" style={textPrimary}>
-                {waterTotalTodayMl.toLocaleString()} ml
-              </Text>
+              <ProgressMetricLabel>TODAY&apos;S TOTAL</ProgressMetricLabel>
+              <ProgressMetricValue>{waterTotalTodayMl.toLocaleString()} ml</ProgressMetricValue>
+              {waterPreviousSuggestedMl != null ? (
+                <ProgressMetricDetail className="text-xs mt-1">
+                  Previous · {waterPreviousPlaceName ?? "Previous location"}:{" "}
+                  {waterPreviousSuggestedMl.toLocaleString()} ml suggested
+                </ProgressMetricDetail>
+              ) : null}
               {waterSuggestionLoading ? (
-                <Text className="text-sm mt-2" style={textMuted}>
-                  Calculating today&apos;s suggestion…
-                </Text>
+                <ProgressMetricDetail>Calculating today&apos;s suggestion…</ProgressMetricDetail>
               ) : waterSuggestedMl != null ? (
-                <Text className="text-sm mt-2" style={textMuted}>
-                  Today's water intake suggestion:{" "}
-                  <Text className="font-extrabold" style={{ color: theme.danger }}>
+                <ProgressMetricDetail>
+                  Today&apos;s water intake suggestion:{" "}
+                  <Text className="font-extrabold text-amber-200">
                     {waterSuggestedMl.toLocaleString()} ml
                   </Text>
-                </Text>
+                </ProgressMetricDetail>
               ) : (
-                <Text className="text-sm mt-2" style={textMuted}>
+                <ProgressMetricDetail>
                   Today suggestion:{" "}
-                  <Text className="font-extrabold" style={{ color: theme.danger }}>
-                    unavailable
-                  </Text>
-                </Text>
+                  <Text className="font-extrabold text-amber-200">unavailable</Text>
+                </ProgressMetricDetail>
               )}
-              {!waterRecordedToday ? (
-                <Text className="text-sm text-amber-700 font-semibold mt-1">
-                  You haven&apos;t recorded water today.
-                </Text>
-              ) : null}
-              <Text className="text-sm font-semibold text-blue-600 mt-1.5">Tap to record</Text>
-            </Pressable>
+              <ProgressMetricLink bright>Tap to record</ProgressMetricLink>
+            </ProgressMetricCard>
           </View>
         </View>
 
         {/* Achievements (moved from Home) */}
         <View className="mt-4">
-          <Pressable
+          <ProgressFeatureCard
+            cardKey="achievements"
+            title="Achievements"
+            subtitle={"Workout, meal, community\n& streak badges"}
+            icon={<Ionicons name="trophy-outline" size={26} color="#52B69A" />}
             onPress={() => router.push("/achievements" as any)}
-            className="rounded-3xl px-5 py-5 active:opacity-90 shadow-sm shadow-black/5"
-            style={cardStyle}
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center flex-1 pr-3">
-                <View className="w-14 h-14 rounded-2xl items-center justify-center" style={{ backgroundColor: theme.accentSoft }}>
-                  <Ionicons name="trophy-outline" size={30} color={theme.accent} />
-                </View>
-                <View className="ml-4 flex-1">
-                  <Text className="text-xl font-extrabold" style={textPrimary}>Achievements</Text>
-                  <Text className="text-sm mt-1 leading-5" style={textMuted}>
-                    Workout, meal, community & streak badges
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
-            </View>
-          </Pressable>
+            large
+          />
         </View>
       </ScrollView>
 

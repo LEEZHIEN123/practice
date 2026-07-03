@@ -1,6 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
-    ThemedBackButton,
+    ProfileScreenHeader,
     ThemedCard,
     ThemedRow,
     ThemedScreen,
@@ -354,18 +354,21 @@ export default function WorkoutPlanScreen() {
 
   return (
     <ThemedScreen>
-      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-        <View className="flex-1">
-          <ThemedText className="text-3xl font-extrabold">Workout Plan</ThemedText>
-        </View>
-        <Pressable
-          onPress={() => setPickerVisible(true)}
-          className="px-4 py-2 rounded-full active:opacity-90"
-          style={cardStyle}
-        >
-          <ThemedText className="text-base font-extrabold">Change</ThemedText>
-        </Pressable>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader
+          title="Workout Plan"
+          onBack={() => router.back()}
+          titleClassName="text-2xl"
+          rightSlot={
+            <Pressable
+              onPress={() => setPickerVisible(true)}
+              className="px-4 py-2 rounded-full active:opacity-90"
+              style={cardStyle}
+            >
+              <ThemedText className="text-base font-extrabold">Change</ThemedText>
+            </Pressable>
+          }
+        />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} className="px-3">

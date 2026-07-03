@@ -16,8 +16,8 @@ export function ThemedScreen({ children, className = "", style, ...props }: View
 
 export function ThemedBackButton({
   onPress,
-  className = "w-11 h-11",
-  icon = "chevron-back",
+  className = "w-12 h-12",
+  icon = "arrow-back",
   size = 24,
 }: {
   onPress: () => void;
@@ -30,11 +30,52 @@ export function ThemedBackButton({
     <Pressable
       onPress={onPress}
       hitSlop={12}
-      className={`${className} rounded-full items-center justify-center border`}
+      className={`${className} rounded-full items-center justify-center`}
       style={iconButtonStyle}
     >
       <Ionicons name={icon} size={size} color={theme.textPrimary} />
     </Pressable>
+  );
+}
+
+/** Centered title header with profile-style back button on the left. */
+export function ProfileScreenHeader({
+  title,
+  onBack,
+  rightSlot,
+  titleClassName = "text-2xl",
+  className = "mb-2",
+  backButtonClassName = "w-12 h-12",
+  backIconSize = 24,
+  headerHeightClassName = "h-12",
+}: {
+  title: string;
+  onBack: () => void;
+  rightSlot?: React.ReactNode;
+  titleClassName?: string;
+  className?: string;
+  backButtonClassName?: string;
+  backIconSize?: number;
+  headerHeightClassName?: string;
+}) {
+  const { textPrimary } = useThemedScreen();
+  return (
+    <View className={`relative justify-center ${headerHeightClassName} ${className}`} pointerEvents="box-none">
+      <View className="absolute left-0 top-0 h-full w-20 justify-center pl-2 z-10">
+        <ThemedBackButton onPress={onBack} className={backButtonClassName} size={backIconSize} />
+      </View>
+      {rightSlot ? (
+        <View className="absolute right-0 top-0 h-full justify-center pr-2 z-10">{rightSlot}</View>
+      ) : null}
+      <Text
+        pointerEvents="none"
+        numberOfLines={2}
+        className={`absolute left-0 right-0 text-center font-extrabold px-16 ${titleClassName}`}
+        style={textPrimary}
+      >
+        {title}
+      </Text>
+    </View>
   );
 }
 

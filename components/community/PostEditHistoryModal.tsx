@@ -27,7 +27,7 @@ export function PostEditHistoryModal({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View className="flex-1" style={[screenStyle, { paddingTop: insets.top }]}>
         <View className="flex-row items-center px-4 py-3">
-          <ThemedBackButton onPress={onClose} className="w-11 h-11 mr-3" />
+          <ThemedBackButton onPress={onClose} className="mr-3" />
           <ThemedText className="text-xl font-extrabold flex-1">Edit history</ThemedText>
         </View>
 

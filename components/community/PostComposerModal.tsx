@@ -87,7 +87,7 @@ export function PostComposerModal({
       >
         <View style={{ paddingTop: insets.top + 8 }} className="flex-1">
           <View className="flex-row items-center px-4 mb-4">
-            <ThemedBackButton onPress={onClose} icon="close" size={22} className="w-11 h-11 mr-3" />
+            <ThemedBackButton onPress={onClose} icon="close" size={24} className="mr-3" />
             <ThemedText className="text-xl font-extrabold flex-1">{title}</ThemedText>
             <Pressable
               onPress={() => void handleSubmit()}

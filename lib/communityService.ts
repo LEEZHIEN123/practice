@@ -1114,6 +1114,14 @@ export async function markNotificationRead(notificationId: string): Promise<void
   await updateDoc(doc(db, "communityNotifications", notificationId), { read: true });
 }
 
+export async function markNotificationUnread(notificationId: string): Promise<void> {
+  await updateDoc(doc(db, "communityNotifications", notificationId), { read: false });
+}
+
+export async function deleteNotification(notificationId: string): Promise<void> {
+  await deleteDoc(doc(db, "communityNotifications", notificationId));
+}
+
 export async function resolveFriendRequestNotification(
   notificationId: string,
   status: "accepted" | "rejected"

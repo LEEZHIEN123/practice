@@ -19,6 +19,7 @@ export type AchievementStatePersisted = {
   loginStreak?: number;
   lastWorkoutPlanDate?: string;
   workoutPlanDays?: number;
+  unlockedAchievements?: string[];
 };
 
 export type AchievementRowModel = {
@@ -98,6 +99,7 @@ type AchievementMetrics = {
   discoverWorkoutLogCount: number;
   completedSessionCount: number;
   waterLogCount: number;
+  mealLogCount: number;
   stepDays3000Count: number;
   stepDays5000Count: number;
   stepDays8000Count: number;
@@ -114,6 +116,8 @@ type CommunityAchievementMetrics = {
   challengeEngaged: boolean;
   welcomed: boolean;
 };
+
+export type { CommunityAchievementMetrics };
 
 const EMPTY_COMMUNITY_METRICS: CommunityAchievementMetrics = {
   postCount: 0,
@@ -220,6 +224,39 @@ async function loadCommunityMetrics(uid: string): Promise<CommunityAchievementMe
   }
 }
 
+/** Load community stats used by community achievement rows. */
+export async function loadCommunityAchievementMetrics(
+  uid: string
+): Promise<CommunityAchievementMetrics> {
+  return loadCommunityMetrics(uid);
+}
+
+function progressRow(
+  id: string,
+  label: string,
+  current: number,
+  target: number
+): AchievementRowModel {
+  const isComplete = current >= target;
+  return {
+    id,
+    label,
+    variant: isComplete ? "done" : "progress",
+    rightLabel: isComplete ? "DONE" : `${Math.min(current, target)} / ${target}`,
+    isComplete,
+  };
+}
+
+function doneRow(id: string, label: string, isComplete: boolean): AchievementRowModel {
+  return {
+    id,
+    label,
+    variant: "done",
+    rightLabel: isComplete ? "DONE" : "—",
+    isComplete,
+  };
+}
+
 function titleFromId(id: string): string {
   const titles: Record<string, string> = {
     wo_profile: "Profile Complete",
@@ -229,6 +266,9 @@ function titleFromId(id: string): string {
     wo_first_complete: "First Workout",
     wo_complete_10: "Workout Regular",
     wo_complete_25: "Workout Champion",
+    wo_complete_50: "Workout Legend",
+    wo_discover_5: "Workout Explorer",
+    wo_weight_first: "First Weigh-In",
     ml_water_first: "First Hydration Log",
     ml_water_5: "Hydration Habit",
     ml_water_20: "Hydration Pro",
@@ -236,13 +276,19 @@ function titleFromId(id: string): string {
     ml_water_reminder: "Water Reminder Set",
     ml_repeat_days: "Repeat Days Enabled",
     ml_water_50: "Hydration Master",
-    cm_welcome: "Welcome In",
+    ml_meal_first: "Meal Starter",
+    ml_meal_10: "Meal Tracker",
+    ml_meal_25: "Nutrition Builder",
+    cm_welcome: "Community Welcome",
     cm_first_chat: "First Chat",
     cm_first_reply: "Helpful Reply",
-    cm_challenge: "Challenge Joiner",
+    cm_challenge: "Challenge Junior",
     cm_likes_10: "Supportive Member",
     cm_active_7: "Active Voice",
-    cm_champion: "Community Champion",
+    cm_first_post: "First Post",
+    cm_friend_3: "Social Circle",
+    cm_posts_5: "Content Creator",
+    cm_champion: "Community Legend",
     st_steps_first: "First Step Day",
     st_steps_3: "Step Starter",
     st_steps_7: "Daily Walker",
@@ -250,8 +296,65 @@ function titleFromId(id: string): string {
     st_water_first: "First Water Check-In",
     st_water_10: "Water Habit",
     st_water_30: "Hydration Champion",
+    st_login_7: "Weekly Login",
+    st_weight_first: "First Weigh-In",
+    st_weight_10: "Weight Watcher",
   };
   return titles[id] ?? "Achievement";
+}
+
+export function achievementTitleFromId(id: string): string {
+  return titleFromId(id);
+}
+
+function descriptionFromId(id: string): string {
+  const descriptions: Record<string, string> = {
+    wo_profile: "Complete your fitness profile",
+    wo_goal: "Get your BMI analysis and goal",
+    wo_plan_generated: "Generate your first workout plan",
+    wo_plan_days: 'Open "View Full Plan" on 5 different days',
+    wo_first_complete: "Complete your first workout",
+    wo_complete_10: "Complete 10 workouts",
+    wo_complete_25: "Complete 25 workouts",
+    wo_complete_50: "Complete 50 workouts",
+    wo_discover_5: "Complete 5 discover workouts",
+    wo_weight_first: "Log your first weight",
+    ml_water_first: "Log your first water intake",
+    ml_water_5: "Log water intake 5 times",
+    ml_water_20: "Log water intake 20 times",
+    ml_meal_reminder: "Set at least 1 meal reminder",
+    ml_water_reminder: "Set at least 1 water reminder",
+    ml_repeat_days: "Enable reminders on 3+ repeat days",
+    ml_water_50: "Log water intake 50 times",
+    ml_meal_first: "Log your first meal",
+    ml_meal_10: "Log 10 meals",
+    ml_meal_25: "Log 25 meals",
+    cm_welcome: "Post, chat, comment, or add a friend to get started",
+    cm_first_chat: "Send your first message",
+    cm_first_reply: "Reply to a community post",
+    cm_challenge: "Join a weekly challenge with the challenge tag",
+    cm_likes_10: "React to 10 messages",
+    cm_active_7: "Participate for 7 days",
+    cm_first_post: "Share your first post",
+    cm_friend_3: "Add 3 friends",
+    cm_posts_5: "Share 5 community posts",
+    cm_champion: "Complete every community milestone",
+    st_steps_first: "Reach 3,000 steps in a day",
+    st_steps_3: "Reach 5,000 steps on 3 days",
+    st_steps_7: "Reach 5,000 steps on 7 days",
+    st_steps_14: "Reach 8,000 steps on 14 days",
+    st_water_first: "Log your first water intake",
+    st_water_10: "Log water intake 10 times",
+    st_water_30: "Log water intake 30 times",
+    st_login_7: "Open the app 7 days in a row",
+    st_weight_first: "Log your first weight",
+    st_weight_10: "Log your weight 10 times",
+  };
+  return descriptions[id] ?? "";
+}
+
+export function achievementDescriptionFromId(id: string): string {
+  return descriptionFromId(id);
 }
 
 function buildSections(
@@ -294,6 +397,10 @@ function buildSections(
     ? reminders.water.times.length
     : 0;
   const community = metrics.community;
+  const loginStreak = state.loginStreak ?? 0;
+  const weightLogCount = metrics.weightLogCount;
+  const mealLogCount = metrics.mealLogCount;
+  const discoverWorkoutLogCount = metrics.discoverWorkoutLogCount;
 
   const welcomeDone = community.welcomed;
   const firstChatDone = community.chatMessageCount >= 1;
@@ -301,215 +408,86 @@ function buildSections(
   const challengeDone = community.challengeEngaged;
   const likesDone = community.likeGivenCount >= 10;
   const activeDone = community.activeDayCount >= 7;
-  const championDone =
-    welcomeDone && firstChatDone && firstReplyDone && challengeDone && likesDone && activeDone;
+  const firstPostDone = community.postCount >= 1;
+  const friendDone = community.friendCount >= 3;
+  const postsDone = community.postCount >= 5;
+  const championMilestonesDone = [
+    welcomeDone,
+    firstChatDone,
+    firstReplyDone,
+    challengeDone,
+    likesDone,
+    activeDone,
+    firstPostDone,
+    friendDone,
+    postsDone,
+  ].filter(Boolean).length;
 
   const workoutRows: AchievementRowModel[] = [
-    {
-      id: "wo_profile",
-      label: "Complete your fitness profile",
-      variant: "done",
-      rightLabel: profileOk ? "DONE" : "—",
-      isComplete: profileOk,
-    },
-    {
-      id: "wo_goal",
-      label: "Get your BMI analysis and goal",
-      variant: "done",
-      rightLabel: hasGoalAndBmi ? "DONE" : "—",
-      isComplete: hasGoalAndBmi,
-    },
-    {
-      id: "wo_plan_generated",
-      label: "Generate your first workout plan",
-      variant: "done",
-      rightLabel: planGenerated ? "DONE" : "—",
-      isComplete: planGenerated,
-    },
-    {
-      id: "wo_plan_days",
-      label: 'Open "View Full Plan" on 5 different days',
-      variant: "progress",
-      rightLabel: `${Math.min(workoutDays, 5)} / 5`,
-      isComplete: workoutDays >= 5,
-    },
-    {
-      id: "wo_first_complete",
-      label: "Complete your first workout",
-      variant: "progress",
-      rightLabel: `${Math.min(completedSessionCount, 1)} / 1`,
-      isComplete: completedSessionCount >= 1,
-    },
-    {
-      id: "wo_complete_10",
-      label: "Complete 10 workouts",
-      variant: "progress",
-      rightLabel: `${Math.min(completedSessionCount, 10)} / 10`,
-      isComplete: completedSessionCount >= 10,
-    },
-    {
-      id: "wo_complete_25",
-      label: "Complete 25 workouts",
-      variant: "progress",
-      rightLabel: `${Math.min(completedSessionCount, 25)} / 25`,
-      isComplete: completedSessionCount >= 25,
-    },
+    doneRow("wo_profile", "Complete your fitness profile", profileOk),
+    doneRow("wo_goal", "Get your BMI analysis and goal", hasGoalAndBmi),
+    doneRow("wo_plan_generated", "Generate your first workout plan", planGenerated),
+    progressRow("wo_plan_days", 'Open "View Full Plan" on 5 different days', workoutDays, 5),
+    progressRow("wo_first_complete", "Complete your first workout", completedSessionCount, 1),
+    progressRow("wo_complete_10", "Complete 10 workouts", completedSessionCount, 10),
+    progressRow("wo_complete_25", "Complete 25 workouts", completedSessionCount, 25),
+    progressRow("wo_complete_50", "Complete 50 workouts", completedSessionCount, 50),
+    progressRow("wo_discover_5", "Complete 5 discover workouts", discoverWorkoutLogCount, 5),
+    doneRow("wo_weight_first", "Log your first weight", weightLogCount >= 1),
   ];
 
   const mealRows: AchievementRowModel[] = [
-    {
-      id: "ml_water_first",
-      label: "Log your first water intake",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 1)} / 1`,
-      isComplete: waterLogCount >= 1,
-    },
-    {
-      id: "ml_water_5",
-      label: "Log water intake 5 times",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 5)} / 5`,
-      isComplete: waterLogCount >= 5,
-    },
-    {
-      id: "ml_water_20",
-      label: "Log water intake 20 times",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 20)} / 20`,
-      isComplete: waterLogCount >= 20,
-    },
-    {
-      id: "ml_meal_reminder",
-      label: "Set at least 1 meal reminder",
-      variant: "progress",
-      rightLabel: `${Math.min(mealReminderCount, 1)} / 1`,
-      isComplete: mealReminderCount >= 1,
-    },
-    {
-      id: "ml_water_reminder",
-      label: "Set at least 1 water reminder",
-      variant: "progress",
-      rightLabel: `${Math.min(waterReminderCount, 1)} / 1`,
-      isComplete: waterReminderCount >= 1,
-    },
-    {
-      id: "ml_repeat_days",
-      label: "Enable reminders on 3+ repeat days",
-      variant: "progress",
-      rightLabel: `${Math.min(reminderActiveDays, 3)} / 3`,
-      isComplete: reminderActiveDays >= 3,
-    },
-    {
-      id: "ml_water_50",
-      label: "Log water intake 50 times",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 50)} / 50`,
-      isComplete: waterLogCount >= 50,
-    },
+    progressRow("ml_water_first", "Log your first water intake", waterLogCount, 1),
+    progressRow("ml_water_5", "Log water intake 5 times", waterLogCount, 5),
+    progressRow("ml_water_20", "Log water intake 20 times", waterLogCount, 20),
+    progressRow("ml_meal_reminder", "Set at least 1 meal reminder", mealReminderCount, 1),
+    progressRow("ml_water_reminder", "Set at least 1 water reminder", waterReminderCount, 1),
+    progressRow("ml_repeat_days", "Enable reminders on 3+ repeat days", reminderActiveDays, 3),
+    progressRow("ml_water_50", "Log water intake 50 times", waterLogCount, 50),
+    progressRow("ml_meal_first", "Log your first meal", mealLogCount, 1),
+    progressRow("ml_meal_10", "Log 10 meals", mealLogCount, 10),
+    progressRow("ml_meal_25", "Log 25 meals", mealLogCount, 25),
   ];
 
   const communityRows: AchievementRowModel[] = [
-    {
-      id: "cm_welcome",
-      label: "Join your first community room",
-      variant: "done",
-      rightLabel: welcomeDone ? "DONE" : "—",
-      isComplete: welcomeDone,
-    },
-    {
-      id: "cm_first_chat",
-      label: "Send your first message",
-      variant: "progress",
-      rightLabel: `${Math.min(community.chatMessageCount, 1)} / 1`,
-      isComplete: firstChatDone,
-    },
-    {
-      id: "cm_first_reply",
-      label: "Reply to a community post",
-      variant: "progress",
-      rightLabel: `${Math.min(community.commentCount, 1)} / 1`,
-      isComplete: firstReplyDone,
-    },
-    {
-      id: "cm_challenge",
-      label: "Join a weekly challenge",
-      variant: "done",
-      rightLabel: challengeDone ? "DONE" : "—",
-      isComplete: challengeDone,
-    },
-    {
-      id: "cm_likes_10",
-      label: "React to 10 messages",
-      variant: "progress",
-      rightLabel: `${Math.min(community.likeGivenCount, 10)} / 10`,
-      isComplete: likesDone,
-    },
-    {
-      id: "cm_active_7",
-      label: "Participate for 7 days",
-      variant: "progress",
-      rightLabel: `${Math.min(community.activeDayCount, 7)} / 7`,
-      isComplete: activeDone,
-    },
-    {
-      id: "cm_champion",
-      label: "Complete all social milestones",
-      variant: "done",
-      rightLabel: championDone ? "DONE" : "—",
-      isComplete: championDone,
-    },
+    progressRow(
+      "cm_welcome",
+      "Post, chat, comment, or add a friend to get started",
+      welcomeDone ? 1 : 0,
+      1
+    ),
+    progressRow("cm_first_chat", "Send your first message", community.chatMessageCount, 1),
+    progressRow("cm_first_reply", "Reply to a community post", community.commentCount, 1),
+    progressRow(
+      "cm_challenge",
+      "Join a weekly challenge with the challenge tag",
+      challengeDone ? 1 : 0,
+      1
+    ),
+    progressRow("cm_likes_10", "React to 10 messages", community.likeGivenCount, 10),
+    progressRow("cm_active_7", "Participate for 7 days", community.activeDayCount, 7),
+    progressRow("cm_first_post", "Share your first post", community.postCount, 1),
+    progressRow("cm_friend_3", "Add 3 friends", community.friendCount, 3),
+    progressRow("cm_posts_5", "Share 5 community posts", community.postCount, 5),
+    progressRow(
+      "cm_champion",
+      "Complete every community milestone",
+      championMilestonesDone,
+      9
+    ),
   ];
 
   const streakRows: AchievementRowModel[] = [
-    {
-      id: "st_steps_first",
-      label: "Reach 3,000 steps in a day",
-      variant: "progress",
-      rightLabel: `${Math.min(stepDays3000Count, 1)} / 1`,
-      isComplete: stepDays3000Count >= 1,
-    },
-    {
-      id: "st_steps_3",
-      label: "Reach 5,000 steps on 3 days",
-      variant: "progress",
-      rightLabel: `${Math.min(stepDays5000Count, 3)} / 3`,
-      isComplete: stepDays5000Count >= 3,
-    },
-    {
-      id: "st_steps_7",
-      label: "Reach 5,000 steps on 7 days",
-      variant: "progress",
-      rightLabel: `${Math.min(stepDays5000Count, 7)} / 7`,
-      isComplete: stepDays5000Count >= 7,
-    },
-    {
-      id: "st_steps_14",
-      label: "Reach 8,000 steps on 14 days",
-      variant: "progress",
-      rightLabel: `${Math.min(stepDays8000Count, 14)} / 14`,
-      isComplete: stepDays8000Count >= 14,
-    },
-    {
-      id: "st_water_first",
-      label: "Log your first water intake",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 1)} / 1`,
-      isComplete: waterLogCount >= 1,
-    },
-    {
-      id: "st_water_10",
-      label: "Log water intake 10 times",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 10)} / 10`,
-      isComplete: waterLogCount >= 10,
-    },
-    {
-      id: "st_water_30",
-      label: "Log water intake 30 times",
-      variant: "progress",
-      rightLabel: `${Math.min(waterLogCount, 30)} / 30`,
-      isComplete: waterLogCount >= 30,
-    },
+    progressRow("st_steps_first", "Reach 3,000 steps in a day", stepDays3000Count, 1),
+    progressRow("st_steps_3", "Reach 5,000 steps on 3 days", stepDays5000Count, 3),
+    progressRow("st_steps_7", "Reach 5,000 steps on 7 days", stepDays5000Count, 7),
+    progressRow("st_steps_14", "Reach 8,000 steps on 14 days", stepDays8000Count, 14),
+    progressRow("st_water_first", "Log your first water intake", waterLogCount, 1),
+    progressRow("st_water_10", "Log water intake 10 times", waterLogCount, 10),
+    progressRow("st_water_30", "Log water intake 30 times", waterLogCount, 30),
+    progressRow("st_login_7", "Open the app 7 days in a row", loginStreak, 7),
+    doneRow("st_weight_first", "Log your first weight", weightLogCount >= 1),
+    progressRow("st_weight_10", "Log your weight 10 times", weightLogCount, 10),
   ];
 
   const pack = (category: AchievementCategory, rows: AchievementRowModel[]): AchievementSectionModel => {
@@ -522,23 +500,35 @@ function buildSections(
     };
   };
 
-  const comingSoon = (
-    category: AchievementCategory,
-    plannedCount: number
-  ): AchievementSectionModel => ({
-    category,
-    rows: [],
-    completedCount: 0,
-    totalCount: plannedCount,
-    comingSoon: true,
-  });
-
   return [
     pack("workout", workoutRows),
     pack("meal", mealRows),
     pack("community", communityRows),
     pack("streaks", streakRows),
   ];
+}
+
+function applyPersistedUnlocks(
+  sections: AchievementSectionModel[],
+  unlocked: Set<string>
+): AchievementSectionModel[] {
+  return sections.map((section) => {
+    const rows = section.rows.map((row) => {
+      const isComplete = row.isComplete || unlocked.has(row.id);
+      return {
+        ...row,
+        isComplete,
+        rightLabel: isComplete ? "DONE" : row.rightLabel,
+        variant: isComplete ? "done" : row.variant,
+      } as AchievementRowModel;
+    });
+    return {
+      ...section,
+      rows,
+      completedCount: rows.filter((row) => row.isComplete).length,
+      totalCount: rows.length,
+    };
+  });
 }
 
 /** Load user achievement data, sync login streak when opening Achievements, return UI models. */
@@ -553,14 +543,8 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
   const data = snap.data() as Record<string, unknown>;
   let state = mergeAchievementState(data);
   const today = localYmd(new Date());
-  const { next, shouldPersist } = computeLoginStreakUpdate(state, today);
-
-  if (shouldPersist) {
-    state = next;
-    await updateDoc(ref, { achievementState: state });
-  } else {
-    state = next;
-  }
+  const loginUpdate = computeLoginStreakUpdate(state, today);
+  state = loginUpdate.next;
 
   const weightLogCountPromise = getCountFromServer(
     collection(db, "users", user.uid, "weightLogs")
@@ -577,6 +561,9 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
   const waterLogCountPromise = getCountFromServer(
     collection(db, "users", user.uid, "waterLogs")
   );
+  const mealLogCountPromise = getCountFromServer(
+    collection(db, "users", user.uid, "mealLogs")
+  );
   const dailyStatsSnapPromise = getDocs(collection(db, "users", user.uid, "dailyStats"));
   const communityMetricsPromise = loadCommunityMetrics(user.uid);
 
@@ -586,6 +573,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     discoverWorkoutLogCountSnap,
     completedSessionCountSnap,
     waterLogCountSnap,
+    mealLogCountSnap,
     dailyStatsSnap,
     communityMetrics,
   ] = await Promise.all([
@@ -594,6 +582,7 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     discoverWorkoutLogCountPromise,
     completedSessionCountPromise,
     waterLogCountPromise,
+    mealLogCountPromise,
     dailyStatsSnapPromise,
     communityMetricsPromise,
   ]);
@@ -617,17 +606,49 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     if (steps >= 8000) stepDays8000Count += 1;
   });
 
-  return buildSections(data, state, {
+  const rawSections = buildSections(data, state, {
     weightLogCount: weightLogCountSnap.data().count,
     workoutLogCount: workoutLogCountSnap.data().count,
     discoverWorkoutLogCount: discoverWorkoutLogCountSnap.data().count,
     completedSessionCount: completedSessionCountSnap.data().count,
     waterLogCount: waterLogCountSnap.data().count,
+    mealLogCount: mealLogCountSnap.data().count,
     stepDays3000Count,
     stepDays5000Count,
     stepDays8000Count,
     community: communityMetrics,
   });
+
+  const unlocked = new Set(state.unlockedAchievements ?? []);
+  let unlocksGrew = false;
+  for (const section of rawSections) {
+    for (const row of section.rows) {
+      if (row.isComplete && !unlocked.has(row.id)) {
+        unlocked.add(row.id);
+        unlocksGrew = true;
+      }
+    }
+  }
+
+  if (loginUpdate.shouldPersist || unlocksGrew) {
+    state = { ...state, unlockedAchievements: [...unlocked] };
+    await updateDoc(ref, { achievementState: state });
+  }
+
+  return applyPersistedUnlocks(rawSections, unlocked);
+}
+
+/** Record today's app open for login-streak achievements (safe to call on home focus). */
+export async function syncDailyLoginStreak(uid: string): Promise<void> {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as Record<string, unknown>;
+  const prev = mergeAchievementState(data);
+  const today = localYmd(new Date());
+  const { next, shouldPersist } = computeLoginStreakUpdate(prev, today);
+  if (!shouldPersist) return;
+  await updateDoc(ref, { achievementState: next });
 }
 
 async function readMergeWrite(

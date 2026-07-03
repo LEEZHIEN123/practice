@@ -1,5 +1,7 @@
+import { FavouriteButton } from "@/components/FavouriteButton";
 import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
 import {
+  ProfileScreenHeader,
   ThemedBackButton,
   ThemedCard,
   ThemedScreen,
@@ -7,6 +9,7 @@ import {
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { buildWorkoutFavouriteItem } from "@/lib/favourites";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
@@ -245,6 +248,11 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
   const workoutDetail = useMemo(
     () => getWorkoutDetail(workoutType, workoutName),
     [workoutType, workoutName]
+  );
+
+  const favouriteItem = useMemo(
+    () => buildWorkoutFavouriteItem(workoutType, workoutName, workoutDetail?.met),
+    [workoutType, workoutName, workoutDetail?.met]
   );
 
   const dayRecords = useMemo(() => {
@@ -713,16 +721,13 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
 
   return (
     <ThemedScreen>
-      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <ThemedBackButton onPress={requestBack} className="mr-3" />
-        <View className="flex-1 min-w-0">
-          <ThemedText variant="muted" className="text-lg font-extrabold tracking-wide">
-            DISCOVER
-          </ThemedText>
-          <ThemedText className="text-xl font-extrabold mt-0.5" numberOfLines={2}>
-            {workoutName}
-          </ThemedText>
-        </View>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader
+          title={workoutName}
+          onBack={requestBack}
+          titleClassName="text-xl"
+          rightSlot={<FavouriteButton item={favouriteItem} />}
+        />
       </View>
 
       <ScrollView

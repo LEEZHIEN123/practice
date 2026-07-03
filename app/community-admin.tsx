@@ -1,7 +1,7 @@
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { Pressable } from "@/components/Pressable";
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedScreen,
   ThemedText,
@@ -129,10 +129,7 @@ export default function CommunityAdminScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <View className="flex-row items-center mb-5">
-          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
-          <ThemedText className="text-2xl font-extrabold flex-1">Moderation</ThemedText>
-        </View>
+        <ProfileScreenHeader title="Moderation" onBack={() => router.back()} />
 
         <ThemedCard className="p-5 gap-3">
           <ThemedText variant="muted" className="text-sm mb-1">

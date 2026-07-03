@@ -1,5 +1,5 @@
 import { Pressable } from "@/components/Pressable";
-import { ThemedBackButton, ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
@@ -72,24 +72,17 @@ export default function ContactUsScreen() {
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="relative mb-6 h-12 justify-center">
-          <View className="absolute left-0 top-0 h-14 w-20 justify-center pl-2">
-            <ThemedBackButton
-              onPress={() => {
-                try {
-                  router.back();
-                } catch {
-                  router.replace("/profile");
-                }
-              }}
-              icon="arrow-back"
-              className="w-12 h-12"
-            />
-          </View>
-          <Text className="text-center text-xl font-extrabold" style={textPrimary}>
-            Contact Us
-          </Text>
-        </View>
+        <ProfileScreenHeader
+          title="Contact Us"
+          onBack={() => {
+            try {
+              router.back();
+            } catch {
+              router.replace("/profile");
+            }
+          }}
+          titleClassName="text-xl"
+        />
 
         <View className="items-center mb-6">
           <View className="w-20 h-20 rounded-full bg-[#dff5e8] items-center justify-center border-2 border-[#b7ead1]">

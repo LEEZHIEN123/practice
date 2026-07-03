@@ -1,5 +1,5 @@
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedScreen,
   ThemedText,
@@ -31,6 +31,7 @@ import {
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -64,6 +65,7 @@ function formatWeatherCondition(condition: WaterWeatherCondition): string {
 
 export default function WaterIntakeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
   const {
     cardStyle,
@@ -136,6 +138,8 @@ export default function WaterIntakeScreen() {
     suggestedMl,
     weather,
     placeName,
+    previousPlaceName,
+    previousSuggestedMl,
     weatherUnavailableReason,
     loading: suggestionLoading,
     refresh: refreshSuggestion,
@@ -414,12 +418,8 @@ export default function WaterIntakeScreen() {
 
   return (
     <ThemedScreen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 56 }} className="px-3 pt-14">
-        <View className="flex-row items-center justify-between mb-6">
-          <ThemedBackButton onPress={() => router.back()} />
-          <ThemedText className="text-xl font-extrabold">Water Intake</ThemedText>
-          <View className="w-11 h-11" />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 56 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
+        <ProfileScreenHeader title="Water Intake" onBack={() => router.back()} titleClassName="text-xl" />
 
         {isSelectedToday ? (
           <ThemedCard className="p-5 mb-4">
@@ -452,6 +452,13 @@ export default function WaterIntakeScreen() {
                 </ThemedText>
                 <ThemedText className="text-sm mt-2 font-extrabold" style={{ color: theme.danger }}>
                   Logged today: {selectedDayTotalMl.toLocaleString()} ml
+                  {previousSuggestedMl != null ? (
+                    <>
+                      {" "}
+                      · Previous · {previousPlaceName ?? "Previous location"}:{" "}
+                      {previousSuggestedMl.toLocaleString()} ml suggested
+                    </>
+                  ) : null}
                 </ThemedText>
 
                 <View

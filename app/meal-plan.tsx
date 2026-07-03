@@ -1,6 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedScreen,
   ThemedText,
@@ -119,10 +119,7 @@ export default function MealPlanScreen() {
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingHorizontal: 12, paddingTop: insets.top + 12 }}
       >
-        <View className="flex-row items-center mb-5">
-          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
-          <ThemedText className="text-2xl font-extrabold flex-1">Nutrition Guidance</ThemedText>
-        </View>
+        <ProfileScreenHeader title="Nutrition Guidance" onBack={() => router.back()} />
 
         <ThemedCard className="p-5">
           <ThemedText className="text-2xl font-extrabold">Personalised Nutrition Guidance</ThemedText>

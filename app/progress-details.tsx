@@ -1,6 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
-    ThemedBackButton,
+    ProfileScreenHeader,
     ThemedCard,
     ThemedScreen,
     ThemedText,
@@ -8,6 +8,14 @@ import {
 } from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import {
+  buildLatestWeightByDay,
+  buildWeightBucketSeries,
+  buildWeightSeriesForDays,
+  syncWeightAutoFillAtMidnight,
+  weightBarHeight,
+  type WeightLogRow,
+} from "@/lib/weightAutoFill";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,12 +37,13 @@ import {
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, ScrollView, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
 
-type WeightRow = { weight: number; createdAt: Date };
+type WeightRow = WeightLogRow;
 type WorkoutRow = {
   id: string;
   title: string;
@@ -46,7 +55,6 @@ type WorkoutRow = {
 type MealRow = { id: string; title: string; calories: number; createdAt: Date; dayKey: string };
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const sameDayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
 const startOfWeekMon = (d: Date) => {
   const day = d.getDay(); // 0=Sun..6=Sat
@@ -99,6 +107,7 @@ const formatDurationMinSec = (durationMin: number) => {
 
 export default function ProgressDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ tab?: string; period?: string }>();
   const {
     cardStyle,
@@ -143,6 +152,7 @@ export default function ProgressDetailsScreen() {
   const [isEditingRecentWeight, setIsEditingRecentWeight] = useState(false);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [workoutHoverIdx, setWorkoutHoverIdx] = useState<number | null>(null);
+  const [dayTick, setDayTick] = useState(0);
 
   const sanitizeDecimal = (t: string) => {
     const cleaned = t.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
@@ -152,6 +162,11 @@ export default function ProgressDetailsScreen() {
   };
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+
+  useEffect(() => {
+    const id = setInterval(() => setDayTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -197,6 +212,17 @@ export default function ProgressDetailsScreen() {
       unsubLogs();
     };
   }, [tab]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || tab !== "weight" || currentWeightKg <= 0) return;
+    void syncWeightAutoFillAtMidnight({
+      uid: user.uid,
+      weightKg: currentWeightKg,
+      calendarTz,
+      existingRows: allWeightRows,
+    }).catch((e) => console.log("weight auto-fill failed:", e));
+  }, [allWeightRows, calendarTz, currentWeightKg, dayTick, tab]);
 
   useEffect(() => {
     const load = async () => {
@@ -295,13 +321,9 @@ export default function ProgressDetailsScreen() {
     if (tab !== "weight") return;
 
     const rows = allWeightRows;
-    const latestByDay = new Map<string, number>();
-    for (const r of rows) {
-      const key = sameDayKey(r.createdAt);
-      if (!latestByDay.has(key)) latestByDay.set(key, r.weight);
-    }
-
-    const todayKey = sameDayKey(new Date());
+    const latestByDay = buildLatestWeightByDay(rows, calendarTz);
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const currentSlotIndex = getCurrentPeriodSlotIndex(period, anchor);
 
     if (period === "week") {
       const weekStart = startOfWeekMon(anchor);
@@ -310,16 +332,8 @@ export default function ProgressDetailsScreen() {
         d.setDate(d.getDate() + i);
         return d;
       });
-      const keys = days.map((d) => sameDayKey(d));
-      let series = keys.map((k) => latestByDay.get(k) ?? 0);
-      // Profile weight (Edit Profile, etc.) is the live current weight for today when this week includes today.
-      if (currentWeightKg > 0 && keys.includes(todayKey)) {
-        const ti = keys.indexOf(todayKey);
-        if (ti >= 0) {
-          series = series.slice();
-          series[ti] = currentWeightKg;
-        }
-      }
+      const keys = days.map((d) => formatCalendarDayKey(d, calendarTz));
+      const series = buildWeightSeriesForDays(keys, latestByDay, currentWeightKg, todayKey);
       setWeightSeries(series);
       setWindowWeights(
         days.map((d, idx) => ({
@@ -344,17 +358,8 @@ export default function ProgressDetailsScreen() {
           latestByWeek.set(idx, { weight: r.weight, createdAt: r.createdAt });
         }
       }
-      let series = [0, 0, 0, 0].map((_, i) => latestByWeek.get(i)?.weight ?? 0);
-      const now = new Date();
-      if (
-        currentWeightKg > 0 &&
-        anchor.getFullYear() === now.getFullYear() &&
-        anchor.getMonth() === now.getMonth()
-      ) {
-        const widx = Math.min(3, Math.floor((now.getDate() - 1) / 7));
-        series = series.slice();
-        series[widx] = currentWeightKg;
-      }
+      const bucketValues = [0, 0, 0, 0].map((_, i) => latestByWeek.get(i)?.weight ?? null);
+      const series = buildWeightBucketSeries(bucketValues, currentSlotIndex, currentWeightKg);
       setWeightSeries(series);
       const monthLastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
       const ranges: [number, number][] = [
@@ -383,12 +388,8 @@ export default function ProgressDetailsScreen() {
       sums[m] += r.weight;
       counts[m] += 1;
     }
-    let series = sums.map((sum, i) => (counts[i] ? sum / counts[i] : 0));
-    const now = new Date();
-    if (currentWeightKg > 0 && year === now.getFullYear()) {
-      series = series.slice();
-      series[now.getMonth()] = currentWeightKg;
-    }
+    const bucketValues = sums.map((sum, i) => (counts[i] ? sum / counts[i] : null));
+    const series = buildWeightBucketSeries(bucketValues, currentSlotIndex, currentWeightKg);
     setWeightSeries(series);
     setWindowWeights(
       series.map((w, idx) => ({
@@ -397,7 +398,7 @@ export default function ProgressDetailsScreen() {
         weight: w,
       }))
     );
-  }, [allWeightRows, anchor, chartLabels, currentWeightKg, period, tab]);
+  }, [allWeightRows, anchor, calendarTz, chartLabels, currentWeightKg, period, tab]);
 
   useEffect(() => {
     if (tab !== "workout") return;
@@ -693,12 +694,8 @@ export default function ProgressDetailsScreen() {
 
   return (
     <ThemedScreen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
-        <View className="flex-row items-center justify-between mb-6">
-          <ThemedBackButton onPress={() => router.back()} />
-          <ThemedText className="text-xl font-extrabold">{headerTitle}</ThemedText>
-          <View className="w-11 h-11" />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
+        <ProfileScreenHeader title={headerTitle} onBack={() => router.back()} titleClassName="text-xl" />
 
         {tab === "weight" ? (
           <>
@@ -769,36 +766,31 @@ export default function ProgressDetailsScreen() {
                       </View>
                     ) : null}
                     <View className="flex-1 flex-row items-end px-3 pb-5">
-                      {(() => {
-                        const min = Math.min(...weightSeries);
-                        const max = Math.max(...weightSeries);
-                        const span = max - min || 1;
-                        return weightSeries.map((v, idx) => {
-                          const h = 14 + Math.round(((v - min) / span) * 130);
-                          return (
-                            <Pressable
-                              key={`wb-${idx}`}
-                              onPress={() => setHoverIdx((prev) => (prev === idx ? null : idx))}
-                              className="flex-1 items-center"
-                              hitSlop={10}
-                            >
-                              <View
-                                style={{
-                                  height: h,
-                                  width: 12,
-                                  borderRadius: 999,
-                                  backgroundColor:
-                                    idx === hoverIdx
-                                      ? theme.accentText
-                                      : v === 0
-                                        ? theme.iconMuted
-                                        : theme.accent,
-                                }}
-                              />
-                            </Pressable>
-                          );
-                        });
-                      })()}
+                      {weightSeries.map((v, idx) => {
+                        const h = weightBarHeight(v, weightSeries, 14, 144);
+                        return (
+                          <Pressable
+                            key={`wb-${idx}`}
+                            onPress={() => setHoverIdx((prev) => (prev === idx ? null : idx))}
+                            className="flex-1 items-center"
+                            hitSlop={10}
+                          >
+                            <View
+                              style={{
+                                height: h,
+                                width: 12,
+                                borderRadius: 999,
+                                backgroundColor:
+                                  idx === hoverIdx
+                                    ? theme.accentText
+                                    : v === 0
+                                      ? theme.iconMuted
+                                      : theme.accent,
+                              }}
+                            />
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   </View>
 

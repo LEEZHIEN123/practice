@@ -1,7 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { FoodTagChips } from "@/components/nutrition/FoodTagChips";
 import { MacroDonut } from "@/components/nutrition/MacroDonut";
-import { ThemedBackButton, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { getFoodById, isFoodDatasetReady, prefetchFoodDataset, type FoodItem } from "@/lib/foodDataset";
 import { logMealFood } from "@/lib/mealLogService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -121,14 +121,8 @@ export default function FoodDetailScreen() {
 
   return (
     <View className="flex-1" style={screenStyle}>
-      <View
-        className="flex-row items-center px-3"
-        style={{ paddingTop: insets.top + 8, paddingBottom: 8 }}
-      >
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-2" />
-        <Text className="text-xl font-extrabold flex-1" style={textPrimary}>
-          Food Details
-        </Text>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 8 }}>
+        <ProfileScreenHeader title="Food Details" onBack={() => router.back()} titleClassName="text-xl" />
       </View>
 
       {!food && loadingFood ? (

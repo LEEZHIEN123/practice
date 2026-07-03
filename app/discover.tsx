@@ -1,11 +1,10 @@
-import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { DiscoverCard } from "@/components/discover/DiscoverCard";
 import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
 import { prefetchCommunityScreen } from "@/lib/communityBootstrap";
 import { prefetchFoodDataset } from "@/lib/foodDataset";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
-import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { useThemedScreen } from "@/lib/useThemedScreen";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, onSnapshot } from "firebase/firestore";
 import { useEffect, useState } from "react";
@@ -15,8 +14,7 @@ import { auth, db } from "../firebaseConfig";
 export default function DiscoverScreen() {
   const router = useRouter();
   useAdminRedirect();
-  const { totalUnread } = useCommunityUnread();
-  const { cardStyle, screenStyle, textPrimary, iconButtonStyle } = useThemedScreen();
+  const { screenStyle, textPrimary, iconButtonStyle } = useThemedScreen();
   const tabBarPadding = useBottomTabBarScrollPadding();
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
@@ -65,117 +63,57 @@ export default function DiscoverScreen() {
           <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Workouts
           </Text>
-
-          <Pressable
+          <DiscoverCard
+            cardKey="allWorkouts"
+            title="All Workouts"
             onPress={() => router.push("/all-workouts" as any)}
-            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between active:opacity-90"
-          >
-            <View className="flex-row items-center">
-              <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
-                <MaterialCommunityIcons
-                  name="dumbbell"
-                  size={22}
-                  color="#76C893"
-                />
-              </View>
+            className="mb-5"
+          />
 
-              <Text className="text-2xl font-extrabold text-gray-900">
-                All Workouts
-              </Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={28} color="#76C893" />
-          </Pressable>
-
-          {/* Explore Nutrition */}
           <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Nutrition
           </Text>
-
-          <Pressable
+          <DiscoverCard
+            cardKey="allNutrition"
+            title="All Nutrition"
             onPressIn={() => void prefetchFoodDataset()}
             onPress={() => router.push("/all-nutrition" as any)}
-            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
-          >
-            <View className="flex-row items-center">
-              <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
-                <Ionicons name="restaurant" size={22} color="#76C893" />
-              </View>
+            className="mb-5"
+          />
 
-              <Text className="text-2xl font-extrabold text-gray-900">
-                All Nutrition
-              </Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={28} color="#76C893" />
-          </Pressable>
-
-          {/* Explore Mind */}
           <Text className="text-2xl font-extrabold mb-3" style={textPrimary}>
             Explore Mind
           </Text>
-
-          <Pressable
+          <DiscoverCard
+            cardKey="allMusic"
+            title="All Music"
             onPress={() => router.push("/all-music")}
-            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between"
-          >
-            <View className="flex-row items-center">
-              <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
-                <Ionicons name="musical-notes" size={22} color="#76C893" />
-              </View>
+            className="mb-5"
+          />
 
-              <Text className="text-2xl font-extrabold text-gray-900">
-                All Music
-              </Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={28} color="#76C893" />
-          </Pressable>
-
-          {/* Connect & Help */}
           <Text className="text-2xl font-extrabold mb-4" style={textPrimary}>
             Connect & Help
           </Text>
 
-          <View className="flex-row justify-between">
-            <Pressable
+          <View className="flex-row gap-2 items-stretch">
+            <DiscoverCard
+              cardKey="community"
+              title="Community"
+              subtitle={"Share Anything &\nConnect Others"}
+              layout="stack"
               onPressIn={() => void prefetchCommunityScreen()}
               onPress={() => router.push("/community" as any)}
-              className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
-            >
-              <CommunityUnreadBadge count={totalUnread}>
-                <View className="w-16 h-16 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
-                  <Ionicons name="people" size={30} color="white" />
-                </View>
-              </CommunityUnreadBadge>
+              className="flex-1"
+            />
 
-              <Text className="text-white text-2xl font-extrabold">
-                Community
-              </Text>
-              <Text className="text-[#d9f4e2] text-lg font-bold tracking-[2px] mt-2">
-                 Share Anything &{"\n"}  Connect Others
-              </Text>
-            </Pressable>
-
-            <Pressable
+            <DiscoverCard
+              cardKey="aiCoach"
+              title="AI Chatbot"
+              subtitle={"Any Questions?\nAsk Me!"}
+              layout="stack"
               onPress={() => router.push("/ai-coach" as any)}
-              className="bg-[#76C893] rounded-[28px] w-[48%] py-8 items-center shadow-sm"
-            >
-              <View className="w-14 h-14 rounded-full bg-[#9fdfb6] items-center justify-center mb-5">
-                <MaterialCommunityIcons
-                  name="robot-happy-outline"
-                  size={24}
-                  color="white"
-                />
-              </View>
-
-              <Text className="text-white text-2xl font-extrabold">
-                AI Chatbot
-              </Text>
-              <Text className="text-[#d9f4e2] text-lg font-bold tracking-[2px] mt-2">
-                Any Questions? {"\n"}      Ask Me!
-              </Text>
-            </Pressable>
+              className="flex-1"
+            />
           </View>
         </View>
       </ScrollView>

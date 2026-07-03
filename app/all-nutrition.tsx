@@ -3,9 +3,9 @@ import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { BarcodeCameraScanner } from "@/components/nutrition/BarcodeCameraScanner";
 import { FoodLibraryRowMemo } from "@/components/nutrition/FoodLibraryRow";
 import { FoodLogSheet } from "@/components/nutrition/FoodLogSheet";
-import { MealHistoryFilterBar, MealTypePicker } from "@/components/nutrition/MealTypePicker";
+import { MealHistoryFilterBar, MealLogModePicker, MealTypePicker } from "@/components/nutrition/MealTypePicker";
 import { MealPhotoSection } from "@/components/nutrition/MealPhotoSection";
-import { ThemedBackButton, ThemedCard, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ThemedBackButton, ThemedCard, ThemedText, useProfileCardStyles, ProfileScreenHeader } from "@/components/themed/ThemedUi";
 import {
   FOOD_INDEX,
   getFoodDatasetForSearch,
@@ -20,6 +20,7 @@ import {
   type MealHistoryFilter,
 } from "@/lib/manualMealTypes";
 import { fetchFoodByBarcode, type ScannedFoodProduct } from "@/lib/openFoodFacts";
+import { analyzeMealPhoto, isGeminiConfigured } from "@/lib/geminiFoodVision";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
@@ -113,12 +114,7 @@ export default function AllNutritionScreen() {
   return (
     <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
-        <View className="flex-row items-center mb-4">
-          <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-          <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
-            All Nutrition
-          </Text>
-        </View>
+        <ProfileScreenHeader title="All Nutrition" onBack={() => router.back()} />
 
         <View className="flex-row mb-5 gap-2">
           {SECTION_TABS.map((tab) => {
@@ -395,6 +391,7 @@ function MealLogSection({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
   const [foodName, setFoodName] = useState("");
   const [caloriesText, setCaloriesText] = useState("");
   const [description, setDescription] = useState("");
@@ -404,6 +401,7 @@ function MealLogSection({
   const [historySearch, setHistorySearch] = useState("");
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState<MealHistoryFilter>("all");
   const [mealType, setMealType] = useState<ManualMealType>("breakfast");
+  const [logMode, setLogMode] = useState<"manual" | "ai">("manual");
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<MealHistoryEntry | null>(null);
   const [subTab, setSubTab] = useState<"log" | "history">("log");
@@ -413,6 +411,44 @@ function MealLogSection({
       scrollRef.current?.scrollToEnd({ animated: true });
     }, Platform.OS === "ios" ? 50 : 150);
   }, []);
+
+  const runPhotoAnalysis = useCallback(async (uri: string) => {
+    if (!isGeminiConfigured()) return;
+
+    setAnalyzingPhoto(true);
+    try {
+      const analysis = await analyzeMealPhoto(uri);
+      setFoodName(analysis.title);
+      setCaloriesText(String(analysis.calories));
+      setDescription(analysis.description);
+    } catch (e: unknown) {
+      Alert.alert(
+        "Photo analysis",
+        e instanceof Error ? e.message : "Could not analyze this photo. Enter meal details manually."
+      );
+    } finally {
+      setAnalyzingPhoto(false);
+    }
+  }, []);
+
+  const handleMealPhotoChange = useCallback(
+    async (uri: string | null) => {
+      setImageUri(uri);
+      if (!uri || logMode !== "ai") return;
+      await runPhotoAnalysis(uri);
+    },
+    [logMode, runPhotoAnalysis]
+  );
+
+  const handleLogModeChange = useCallback(
+    (mode: "manual" | "ai") => {
+      setLogMode(mode);
+      if (mode === "ai" && imageUri && isGeminiConfigured()) {
+        void runPhotoAnalysis(imageUri);
+      }
+    },
+    [imageUri, runPhotoAnalysis]
+  );
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -645,11 +681,25 @@ function MealLogSection({
             keyboardDismissMode="on-drag"
           >
             <ThemedCard className="p-4">
-              <ThemedText variant="muted" className="text-sm mb-4 leading-5">
-                Add a photo, enter food details, then save to today&apos;s calories.
-              </ThemedText>
+              <MealLogModePicker
+                value={logMode}
+                onChange={handleLogModeChange}
+                aiAvailable={isGeminiConfigured()}
+                className="mb-3"
+              />
 
-              <MealPhotoSection imageUri={imageUri} onImageChange={setImageUri} />
+              <MealPhotoSection
+                imageUri={imageUri}
+                onImageChange={(uri) => void handleMealPhotoChange(uri)}
+                analyzing={analyzingPhoto}
+                aiAnalysisEnabled={logMode === "ai" && isGeminiConfigured()}
+                embedded
+              />
+
+              <View
+                className="mb-3"
+                style={{ borderTopWidth: 1, borderTopColor: theme.cardBorder }}
+              />
 
               <MealTypePicker value={mealType} onChange={setMealType} />
 

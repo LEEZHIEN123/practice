@@ -2,8 +2,9 @@ import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigat
 import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { imageCardTintOverlay } from "@/lib/appearance";
 import { CaloriesDonut } from "@/components/CaloriesDonut";
-import { bumpWorkoutPlanDay } from "@/lib/achievements";
+import { bumpWorkoutPlanDay, syncDailyLoginStreak } from "@/lib/achievements";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -70,7 +71,7 @@ export default function HomeScreen() {
   const router = useRouter();
   useAdminRedirect();
   const calendarTz = useUserCalendarTimezone();
-  const { cardStyle, screenStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
+  const { cardStyle, screenStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme, isDark } =
     useThemedScreen();
   const tabBarPadding = useBottomTabBarScrollPadding();
   const [dayRoll, setDayRoll] = useState(0);
@@ -242,10 +243,20 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user: User | null) => {
-      if (user) void runRemoveZeroKcalWorkoutLogsOnce();
+      if (user) {
+        void runRemoveZeroKcalWorkoutLogsOnce();
+        void syncDailyLoginStreak(user.uid);
+      }
     });
     return () => unsub();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const user = auth.currentUser;
+      if (user) void syncDailyLoginStreak(user.uid);
+    }, [])
+  );
 
   useEffect(() => {
     // Recompute calendar day when timezone loads and once a minute (midnight rollover).
@@ -508,10 +519,10 @@ export default function HomeScreen() {
             source={require("../assets/images/Workout Plan.png")}
             resizeMode="cover"
             imageStyle={{ borderRadius: 24 }}
-            className="mt-2 rounded-3xl overflow-hidden border border-gray-200 shadow-sm shadow-black/5"
+            className="mt-2 rounded-3xl overflow-hidden shadow-sm shadow-black/5"
+            style={{ borderWidth: 1, borderColor: theme.cardBorder }}
           >
-            {/* subtle overlay so button stays readable */}
-            <View className="bg-white/20 p-4">
+            <View className="p-4" style={{ backgroundColor: imageCardTintOverlay(isDark) }}>
               <Pressable
                 className="mt-28 rounded-full overflow-hidden"
                 style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}

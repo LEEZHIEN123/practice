@@ -1,10 +1,18 @@
-import { ThemedBackButton } from "@/components/themed/ThemedUi";
+import { Pressable } from "@/components/Pressable";
+import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { imageCardOverlayOpacity } from "@/lib/appearance";
 import { WORKOUT_DETAILS, type WorkoutType } from "@/lib/workoutCatalog";
+import {
+  WORKOUT_TYPE_CARD_IMAGE_POSITION,
+  WORKOUT_TYPE_CARD_IMAGES,
+  WORKOUT_TYPE_CARD_IMAGE_STYLE,
+} from "@/lib/workoutTypeCardImages";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const TYPES: WorkoutType[] = ["Yoga", "Strength", "HIIT", "Cardio"];
@@ -26,10 +34,53 @@ function workoutTypeHeaderLabel(type: WorkoutType): string {
   return type;
 }
 
+function workoutCountForType(type: WorkoutType): number {
+  return Object.keys(WORKOUT_DETAILS[type]).length;
+}
+
+function workoutCountLabel(type: WorkoutType): string {
+  const count = workoutCountForType(type);
+  return `${count} workout${count === 1 ? "" : "s"}`;
+}
+
+function WorkoutTypeCard({ type, onPress }: { type: WorkoutType; onPress: () => void }) {
+  const { isDark } = useThemedScreen();
+  const overlayOpacity = imageCardOverlayOpacity(0.52, isDark);
+
+  return (
+    <Pressable onPress={onPress} className="rounded-[28px] mb-5 overflow-hidden active:opacity-95">
+      <View className="min-h-[148px] justify-center">
+        <Image
+          source={WORKOUT_TYPE_CARD_IMAGES[type]}
+          style={[StyleSheet.absoluteFillObject, WORKOUT_TYPE_CARD_IMAGE_STYLE[type]]}
+          contentFit="cover"
+          contentPosition={WORKOUT_TYPE_CARD_IMAGE_POSITION[type] ?? "center"}
+          transition={200}
+        />
+        <View
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: `rgba(15, 23, 42, ${overlayOpacity})` }]}
+        />
+        <View className="px-6 py-5 flex-row items-center justify-between">
+          <View className="flex-row items-center flex-1 min-w-0 pr-3">
+            <View className="w-14 h-14 rounded-full bg-white/90 items-center justify-center mr-4">
+              <Ionicons name={typeIonIcon(type)} size={24} color="#76C893" />
+            </View>
+            <View className="flex-1 min-w-0">
+              <Text className="text-2xl font-extrabold text-white leading-8">{workoutTypeCardLabel(type)}</Text>
+              <Text className="text-base font-bold text-white/85 mt-1">{workoutCountLabel(type)}</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={28} color="#ffffff" />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function AllWorkoutsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { screenStyle, textPrimary, textMuted, textSecondary } = useThemedScreen();
+  const { screenStyle, textSecondary } = useThemedScreen();
   const [selected, setSelected] = useState<WorkoutType | null>(null);
 
   const names = useMemo(() => {
@@ -40,16 +91,12 @@ export default function AllWorkoutsScreen() {
   if (selected) {
     return (
       <View className="flex-1" style={screenStyle}>
-        <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-          <ThemedBackButton onPress={() => setSelected(null)} className="w-11 h-11 mr-3" />
-          <View className="flex-1 min-w-0">
-            <Text className="text-lg font-extrabold tracking-wide" style={textMuted}>
-              ALL WORKOUTS
-            </Text>
-            <Text className="text-2xl font-extrabold mt-0.5" style={textPrimary}>
-              {workoutTypeHeaderLabel(selected)}
-            </Text>
-          </View>
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+          <ProfileScreenHeader
+            title={workoutTypeHeaderLabel(selected)}
+            onBack={() => setSelected(null)}
+            titleClassName="text-xl"
+          />
         </View>
 
         <FlatList
@@ -83,34 +130,23 @@ export default function AllWorkoutsScreen() {
 
   return (
     <View className="flex-1" style={screenStyle}>
-      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-        <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
-          All Workouts
-        </Text>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader title="All Workouts" onBack={() => router.back()} />
       </View>
 
-      <View className="px-3 pb-8">
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 24 }}
+        showsVerticalScrollIndicator={false}
+      >
         <Text className="ml-2 font-extrabold text-lg mb-4 leading-6" style={textSecondary}>
           Choose any workout type from the below lists, then pick an exercise to start.
         </Text>
 
         {TYPES.map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setSelected(t)}
-            className="bg-[#bdeccf] rounded-[28px] p-6 mb-5 flex-row items-center justify-between active:opacity-90"
-          >
-            <View className="flex-row items-center flex-1 min-w-0">
-              <View className="w-14 h-14 rounded-full bg-white items-center justify-center mr-4">
-                <Ionicons name={typeIonIcon(t)} size={24} color="#76C893" />
-              </View>
-              <Text className="text-2xl font-extrabold text-gray-900">{workoutTypeCardLabel(t)}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={28} color="#76C893" />
-          </Pressable>
+          <WorkoutTypeCard key={t} type={t} onPress={() => setSelected(t)} />
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }

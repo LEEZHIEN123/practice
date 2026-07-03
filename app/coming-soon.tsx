@@ -1,4 +1,4 @@
-import { ThemedBackButton, ThemedCard, ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedCard, ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,9 +12,8 @@ export default function ComingSoonScreen() {
 
   return (
     <ThemedScreen>
-      <View style={{ paddingTop: insets.top + 8 }} className="px-3 pb-4 flex-row items-center">
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-        <ThemedText className="text-3xl font-extrabold">{title}</ThemedText>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader title={title} onBack={() => router.back()} titleClassName="text-3xl" />
       </View>
 
       <View className="flex-1 items-center justify-center px-8">

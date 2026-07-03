@@ -1,5 +1,5 @@
 import { Pressable } from "@/components/Pressable";
-import { useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ThemedBackButton, ProfileScreenHeader, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { auth } from "@/firebaseConfig";
 import {
   type AchievementCategory,
@@ -22,6 +22,7 @@ const SECTION_META: Record<
     subtitle: string;
     icon: keyof typeof Ionicons.glyphMap;
     iconColor: string;
+    iconBgColor: string;
     iconBgKey: "accentSoft" | "rowBg";
   }
 > = {
@@ -30,6 +31,7 @@ const SECTION_META: Record<
     subtitle: "Training & activity goals",
     icon: "barbell-outline",
     iconColor: "#76C893",
+    iconBgColor: "#E8F8F0",
     iconBgKey: "accentSoft",
   },
   meal: {
@@ -37,6 +39,7 @@ const SECTION_META: Record<
     subtitle: "Logging & nutrition habits",
     icon: "nutrition-outline",
     iconColor: "#d97706",
+    iconBgColor: "#FFF4E6",
     iconBgKey: "rowBg",
   },
   community: {
@@ -44,13 +47,15 @@ const SECTION_META: Record<
     subtitle: "Social posts, chat & challenges",
     icon: "people-outline",
     iconColor: "#2563eb",
+    iconBgColor: "#E8F4FC",
     iconBgKey: "rowBg",
   },
   streaks: {
     title: "Streaks",
     subtitle: "Consistency & weigh-ins",
     icon: "flame-outline",
-    iconColor: "#ea580c",
+    iconColor: "#9333ea",
+    iconBgColor: "#F3E8FF",
     iconBgKey: "rowBg",
   },
 };
@@ -62,6 +67,13 @@ const FILTER_CHIPS: { key: AchievementFilter; label: string }[] = [
   { key: "community", label: "Community" },
   { key: "streaks", label: "Streaks" },
 ];
+
+const ALL_FILTER_COLOR = "#166534";
+
+function filterChipColor(key: AchievementFilter): string {
+  if (key === "all") return ALL_FILTER_COLOR;
+  return SECTION_META[key].iconColor;
+}
 
 export default function AchievementsScreen() {
   const router = useRouter();
@@ -113,18 +125,7 @@ export default function AchievementsScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <View className="flex-row items-center mb-5">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-12 h-12 rounded-full items-center justify-center mr-3"
-            style={cardStyle}
-          >
-            <Ionicons name="chevron-back" size={28} color={theme.textPrimary} />
-          </Pressable>
-          <Text className="text-3xl font-extrabold" style={textPrimary}>
-            Achievements
-          </Text>
-        </View>
+        <ProfileScreenHeader title="Achievements" onBack={() => router.back()} titleClassName="text-3xl" />
         <View className="mt-3 rounded-2xl px-4 py-3.5" style={cardStyle}>
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-3">
@@ -163,6 +164,7 @@ export default function AchievementsScreen() {
         >
           {FILTER_CHIPS.map(({ key, label }) => {
             const active = filter === key;
+            const chipColor = filterChipColor(key);
             return (
               <Pressable
                 key={key}
@@ -170,13 +172,13 @@ export default function AchievementsScreen() {
                 className="px-5 py-3 rounded-full border"
                 style={
                   active
-                    ? { backgroundColor: theme.accent, borderColor: theme.accent }
-                    : cardStyle
+                    ? { backgroundColor: chipColor, borderColor: chipColor }
+                    : { ...cardStyle, borderColor: chipColor }
                 }
               >
                 <Text
                   className="text-base font-bold"
-                  style={{ color: active ? "#ffffff" : theme.textSecondary }}
+                  style={{ color: active ? "#ffffff" : chipColor }}
                 >
                   {label}
                 </Text>
@@ -232,7 +234,7 @@ export default function AchievementsScreen() {
                   </Text>
                 </View>
               </View>
-              <Text className="text-sm mr-4 font-bold" style={{ color: theme.accentText }}>
+              <Text className="text-sm mr-4 font-bold" style={{ color: ALL_FILTER_COLOR }}>
                 {completedVisible} / {totalVisible}
               </Text>
             </View>
@@ -252,6 +254,14 @@ export default function AchievementsScreen() {
   );
 }
 
+function sectionIconBackground(
+  category: AchievementCategory,
+  theme: ReturnType<typeof useThemedScreen>["theme"]
+): string {
+  const meta = SECTION_META[category];
+  return category === "workout" ? theme.accentSoft : meta.iconBgColor;
+}
+
 function AchievementSectionBlock({ section }: { section: AchievementSectionModel }) {
   const { textPrimary, textMuted, theme } = useThemedScreen();
   const { cardStyle } = useProfileCardStyles();
@@ -265,7 +275,7 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
           <View className="flex-row items-center flex-1">
             <View
               className="w-14 h-14 rounded-2xl items-center justify-center"
-              style={{ backgroundColor: theme[meta.iconBgKey] }}
+              style={{ backgroundColor: sectionIconBackground(section.category, theme) }}
             >
               <Ionicons name={meta.icon} size={26} color={meta.iconColor} />
             </View>
@@ -283,9 +293,9 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
             <View key={row.title} className="flex-row items-center rounded-2xl px-4 py-3.5" style={cardStyle}>
               <View
                 className="w-10 h-10 rounded-xl items-center justify-center"
-                style={{ backgroundColor: theme.rowBg }}
+                style={{ backgroundColor: sectionIconBackground(section.category, theme) }}
               >
-                <Ionicons name={row.icon} size={20} color={row.iconColor} />
+                <Ionicons name={row.icon} size={20} color={meta.iconColor} />
               </View>
               <View className="ml-3 flex-1">
                 <Text className="text-base font-semibold" style={textPrimary}>{row.title}</Text>
@@ -307,7 +317,7 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
         <View className="flex-row items-center flex-1">
           <View
             className="w-14 h-14 rounded-2xl items-center justify-center"
-            style={{ backgroundColor: theme[meta.iconBgKey] }}
+            style={{ backgroundColor: sectionIconBackground(section.category, theme) }}
           >
             <Ionicons name={meta.icon} size={26} color={meta.iconColor} />
           </View>
@@ -316,7 +326,7 @@ function AchievementSectionBlock({ section }: { section: AchievementSectionModel
             <Text className="text-base mt-1" style={textMuted}>{meta.subtitle}</Text>
           </View>
         </View>
-        <Text className="text-sm font-bold mr-4" style={{ color: theme.accentText }}>{summary}</Text>
+        <Text className="text-sm font-bold mr-4" style={{ color: meta.iconColor }}>{summary}</Text>
       </View>
       <View className="gap-3">
         {section.rows.map((row) => (
@@ -336,57 +346,75 @@ function comingSoonRows(category: AchievementCategory) {
       { title: "Dinner Planner", label: "Log 5 dinner meals", icon: "restaurant-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
       { title: "Healthy Balance", label: "Reach your balanced meal target", icon: "leaf-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
       { title: "Macro Watch", label: "Review your nutrition summary", icon: "stats-chart-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
-      { title: "Nutrition Master", label: "Stay consistent across meal plans", icon: "medal-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Nutrition Master", label: "Log 25 meals", icon: "medal-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Hydration Master", label: "Log water 50 times", icon: "water", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
+      { title: "Repeat Planner", label: "Enable reminders on 3+ days", icon: "repeat-outline", bgClass: "bg-[#fff4e6]", iconColor: "#d97706" },
     ] as const;
   }
   return [
-    { title: "Welcome In", label: "Join your first community room", icon: "people-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Community Welcome", label: "Post, chat, comment, or add a friend to get started", icon: "people-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
     { title: "First Chat", label: "Send your first message", icon: "chatbubble-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
     { title: "Helpful Reply", label: "Reply to a community post", icon: "send-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
-    { title: "Challenge Joiner", label: "Join a weekly challenge", icon: "trophy-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Challenge Junior", label: "Join a weekly challenge with the challenge tag", icon: "trophy-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
     { title: "Supportive Member", label: "React to 10 messages", icon: "heart-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
     { title: "Active Voice", label: "Participate for 7 days", icon: "megaphone-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
-    { title: "Community Champion", label: "Complete all social milestones", icon: "ribbon-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Community Legend", label: "Complete every community milestone", icon: "ribbon-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "First Post", label: "Share your first post", icon: "create-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
+    { title: "Social Circle", label: "Add 3 friends", icon: "person-add-outline", bgClass: "bg-[#e8f4fc]", iconColor: "#2563eb" },
   ] as const;
 }
 
-function achievementLogo(
-  id: string
-): { name: keyof typeof Ionicons.glyphMap; color: string } {
-  const map: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
-    wo_profile: { name: "person-outline", color: "#52B69A" },
-    wo_goal: { name: "flag-outline", color: "#52B69A" },
-    wo_plan_generated: { name: "document-text-outline", color: "#52B69A" },
-    wo_plan_days: { name: "calendar-outline", color: "#52B69A" },
-    wo_first_complete: { name: "play-circle-outline", color: "#52B69A" },
-    wo_complete_10: { name: "fitness-outline", color: "#52B69A" },
-    wo_complete_25: { name: "trophy-outline", color: "#52B69A" },
-    ml_water_first: { name: "water-outline", color: "#d97706" },
-    ml_water_5: { name: "water", color: "#d97706" },
-    ml_water_20: { name: "flask-outline", color: "#d97706" },
-    ml_meal_reminder: { name: "notifications-outline", color: "#d97706" },
-    ml_water_reminder: { name: "alarm-outline", color: "#d97706" },
-    ml_repeat_days: { name: "repeat-outline", color: "#d97706" },
-    ml_water_50: { name: "medal-outline", color: "#d97706" },
-    st_steps_first: { name: "walk-outline", color: "#ea580c" },
-    st_steps_3: { name: "footsteps-outline", color: "#ea580c" },
-    st_steps_7: { name: "fitness-outline", color: "#ea580c" },
-    st_steps_14: { name: "trophy-outline", color: "#ea580c" },
-    st_water_first: { name: "water-outline", color: "#ea580c" },
-    st_water_10: { name: "flask-outline", color: "#ea580c" },
-    st_water_30: { name: "medal-outline", color: "#ea580c" },
-    cm_welcome: { name: "people-outline", color: "#2563eb" },
-    cm_first_chat: { name: "chatbubble-outline", color: "#2563eb" },
-    cm_first_reply: { name: "send-outline", color: "#2563eb" },
-    cm_challenge: { name: "trophy-outline", color: "#2563eb" },
-    cm_likes_10: { name: "heart-outline", color: "#2563eb" },
-    cm_active_7: { name: "megaphone-outline", color: "#2563eb" },
-    cm_champion: { name: "ribbon-outline", color: "#2563eb" },
+function achievementCategoryFromId(id: string): AchievementCategory {
+  if (id.startsWith("wo_")) return "workout";
+  if (id.startsWith("ml_")) return "meal";
+  if (id.startsWith("cm_")) return "community";
+  return "streaks";
+}
+
+function achievementIconName(id: string): keyof typeof Ionicons.glyphMap {
+  const map: Record<string, keyof typeof Ionicons.glyphMap> = {
+    wo_profile: "person-outline",
+    wo_goal: "flag-outline",
+    wo_plan_generated: "document-text-outline",
+    wo_plan_days: "calendar-outline",
+    wo_first_complete: "play-circle-outline",
+    wo_complete_10: "fitness-outline",
+    wo_complete_25: "trophy-outline",
+    wo_complete_50: "medal-outline",
+    wo_discover_5: "compass-outline",
+    wo_weight_first: "scale-outline",
+    ml_water_first: "water-outline",
+    ml_water_5: "water",
+    ml_water_20: "flask-outline",
+    ml_meal_reminder: "notifications-outline",
+    ml_water_reminder: "alarm-outline",
+    ml_repeat_days: "repeat-outline",
+    ml_water_50: "medal-outline",
+    ml_meal_first: "restaurant-outline",
+    ml_meal_10: "fast-food-outline",
+    ml_meal_25: "nutrition-outline",
+    st_steps_first: "walk-outline",
+    st_steps_3: "footsteps-outline",
+    st_steps_7: "fitness-outline",
+    st_steps_14: "trophy-outline",
+    st_water_first: "water-outline",
+    st_water_10: "flask-outline",
+    st_water_30: "medal-outline",
+    st_login_7: "calendar-outline",
+    st_weight_first: "scale-outline",
+    st_weight_10: "analytics-outline",
+    cm_welcome: "people-outline",
+    cm_first_chat: "chatbubble-outline",
+    cm_first_reply: "send-outline",
+    cm_challenge: "trophy-outline",
+    cm_likes_10: "heart-outline",
+    cm_active_7: "megaphone-outline",
+    cm_first_post: "create-outline",
+    cm_friend_3: "person-add-outline",
+    cm_posts_5: "newspaper-outline",
+    cm_champion: "ribbon-outline",
   };
-  if (map[id]) return map[id];
-  if (id.startsWith("cm_")) return { name: "people-outline", color: "#4f46e5" };
-  if (id.startsWith("st_")) return { name: "flame-outline", color: "#ea580c" };
-  return { name: "flame-outline", color: "#ea580c" };
+  return map[id] ?? SECTION_META[achievementCategoryFromId(id)].icon;
 }
 
 function AchievementIcon({
@@ -399,41 +427,34 @@ function AchievementIcon({
   boxSize?: number;
 }) {
   const { theme } = useThemedScreen();
-  const logo = achievementLogo(id);
-  const bg =
-    id.startsWith("wo_") ? theme.accentSoft : theme.rowBg;
+  const category = achievementCategoryFromId(id);
+  const section = SECTION_META[category];
+  const iconName = achievementIconName(id);
 
   return (
     <View
       className="rounded-xl items-center justify-center"
-      style={{ width: boxSize, height: boxSize, backgroundColor: bg }}
+      style={{
+        width: boxSize,
+        height: boxSize,
+        backgroundColor: sectionIconBackground(category, theme),
+      }}
     >
-      <Ionicons name={logo.name} size={size} color={logo.color} />
+      <Ionicons name={iconName} size={size} color={section.iconColor} />
     </View>
   );
 }
 
+function sectionDoneStyle(category: AchievementCategory): { backgroundColor: string; color: string } {
+  const meta = SECTION_META[category];
+  return { backgroundColor: meta.iconBgColor, color: meta.iconColor };
+}
+
 function AchievementRow({ row }: { row: AchievementRowModel }) {
-  const { textPrimary, textMuted, theme } = useThemedScreen();
+  const { textPrimary, textMuted } = useThemedScreen();
   const { cardStyle } = useProfileCardStyles();
-  if (row.variant === "done") {
-    return (
-      <View className="flex-row items-center rounded-2xl px-4 py-3.5" style={cardStyle}>
-        <AchievementIcon id={row.id} />
-        <View className="ml-3 flex-1">
-          <Text className="text-base font-semibold" style={textPrimary}>{row.title ?? row.label}</Text>
-          <Text className="text-sm mt-0.5" style={textMuted}>{row.label}</Text>
-        </View>
-        {row.isComplete ? (
-          <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: theme.accentSoft }}>
-            <Text className="text-xs font-bold" style={{ color: theme.accentText }}>DONE</Text>
-          </View>
-        ) : (
-          <Text className="text-sm font-semibold" style={textMuted}>{row.rightLabel}</Text>
-        )}
-      </View>
-    );
-  }
+  const category = achievementCategoryFromId(row.id);
+  const doneStyle = sectionDoneStyle(category);
 
   return (
     <View className="flex-row items-center rounded-2xl px-4 py-3.5" style={cardStyle}>
@@ -443,11 +464,13 @@ function AchievementRow({ row }: { row: AchievementRowModel }) {
         <Text className="text-sm mt-0.5" style={textMuted}>{row.label}</Text>
       </View>
       {row.isComplete ? (
-        <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: theme.accentSoft }}>
-          <Text className="text-xs font-bold" style={{ color: theme.accentText }}>DONE</Text>
+        <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: doneStyle.backgroundColor }}>
+          <Text className="text-xs font-bold" style={{ color: doneStyle.color }}>DONE</Text>
         </View>
       ) : (
-        <Text className="text-sm font-semibold" style={textMuted}>{row.rightLabel}</Text>
+        <Text className="text-sm font-semibold" style={{ color: SECTION_META[category].iconColor }}>
+          {row.rightLabel}
+        </Text>
       )}
     </View>
   );

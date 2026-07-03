@@ -1,7 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { MealTypePicker } from "@/components/nutrition/MealTypePicker";
 import { MealPhotoSection } from "@/components/nutrition/MealPhotoSection";
-import { ThemedBackButton, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import {
   getMealHistoryEntry,
   updateMealHistoryEntry,
@@ -211,11 +211,8 @@ export default function MealHistoryEditScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 12 : 0}
     >
       <View className="flex-1" style={{ paddingTop: insets.top + 12 }}>
-        <View className="flex-row items-center mb-4 px-3">
-          <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-          <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
-            Edit meal
-          </Text>
+        <View className="px-3">
+          <ProfileScreenHeader title="Edit meal" onBack={() => router.back()} />
         </View>
 
         <ScrollView

@@ -1,5 +1,5 @@
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedScreen,
   ThemedText,
@@ -11,6 +11,7 @@ import { useRouter } from "expo-router";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
@@ -54,6 +55,7 @@ function pctDelta(series: number[]) {
 
 export default function WeightHistoryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     segmentTrackStyle,
     segmentActiveStyle,
@@ -192,12 +194,8 @@ export default function WeightHistoryScreen() {
 
   return (
     <ThemedScreen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3 pt-14">
-        <View className="flex-row items-center justify-between mb-6">
-          <ThemedBackButton onPress={() => router.back()} />
-          <ThemedText className="text-xl font-extrabold">Weight History</ThemedText>
-          <View className="w-11 h-11" />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
+        <ProfileScreenHeader title="Weight History" onBack={() => router.back()} titleClassName="text-xl" />
 
         <ThemedCard className="p-5">
           <View className="flex-row items-center justify-between">

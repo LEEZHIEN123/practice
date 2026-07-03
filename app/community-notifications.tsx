@@ -1,15 +1,17 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedScreen,
   ThemedText,
+  useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import type { CommunityNotification } from "@/lib/communityTypes";
 import {
   acceptFriendRequest,
-  markAllNotificationsRead,
+  deleteNotification,
   markNotificationRead,
+  markNotificationUnread,
   rejectFriendRequest,
   resolveFriendRequestNotification,
   subscribeNotifications,
@@ -21,7 +23,7 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { db } from "../firebaseConfig";
 import type { FriendRequest } from "../lib/communityTypes";
@@ -46,16 +48,14 @@ export default function CommunityNotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { cardStyle, theme } = useThemedScreen();
+  const { rowBorderStyle } = useProfileCardStyles();
   const [notifications, setNotifications] = useState<CommunityNotification[]>([]);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeNotifications(setNotifications);
     return unsub;
-  }, []);
-
-  useEffect(() => {
-    void markAllNotificationsRead().catch(() => {});
   }, []);
 
   const loadFriendRequest = async (requestId: string): Promise<FriendRequest | null> => {
@@ -116,6 +116,24 @@ export default function CommunityNotificationsScreen() {
     }
   };
 
+  const handleMarkUnread = async (notification: CommunityNotification) => {
+    try {
+      await markNotificationUnread(notification.id);
+      setActionMenuId(null);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not update notification.");
+    }
+  };
+
+  const handleDelete = async (notification: CommunityNotification) => {
+    try {
+      setActionMenuId(null);
+      await deleteNotification(notification.id);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not delete notification.");
+    }
+  };
+
   const handleOpen = async (notification: CommunityNotification) => {
     if (!notification.read) {
       await markNotificationRead(notification.id);
@@ -164,11 +182,9 @@ export default function CommunityNotificationsScreen() {
           paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
+        onScrollBeginDrag={() => setActionMenuId(null)}
       >
-        <View className="flex-row items-center mb-5">
-          <ThemedBackButton onPress={() => router.back()} className="mr-3" />
-          <ThemedText className="text-2xl font-extrabold flex-1">Notifications</ThemedText>
-        </View>
+        <ProfileScreenHeader title="Notifications" onBack={() => router.back()} />
 
         <ThemedCard className="p-5 gap-3" rounded="2xl">
           {notifications.length === 0 ? (
@@ -180,10 +196,24 @@ export default function CommunityNotificationsScreen() {
           {notifications.map((notification) => {
             const busy = loadingAction === notification.id;
             const unread = !notification.read;
+            const showActions = actionMenuId === notification.id;
             return (
               <Pressable
                 key={notification.id}
-                onPress={() => void handleOpen(notification)}
+                onPress={() => {
+                  if (showActions) {
+                    setActionMenuId(null);
+                    return;
+                  }
+                  setActionMenuId(null);
+                  void handleOpen(notification);
+                }}
+                onLongPress={() =>
+                  setActionMenuId((current) =>
+                    current === notification.id ? null : notification.id
+                  )
+                }
+                delayLongPress={280}
                 className="rounded-2xl px-4 py-4 border"
                 style={
                   unread
@@ -225,18 +255,48 @@ export default function CommunityNotificationsScreen() {
                       {busy ? (
                         <ActivityIndicator color="white" size="small" />
                       ) : (
-                        <ThemedText className="text-xs font-extrabold text-white">Accept</ThemedText>
+                        <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                          Accept
+                        </Text>
                       )}
                     </Pressable>
                     <Pressable
                       onPress={() => void handleReject(notification)}
                       disabled={busy}
                       className="flex-1 rounded-full py-2.5 items-center border active:opacity-90"
-                      style={cardStyle}
+                      style={[cardStyle, rowBorderStyle]}
                     >
                       <ThemedText variant="secondary" className="text-xs font-extrabold">
                         Decline
                       </ThemedText>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {showActions ? (
+                  <View className="flex-row gap-2 mt-3">
+                    <Pressable
+                      onPress={() => void handleMarkUnread(notification)}
+                      disabled={unread}
+                      className="flex-1 rounded-full py-2.5 items-center border active:opacity-90"
+                      style={[cardStyle, rowBorderStyle, unread ? { opacity: 0.45 } : undefined]}
+                    >
+                      <ThemedText variant="secondary" className="text-xs font-extrabold">
+                        Mark as unread
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void handleDelete(notification)}
+                      className="flex-1 rounded-full py-2.5 items-center border active:opacity-90"
+                      style={[
+                        cardStyle,
+                        rowBorderStyle,
+                        { borderColor: theme.danger, backgroundColor: `${theme.danger}18` },
+                      ]}
+                    >
+                      <Text className="text-xs font-extrabold" style={{ color: theme.danger }}>
+                        Delete
+                      </Text>
                     </Pressable>
                   </View>
                 ) : null}

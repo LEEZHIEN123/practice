@@ -1,6 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ThemedBackButton,
+  ProfileScreenHeader,
   ThemedCard,
   ThemedText,
 } from "@/components/themed/ThemedUi";
@@ -61,29 +61,34 @@ export function UserProfileModal({
   onChat,
 }: UserProfileModalProps) {
   const insets = useSafeAreaInsets();
-  const { screenStyle, cardStyle, theme } = useThemedScreen();
+  const { screenStyle, cardStyle, theme, iconButtonStyle } = useThemedScreen();
   const showAddFriend = canAddFriend && !isSupportAdmin && relation === "none";
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1" style={[screenStyle, { paddingTop: insets.top }]}>
-        <View className="flex-row items-center px-4 py-3">
-          <ThemedBackButton onPress={onClose} className="w-11 h-11 mr-3" />
-          <ThemedText className="text-2xl font-extrabold flex-1">Profile</ThemedText>
-          {showAddFriend ? (
-            <Pressable
-              onPress={onAddFriend}
-              className="w-11 h-11 rounded-full bg-[#52B69A] items-center justify-center"
-            >
-              <Ionicons name="person-add" size={20} color="white" />
-            </Pressable>
-          ) : !isSelf && !isSupportAdmin && relation !== "none" ? (
-            <View className="rounded-full px-3 py-2" style={cardStyle}>
-              <ThemedText variant="accent" className="text-xs font-bold">
-                {friendLabel(relation)}
-              </ThemedText>
-            </View>
-          ) : null}
+      <View className="flex-1" style={[screenStyle, { paddingTop: insets.top + 12 }]}>
+        <View className="px-4">
+          <ProfileScreenHeader
+            title="Profile"
+            onBack={onClose}
+            rightSlot={
+              showAddFriend ? (
+                <Pressable
+                  onPress={onAddFriend}
+                  className="w-12 h-12 rounded-full items-center justify-center"
+                  style={iconButtonStyle}
+                >
+                  <Ionicons name="person-add" size={20} color={theme.textPrimary} />
+                </Pressable>
+              ) : !isSelf && !isSupportAdmin && relation !== "none" ? (
+                <View className="rounded-full px-3 py-2" style={cardStyle}>
+                  <ThemedText variant="accent" className="text-xs font-bold">
+                    {friendLabel(relation)}
+                  </ThemedText>
+                </View>
+              ) : null
+            }
+          />
         </View>
 
         {loading || !profile ? (

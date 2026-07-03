@@ -1,4 +1,5 @@
 import {
+    ProfileScreenHeader,
     ThemedBackButton,
     ThemedCard,
     ThemedScreen,
@@ -6,6 +7,7 @@ import {
     useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import type { AppearanceTheme } from "@/lib/appearance";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Constants from "expo-constants";
@@ -18,6 +20,7 @@ import {
     Platform,
     Pressable,
     ScrollView,
+    Text,
     TextInput,
     View,
 } from "react-native";
@@ -40,6 +43,59 @@ type ReminderSection = {
 };
 
 type ReminderData = Record<ReminderKey, ReminderSection>;
+
+function reminderToggleStyles(enabled: boolean, isDark: boolean, theme: AppearanceTheme) {
+  if (enabled) {
+    return {
+      track: { backgroundColor: theme.accent },
+      thumb: { backgroundColor: "#ffffff" },
+      checkColor: theme.accent,
+    };
+  }
+
+  if (isDark) {
+    return {
+      track: { backgroundColor: "#334155" },
+      thumb: { backgroundColor: "#e2e8f0" },
+      checkColor: null,
+    };
+  }
+
+  return {
+    track: {
+      backgroundColor: "#e5e7eb",
+      borderWidth: 1,
+      borderColor: "#d1d5db",
+    },
+    thumb: {
+      backgroundColor: "#ffffff",
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.14,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    checkColor: null,
+  };
+}
+
+function ReminderToggle({ enabled }: { enabled: boolean }) {
+  const { theme, isDark } = useThemedScreen();
+  const { track, thumb, checkColor } = reminderToggleStyles(enabled, isDark, theme);
+
+  return (
+    <View className="w-11 h-[26px] rounded-full px-[2px] justify-center" style={track}>
+      <View
+        className={`w-[22px] h-[22px] rounded-full items-center justify-center ${
+          enabled ? "self-end" : "self-start"
+        }`}
+        style={thumb}
+      >
+        {checkColor ? <Ionicons name="checkmark" size={12} color={checkColor} /> : null}
+      </View>
+    </View>
+  );
+}
 
 type OldReminderTime = {
   id?: string;
@@ -195,6 +251,30 @@ const normalizeSection = (
 const formatTime = (t: ReminderTime) =>
   `${String(t.hour).padStart(2, "0")}:${String(t.minute).padStart(2, "0")} ${t.period}`;
 
+/** Firestore rejects `undefined` — strip optional fields before write. */
+const sanitizeReminderTimeForFirestore = (t: ReminderTime) => {
+  const base: Record<string, string | number | boolean> = {
+    id: t.id,
+    hour: t.hour,
+    minute: t.minute,
+    period: t.period,
+    enabled: t.enabled,
+  };
+  if (typeof t.name === "string" && t.name.trim()) base.name = t.name.trim();
+  return base;
+};
+
+const sanitizeReminderSectionForFirestore = (s: ReminderSection) => ({
+  times: s.times.map(sanitizeReminderTimeForFirestore),
+  scheduledIds: Array.isArray(s.scheduledIds) ? s.scheduledIds : [],
+});
+
+const sanitizeReminderDataForFirestore = (data: ReminderData) => ({
+  workout: sanitizeReminderSectionForFirestore(data.workout),
+  meal: sanitizeReminderSectionForFirestore(data.meal),
+  water: sanitizeReminderSectionForFirestore(data.water),
+});
+
 const convertTo24Hour = (hour12: number, period: "AM" | "PM") => {
   let hour24 = hour12;
   if (period === "AM") {
@@ -282,7 +362,7 @@ export default function RemindersScreen() {
             doc(db, "users", user.uid),
             {
               remindersInitialized: true,
-              reminders: forced,
+              reminders: sanitizeReminderDataForFirestore(forced),
             },
             { merge: true }
           );
@@ -429,27 +509,7 @@ export default function RemindersScreen() {
         water: { ...next.water, scheduledIds: waterIds },
       };
 
-      // Firestore doesn't allow `undefined` values (e.g. optional `name`).
-      const sanitizeTime = (t: ReminderTime) => {
-        const base = {
-          id: t.id,
-          hour: t.hour,
-          minute: t.minute,
-          period: t.period,
-          enabled: t.enabled,
-        } as any;
-        if (typeof t.name === "string" && t.name.trim()) base.name = t.name.trim();
-        return base;
-      };
-      const sanitizeSection = (s: ReminderSection) => ({
-        times: s.times.map(sanitizeTime),
-        scheduledIds: Array.isArray(s.scheduledIds) ? s.scheduledIds : [],
-      });
-      const firestorePayload = {
-        workout: sanitizeSection(payload.workout),
-        meal: sanitizeSection(payload.meal),
-        water: sanitizeSection(payload.water),
-      };
+      const firestorePayload = sanitizeReminderDataForFirestore(payload);
 
       await setDoc(
         doc(db, "users", user.uid),
@@ -625,21 +685,17 @@ export default function RemindersScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View>
-          <View className="relative mb-6 h-12 justify-center" pointerEvents="box-none">
-            <View className="absolute left-0 top-0 z-10">
-              <ThemedBackButton
-                icon="arrow-back"
-                onPress={() => {
-                  try {
-                    router.back();
-                  } catch {
-                    router.replace("/profile");
-                  }
-                }}
-              />
-            </View>
-            <ThemedText className="text-center text-xl font-extrabold">Reminders</ThemedText>
-          </View>
+          <ProfileScreenHeader
+            title="Reminders"
+            onBack={() => {
+              try {
+                router.back();
+              } catch {
+                router.replace("/profile");
+              }
+            }}
+            titleClassName="text-xl"
+          />
 
           {cards.map(({ key }) => {
             const section = reminders[key];
@@ -701,19 +757,7 @@ export default function RemindersScreen() {
 
                       <View className="flex-row items-center shrink-0">
                         <Pressable onPress={() => toggleEnabled(key, item.id)} className="mr-3">
-                          <View
-                            className="w-11 h-[26px] rounded-full px-[2px] justify-center"
-                            style={{ backgroundColor: item.enabled ? theme.accent : theme.iconMuted }}
-                          >
-                            <View
-                              className={`w-[22px] h-[22px] rounded-full items-center justify-center ${
-                                item.enabled ? "self-end" : "self-start"
-                              }`}
-                              style={{ backgroundColor: item.enabled ? theme.accent : theme.textMuted }}
-                            >
-                              {item.enabled && <Ionicons name="checkmark" size={12} color="white" />}
-                            </View>
-                          </View>
+                          <ReminderToggle enabled={item.enabled} />
                         </Pressable>
 
                         <Pressable onPress={() => openEditModal(key, item)} className="mr-3">
@@ -882,17 +926,45 @@ export default function RemindersScreen() {
               ))}
             </View>
 
-            <Pressable
-              onPress={saveModalReminder}
-              className="rounded-[24px] py-5 items-center shadow-sm"
-              style={({ pressed }) => ({ backgroundColor: theme.accent, opacity: pressed ? 0.86 : 1 })}
-            >
-              <ThemedText className="text-white text-[20px] font-extrabold">Save Reminder</ThemedText>
-            </Pressable>
-
-            <Pressable onPress={() => setEditor(null)} className="items-center mt-5">
-              <ThemedText variant="muted" className="text-[17px] font-semibold">Cancel</ThemedText>
-            </Pressable>
+            <View style={{ flexDirection: "row", alignItems: "stretch", gap: 12, width: "100%" }}>
+              <View style={{ flex: 1, flexBasis: 0, minWidth: 0 }}>
+                <Pressable
+                  onPress={saveModalReminder}
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#76C893",
+                    borderRadius: 24,
+                    paddingVertical: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderColor: "#76C893",
+                  }}
+                >
+                  <Text style={{ color: "#ffffff", fontSize: 17, fontWeight: "800" }}>Save</Text>
+                </Pressable>
+              </View>
+              <View style={{ flex: 1, flexBasis: 0, minWidth: 0 }}>
+                <Pressable
+                  onPress={() => {
+                    setEditor(null);
+                    setShowTimePicker(false);
+                  }}
+                  style={{
+                    width: "100%",
+                    backgroundColor: theme.cardBg,
+                    borderRadius: 24,
+                    paddingVertical: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderColor: theme.cardBorder,
+                  }}
+                >
+                  <Text style={{ color: theme.textMuted, fontSize: 17, fontWeight: "600" }}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
         </View>
       </Modal>

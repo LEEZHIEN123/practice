@@ -1,4 +1,3 @@
-import { Pressable } from "@/components/Pressable";
 import { AddFriendModal } from "@/components/community/AddFriendModal";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
@@ -9,24 +8,26 @@ import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModa
 import { PostLikesModal } from "@/components/community/PostLikesModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
+import { Pressable } from "@/components/Pressable";
+import { ProfileScreenHeader, ThemedBackButton } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime, formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
-  REPORT_REASONS,
-  SUPPORT_CHAT_WELCOME_MESSAGE,
-  type ChatConversation,
-  type CommunityComment,
-  type CommunityPost,
-  type FriendRelation,
-  type PublicUserProfile,
-  type ReportTargetType,
+    getCommunityBootstrapSnapshot,
+    prefetchCommunityScreen,
+    resetCommunityBootstrapCache,
+    subscribeCommunityPosts,
+} from "@/lib/communityBootstrap";
+import {
+    REPORT_REASONS,
+    SUPPORT_CHAT_WELCOME_MESSAGE,
+    type ChatConversation,
+    type CommunityComment,
+    type CommunityPost,
+    type FriendRelation,
+    type PublicUserProfile,
+    type ReportTargetType,
 } from "@/lib/communityTypes";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
-import {
-  getCommunityBootstrapSnapshot,
-  prefetchCommunityScreen,
-  resetCommunityBootstrapCache,
-  subscribeCommunityPosts,
-} from "@/lib/communityBootstrap";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -34,49 +35,49 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 import {
-  addComment,
-  buildChatListWithSupportAdmin,
-  chatDisplayName,
-  chatIdForUsers,
-  chatPreviewForUser,
-  createPost,
-  deleteComment,
-  deletePost,
-  displayCommunityUserName,
-  ensureChatsForFriends,
-  ensureDirectChat,
-  ensureSupportChatWithAdmin,
-  filterPostsByKeyword,
-  filterPostsByTag,
-  getPostsByAuthor,
-  getPublicUserProfile,
-  isSupportAdminPlaceholder,
-  loadFriendRelations,
-  loadLikerProfiles,
-  markAllNotificationsRead,
-  sendFriendRequest,
-  submitReport,
-  subscribeChats,
-  subscribeComments,
-  subscribeNotifications,
-  SUPPORT_ADMIN_NAME,
-  threadedComments,
-  togglePostLike,
-  updatePost,
-  type LikerProfile,
+    addComment,
+    buildChatListWithSupportAdmin,
+    chatDisplayName,
+    chatIdForUsers,
+    chatPreviewForUser,
+    createPost,
+    deleteComment,
+    deletePost,
+    displayCommunityUserName,
+    ensureChatsForFriends,
+    ensureDirectChat,
+    ensureSupportChatWithAdmin,
+    filterPostsByKeyword,
+    filterPostsByTag,
+    getPostsByAuthor,
+    getPublicUserProfile,
+    isSupportAdminPlaceholder,
+    loadFriendRelations,
+    loadLikerProfiles,
+    markAllNotificationsRead,
+    sendFriendRequest,
+    submitReport,
+    subscribeChats,
+    subscribeComments,
+    subscribeNotifications,
+    SUPPORT_ADMIN_NAME,
+    threadedComments,
+    togglePostLike,
+    updatePost,
+    type LikerProfile,
 } from "../lib/communityService";
 
 function ProfileAvatar({
@@ -945,47 +946,43 @@ export default function CommunityScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <View className="flex-row items-center mb-5 px-4">
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full items-center justify-center border mr-3"
-            style={iconButtonStyle}
-          >
-            <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
-          </Pressable>
-          <Text className="text-2xl font-extrabold flex-1" style={textPrimary}>
-            Community
-          </Text>
-          <Pressable
-            onPress={() => {
-              void markAllNotificationsRead().catch(() => {});
-              router.push("/community-notifications" as any);
-            }}
-            className="w-11 h-11 rounded-full items-center justify-center border relative"
-            style={iconButtonStyle}
-          >
-            <Ionicons name="notifications-outline" size={22} color={theme.textPrimary} />
-            {unreadNotifications > 0 ? (
-              <View
-                style={{
-                  position: "absolute",
-                  top: -2,
-                  right: -2,
-                  minWidth: 18,
-                  height: 18,
-                  paddingHorizontal: 4,
-                  borderRadius: 9,
-                  backgroundColor: "#ef4444",
-                  alignItems: "center",
-                  justifyContent: "center",
+        <View className="px-4">
+          <ProfileScreenHeader
+            title="Community"
+            onBack={() => router.back()}
+            rightSlot={
+              <Pressable
+                onPress={() => {
+                  void markAllNotificationsRead().catch(() => {});
+                  router.push("/community-notifications" as any);
                 }}
+                className="w-12 h-12 rounded-full items-center justify-center relative"
+                style={iconButtonStyle}
               >
-                <Text className="text-[10px] font-extrabold text-white">
-                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
+                <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
+                {unreadNotifications > 0 ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: -2,
+                      right: -2,
+                      minWidth: 18,
+                      height: 18,
+                      paddingHorizontal: 4,
+                      borderRadius: 9,
+                      backgroundColor: "#ef4444",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text className="text-[10px] font-extrabold text-white">
+                      {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            }
+          />
         </View>
 
         {firestoreError ? (
@@ -1064,13 +1061,7 @@ export default function CommunityScreen() {
             <>
               {tagFilterView && activeTagFilter ? (
                 <View className="flex-row items-center mb-4 px-4">
-                  <Pressable
-                    onPress={exitTagView}
-                    className="w-10 h-10 rounded-full items-center justify-center border mr-3"
-                    style={iconButtonStyle}
-                  >
-                    <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
-                  </Pressable>
+                  <ThemedBackButton onPress={exitTagView} className="mr-3" />
                   <Text className="text-lg font-extrabold" style={textPrimary}>#{activeTagFilter}</Text>
                 </View>
               ) : (

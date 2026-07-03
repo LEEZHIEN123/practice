@@ -1,6 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import { TermsOfServiceContent } from "@/components/terms/TermsOfServiceContent";
-import { ThemedBackButton } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedBackButton } from "@/components/themed/ThemedUi";
 import {
     defaultTermsDocument,
     subscribeTermsOfService,
@@ -51,14 +51,11 @@ export default function TermsOfServiceScreen() {
           paddingBottom: insets.bottom + 100,
         }}
       >
-        <View className="relative mb-6 h-12 justify-center">
-          <View className="absolute left-0 top-0 h-14 w-20 justify-center pl-2 z-10">
-            <ThemedBackButton onPress={handleBack} icon="arrow-back" className="w-12 h-12" />
-          </View>
-          <Text className="text-center text-xl font-extrabold" style={textPrimary}>
-            {isPreview ? "Preview Terms" : "Terms of Service"}
-          </Text>
-        </View>
+        <ProfileScreenHeader
+          title={isPreview ? "Preview Terms" : "Terms of Service"}
+          onBack={handleBack}
+          titleClassName="text-xl"
+        />
 
         {loading ? (
           <ActivityIndicator color={theme.accent} className="my-8" />

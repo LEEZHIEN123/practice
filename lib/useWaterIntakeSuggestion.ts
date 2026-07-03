@@ -1,18 +1,18 @@
 import {
-  formatCalendarDayKey,
-  getDeviceIanaTimezone,
-  isBeforeLocalSixAm,
+    formatCalendarDayKey,
+    getDeviceIanaTimezone,
+    isBeforeLocalSixAm,
 } from "@/lib/calendarDay";
 import { fetchOpenMeteoSixAmWeather } from "@/lib/openMeteo";
 import {
-  fetchSixAmForecastWeather,
-  isOpenWeatherConfigured,
+    fetchSixAmForecastWeather,
+    isOpenWeatherConfigured,
 } from "@/lib/openWeather";
 import {
-  calculateBmi,
-  predictWaterIntakeMl,
-  type WaterActivityLevel,
-  type WaterWeatherCondition,
+    calculateBmi,
+    predictWaterIntakeMl,
+    type WaterActivityLevel,
+    type WaterWeatherCondition,
 } from "@/lib/waterIntakeModel";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
@@ -37,10 +37,21 @@ export type WaterWeatherSnapshot = {
   unavailableReason: string | null;
 };
 
+export type PreviousLocationSuggestion = {
+  placeName: string | null;
+  suggestedMl: number;
+  weatherDescription: string;
+  weatherCondition: WaterWeatherCondition;
+  temperature: number;
+  humidity: number;
+};
+
 type CachedSuggestion = {
   dayKey: string;
   suggestedMl: number;
   placeName: string | null;
+  latitude: number | null;
+  longitude: number | null;
   weatherCondition: WaterWeatherCondition;
   weatherDescription: string;
   temperature: number;
@@ -49,10 +60,52 @@ type CachedSuggestion = {
   isForecast: boolean;
   unavailableReason: string | null;
   weatherLocked: boolean;
+  previousLocation: PreviousLocationSuggestion | null;
 };
 
 function cacheKey(uid: string, dayKey: string) {
-  return `water-suggestion:v6:${uid}:${dayKey}`;
+  return `water-suggestion:v7:${uid}:${dayKey}`;
+}
+
+const LOCATION_CHANGE_KM = 15;
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function hasMovedToNewLocation(
+  cached: CachedSuggestion | null,
+  latitude: number,
+  longitude: number,
+  placeName: string | null
+): boolean {
+  if (!cached) return false;
+  if (typeof cached.latitude === "number" && typeof cached.longitude === "number") {
+    return haversineKm(cached.latitude, cached.longitude, latitude, longitude) >= LOCATION_CHANGE_KM;
+  }
+  if (cached.placeName && placeName) {
+    return cached.placeName.trim().toLowerCase() !== placeName.trim().toLowerCase();
+  }
+  return false;
+}
+
+function snapshotPreviousLocation(cached: CachedSuggestion): PreviousLocationSuggestion {
+  return {
+    placeName: cached.placeName,
+    suggestedMl: cached.suggestedMl,
+    weatherDescription: cached.weatherDescription,
+    weatherCondition: cached.weatherCondition,
+    temperature: cached.temperature,
+    humidity: cached.humidity,
+  };
 }
 
 function mapActivityLevel(level?: string | null): WaterActivityLevel {
@@ -101,7 +154,12 @@ async function readCachedSuggestion(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedSuggestion;
     if (parsed.dayKey !== dayKey || typeof parsed.suggestedMl !== "number") return null;
-    return parsed;
+    return {
+      ...parsed,
+      latitude: parsed.latitude ?? null,
+      longitude: parsed.longitude ?? null,
+      previousLocation: parsed.previousLocation ?? null,
+    };
   } catch {
     return null;
   }
@@ -281,12 +339,14 @@ export function useWaterIntakeSuggestion(options: {
   } = options;
   const [suggestedMl, setSuggestedMl] = useState<number | null>(null);
   const [weather, setWeather] = useState<WaterWeatherSnapshot | null>(null);
+  const [previousLocation, setPreviousLocation] = useState<PreviousLocationSuggestion | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!uid || !enabled) {
       setSuggestedMl(null);
       setWeather(null);
+      setPreviousLocation(null);
       return;
     }
 
@@ -300,6 +360,7 @@ export function useWaterIntakeSuggestion(options: {
       if (cached) {
         setSuggestedMl(cached.suggestedMl);
         setWeather(cachedToWeather(cached));
+        setPreviousLocation(cached.previousLocation ?? null);
       }
 
       const age =
@@ -315,42 +376,63 @@ export function useWaterIntakeSuggestion(options: {
         stepsToday
       );
 
-      let weatherSnapshot: WaterWeatherSnapshot;
-      let weatherLocked = cached?.weatherLocked ?? false;
-      let isForecast = cached?.isForecast ?? false;
+      let currentLat: number | null = cached?.latitude ?? null;
+      let currentLon: number | null = cached?.longitude ?? null;
       let resolvedPlaceName: string | null = cached?.placeName ?? null;
+      let locationError: string | null = null;
 
-      if (cached?.weatherLocked) {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (!permission.granted) {
+          throw new Error("Location permission denied. Enable location to use morning weather.");
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        currentLat = position.coords.latitude;
+        currentLon = position.coords.longitude;
+        resolvedPlaceName =
+          (await resolvePlaceName(currentLat, currentLon)) ?? resolvedPlaceName;
+      } catch (error) {
+        locationError =
+          error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
+      }
+
+      const moved =
+        currentLat != null &&
+        currentLon != null &&
+        hasMovedToNewLocation(cached, currentLat, currentLon, resolvedPlaceName);
+
+      let previousLocationSnapshot: PreviousLocationSuggestion | null =
+        cached?.previousLocation ?? null;
+      if (moved && cached) {
+        previousLocationSnapshot = snapshotPreviousLocation(cached);
+      }
+
+      let weatherSnapshot: WaterWeatherSnapshot;
+      let weatherLocked = false;
+      let isForecast = false;
+
+      if (cached?.weatherLocked && !moved) {
         weatherSnapshot = cachedToWeather(cached);
-      } else if (!beforeSixAm && cached?.isForecast && !cached.weatherLocked) {
+        weatherLocked = true;
+        isForecast = cached.isForecast;
+        resolvedPlaceName = cached.placeName;
+        if (currentLat == null) currentLat = cached.latitude;
+        if (currentLon == null) currentLon = cached.longitude;
+      } else if (!beforeSixAm && cached?.isForecast && !cached.weatherLocked && !moved) {
         weatherSnapshot = promoteForecastToSixAmWeather(cached);
         weatherLocked = true;
         isForecast = false;
-      } else {
-        weatherSnapshot = {
-          placeName: resolvedPlaceName,
-          ...DEFAULT_WEATHER,
-          isLive: false,
-          isForecast: false,
-          unavailableReason: null,
-        };
-
+        resolvedPlaceName = cached.placeName;
+        if (currentLat == null) currentLat = cached.latitude;
+        if (currentLon == null) currentLon = cached.longitude;
+      } else if (currentLat != null && currentLon != null) {
         try {
-          const permission = await Location.requestForegroundPermissionsAsync();
-          if (!permission.granted) {
-            throw new Error("Location permission denied. Enable location to use morning weather.");
-          }
-
-          const position = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          const { latitude, longitude } = position.coords;
-          resolvedPlaceName =
-            (await resolvePlaceName(latitude, longitude)) ?? resolvedPlaceName;
-
           const morning = await resolveSixAmWeather(
-            latitude,
-            longitude,
+            currentLat,
+            currentLon,
             dayKey,
             calendarTz,
             resolvedPlaceName
@@ -358,6 +440,7 @@ export function useWaterIntakeSuggestion(options: {
           weatherSnapshot = morning.snapshot;
           weatherLocked = morning.locked;
           isForecast = morning.isForecast;
+          resolvedPlaceName = morning.snapshot.placeName ?? resolvedPlaceName;
         } catch (error) {
           const reason =
             error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
@@ -369,6 +452,18 @@ export function useWaterIntakeSuggestion(options: {
             unavailableReason: reason,
           };
         }
+      } else if (cached) {
+        weatherSnapshot = cachedToWeather(cached);
+        weatherLocked = cached.weatherLocked;
+        isForecast = cached.isForecast;
+      } else {
+        weatherSnapshot = {
+          placeName: resolvedPlaceName,
+          ...DEFAULT_WEATHER,
+          isLive: false,
+          isForecast: false,
+          unavailableReason: locationError,
+        };
       }
 
       const nextSuggestion = predictWaterIntakeMl({
@@ -388,7 +483,9 @@ export function useWaterIntakeSuggestion(options: {
       const payload: CachedSuggestion = {
         dayKey,
         suggestedMl: nextSuggestion,
-        placeName: weatherSnapshot.placeName,
+        placeName: weatherSnapshot.placeName ?? resolvedPlaceName,
+        latitude: currentLat,
+        longitude: currentLon,
         weatherCondition: weatherSnapshot.condition,
         weatherDescription: weatherSnapshot.description,
         temperature: weatherSnapshot.temperature,
@@ -397,11 +494,13 @@ export function useWaterIntakeSuggestion(options: {
         isForecast,
         unavailableReason: weatherSnapshot.unavailableReason,
         weatherLocked,
+        previousLocation: previousLocationSnapshot,
       };
 
       await writeCachedSuggestion(uid, payload);
       setSuggestedMl(nextSuggestion);
       setWeather({ ...weatherSnapshot, isForecast });
+      setPreviousLocation(previousLocationSnapshot);
     } catch {
       setSuggestedMl((prev) => prev);
       setWeather((prev) => prev);
@@ -431,6 +530,9 @@ export function useWaterIntakeSuggestion(options: {
     weather,
     weatherDescription: weather?.description ?? null,
     placeName: weather?.placeName ?? null,
+    previousLocation,
+    previousSuggestedMl: previousLocation?.suggestedMl ?? null,
+    previousPlaceName: previousLocation?.placeName ?? null,
     weatherUnavailableReason: weather?.unavailableReason ?? null,
     loading,
     refresh,

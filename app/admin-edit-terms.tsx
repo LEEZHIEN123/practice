@@ -1,5 +1,5 @@
 import { Pressable } from "@/components/Pressable";
-import { ThemedBackButton, ThemedCard, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedCard, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { checkIsAdmin } from "@/lib/communityService";
 import {
   DEFAULT_TERMS_SECTIONS,
@@ -128,45 +128,45 @@ export default function AdminEditTermsScreen() {
 
   return (
     <View className="flex-1" style={screenStyle}>
-      <View
-        className="flex-row items-center px-3 pb-3"
-        style={{ paddingTop: insets.top + 8 }}
-      >
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-3" />
-        <View className="flex-1">
-          <ThemedText className="text-xl font-extrabold">Edit Terms of Service</ThemedText>
-          {lastUpdatedMs ? (
-            <ThemedText variant="muted" className="text-xs mt-0.5">
-              Last posted: {formatTermsUpdatedAt(lastUpdatedMs)}
-            </ThemedText>
-          ) : null}
-        </View>
-        <View className="flex-row items-center gap-2">
-          <Pressable
-            onPress={handlePreview}
-            className="rounded-full px-4 py-2.5 min-w-[70px] flex-row items-center justify-center gap-1 border-2"
-            style={{
-              borderColor: theme.accent,
-              backgroundColor: theme.accentSoft,
-            }}
-          >
-            <Ionicons name="eye-outline" size={16} color={theme.accent} />
-            <Text className="text-sm font-extrabold" style={{ color: theme.accent }}>
-              Preview
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={handlePost}
-            disabled={posting}
-            className="rounded-full px-4 py-2.5 min-w-[76px] items-center justify-center bg-[#52B69A]"
-          >
-            {posting ? (
-              <ActivityIndicator color="white" size="small" />
-            ) : (
-              <Text className="text-sm font-extrabold text-white">Post</Text>
-            )}
-          </Pressable>
-        </View>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}>
+        <ProfileScreenHeader
+          title="Edit Terms of Service"
+          onBack={() => router.back()}
+          titleClassName="text-xl"
+          rightSlot={
+            <View className="flex-row items-center gap-2">
+              <Pressable
+                onPress={handlePreview}
+                className="rounded-full px-3 py-2 flex-row items-center justify-center gap-1 border-2"
+                style={{
+                  borderColor: theme.accent,
+                  backgroundColor: theme.accentSoft,
+                }}
+              >
+                <Ionicons name="eye-outline" size={16} color={theme.accent} />
+                <Text className="text-sm font-extrabold" style={{ color: theme.accent }}>
+                  Preview
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handlePost}
+                disabled={posting}
+                className="rounded-full px-3 py-2 items-center justify-center bg-[#52B69A]"
+              >
+                {posting ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text className="text-sm font-extrabold text-white">Post</Text>
+                )}
+              </Pressable>
+            </View>
+          }
+        />
+        {lastUpdatedMs ? (
+          <ThemedText variant="muted" className="text-xs text-center -mt-1 mb-2">
+            Last posted: {formatTermsUpdatedAt(lastUpdatedMs)}
+          </ThemedText>
+        ) : null}
       </View>
 
       <ScrollView

@@ -1,5 +1,5 @@
 import { FoodLibraryRowMemo } from "@/components/nutrition/FoodLibraryRow";
-import { ThemedBackButton, ThemedText } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedText } from "@/components/themed/ThemedUi";
 import { foodsByTag } from "@/lib/foodDataset";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -38,19 +38,15 @@ export default function FoodByTagScreen() {
 
   return (
     <View className="flex-1" style={screenStyle}>
-      <View
-        className="flex-row items-center px-3"
-        style={{ paddingTop: insets.top + 8, paddingBottom: 8 }}
-      >
-        <ThemedBackButton onPress={() => router.back()} className="w-11 h-11 mr-2" />
-        <View className="flex-1">
-          <Text className="text-xl font-extrabold" style={textPrimary} numberOfLines={2}>
-            {tagLabel || "Recipes"}
-          </Text>
-          <ThemedText variant="muted" className="text-xs mt-0.5">
-            {foods.length} recipe{foods.length === 1 ? "" : "s"}
-          </ThemedText>
-        </View>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 4 }}>
+        <ProfileScreenHeader
+          title={tagLabel || "Recipes"}
+          onBack={() => router.back()}
+          titleClassName="text-xl"
+        />
+        <ThemedText variant="muted" className="text-xs text-center mb-2">
+          {foods.length} recipe{foods.length === 1 ? "" : "s"}
+        </ThemedText>
       </View>
 
       <FlatList
