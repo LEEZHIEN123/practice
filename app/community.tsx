@@ -14,6 +14,8 @@ import { formatChatMessageTime, formatPostDisplayTime } from "@/lib/chatMessageU
 import {
     getCommunityBootstrapSnapshot,
     prefetchCommunityScreen,
+    prependCommunityPost,
+    patchCommunityPost,
     resetCommunityBootstrapCache,
     subscribeCommunityPosts,
 } from "@/lib/communityBootstrap";
@@ -50,6 +52,7 @@ import { auth } from "../firebaseConfig";
 import {
     addComment,
     buildChatListWithSupportAdmin,
+    acceptFriendRequest,
     chatDisplayName,
     chatIdForUsers,
     chatPreviewForUser,
@@ -62,12 +65,14 @@ import {
     ensureSupportChatWithAdmin,
     filterPostsByKeyword,
     filterPostsByTag,
+    getPendingIncomingFriendRequest,
     getPostsByAuthor,
     getPublicUserProfile,
     isSupportAdminPlaceholder,
     loadFriendRelations,
     loadLikerProfiles,
-    markAllNotificationsRead,
+    rejectFriendRequest,
+    resolveFriendRequestNotificationByRequestId,
     sendFriendRequest,
     submitReport,
     subscribeChats,
@@ -104,7 +109,7 @@ function ProfileAvatar({
 function friendLabel(relation: FriendRelation): string {
   if (relation === "friends") return "Friends";
   if (relation === "pending_outgoing") return "Pending";
-  if (relation === "pending_incoming") return "Respond in notifications";
+  if (relation === "pending_incoming") return "Friend request";
   return "Add friend";
 }
 
@@ -340,8 +345,7 @@ function CommentsModal({
             <Text className="text-xl font-extrabold" style={textPrimary}>Comments</Text>
             <Pressable
               onPress={onClose}
-              className="w-10 h-10 rounded-full items-center justify-center border"
-              style={iconButtonStyle}
+              className="w-10 h-10 rounded-full items-center justify-center active:opacity-70"
             >
               <Ionicons name="close" size={22} color={theme.iconMuted} />
             </Pressable>
@@ -499,7 +503,7 @@ export default function CommunityScreen() {
   const params = useLocalSearchParams<{ openPostId?: string; openComments?: string }>();
   const insets = useSafeAreaInsets();
   useAdminRedirect();
-  const { cardStyle, screenStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
+  const { cardStyle, screenStyle, surfaceStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
     useThemedScreen();
   const bootstrap = getCommunityBootstrapSnapshot();
 
@@ -530,6 +534,7 @@ export default function CommunityScreen() {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<PublicUserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileFriendBusy, setProfileFriendBusy] = useState(false);
 
   const [historyPost, setHistoryPost] = useState<CommunityPost | null>(null);
 
@@ -721,6 +726,10 @@ export default function CommunityScreen() {
     content: string;
     tags: string[];
   }) => {
+    if (!auth.currentUser?.uid) {
+      Alert.alert("Sign in required", "Please sign in to post in the community.");
+      return;
+    }
     try {
       setPosting(true);
       if (editingPost) {
@@ -731,10 +740,20 @@ export default function CommunityScreen() {
         });
         setEditingPost(null);
       } else {
-        await createPost({
+        const created = await createPost({
           content: values.content,
           tags: values.tags,
         });
+        prependCommunityPost(created);
+        setPosts((prev) => {
+          const merged = [created, ...prev.filter((item) => item.id !== created.id)];
+          return merged.sort((a, b) => b.createdAt - a.createdAt);
+        });
+        setPostsHydrated(true);
+        setActiveTab("feed");
+        setSearchQuery("");
+        setTagFilterView(false);
+        setActiveTagFilter(null);
       }
       setComposerVisible(false);
     } catch (e: unknown) {
@@ -877,9 +896,27 @@ export default function CommunityScreen() {
   };
 
   const handleLike = useCallback(async (post: CommunityPost) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("Sign in required", "Please sign in to like posts.");
+      return;
+    }
+
+    const liked = post.likedBy.includes(uid);
+    const optimistic: CommunityPost = {
+      ...post,
+      likedBy: liked ? post.likedBy.filter((id) => id !== uid) : [...post.likedBy, uid],
+      likeCount: Math.max(0, liked ? post.likeCount - 1 : post.likeCount + 1),
+    };
+
+    setPosts((prev) => prev.map((item) => (item.id === post.id ? optimistic : item)));
+    patchCommunityPost(optimistic);
+
     try {
       await togglePostLike(post);
     } catch (e: unknown) {
+      setPosts((prev) => prev.map((item) => (item.id === post.id ? post : item)));
+      patchCommunityPost(post);
       Alert.alert("Error", e instanceof Error ? e.message : "Could not update like.");
     }
   }, []);
@@ -892,6 +929,49 @@ export default function CommunityScreen() {
       Alert.alert("Friend request sent", "They will be notified.");
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not send request.");
+    }
+  };
+
+  const handleAcceptFriendFromProfile = async () => {
+    if (!profileUserId) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(profileUserId);
+      if (!request || request.status !== "pending") {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        const relation = await loadFriendRelations([profileUserId]);
+        setFriendRelations((prev) => ({ ...prev, ...relation }));
+        return;
+      }
+      await acceptFriendRequest(request);
+      await resolveFriendRequestNotificationByRequestId(request.id, "accepted");
+      setFriendRelations((prev) => ({ ...prev, [profileUserId]: "friends" }));
+      Alert.alert("Friend added", `You are now friends with ${profileData?.name ?? "this user"}.`);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not accept request.");
+    } finally {
+      setProfileFriendBusy(false);
+    }
+  };
+
+  const handleDeclineFriendFromProfile = async () => {
+    if (!profileUserId) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(profileUserId);
+      if (!request) {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        return;
+      }
+      await rejectFriendRequest(request.id);
+      await resolveFriendRequestNotificationByRequestId(request.id, "rejected");
+      setFriendRelations((prev) => ({ ...prev, [profileUserId]: "none" }));
+      setProfileUserId(null);
+      setProfileData(null);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not decline request.");
+    } finally {
+      setProfileFriendBusy(false);
     }
   };
 
@@ -953,7 +1033,6 @@ export default function CommunityScreen() {
             rightSlot={
               <Pressable
                 onPress={() => {
-                  void markAllNotificationsRead().catch(() => {});
                   router.push("/community-notifications" as any);
                 }}
                 className="w-12 h-12 rounded-full items-center justify-center relative"
@@ -1155,7 +1234,11 @@ export default function CommunityScreen() {
 
                       <View className="flex-row items-center mt-4 flex-wrap gap-y-2">
                         <View className="flex-row items-center mr-4">
-                          <Pressable onPress={() => void handleLike(post)} className="flex-row items-center">
+                          <Pressable
+                            onPress={() => void handleLike(post)}
+                            hitSlop={10}
+                            className="flex-row items-center"
+                          >
                             <Ionicons
                               name={liked ? "heart" : "heart-outline"}
                               size={20}
@@ -1184,8 +1267,11 @@ export default function CommunityScreen() {
                           <Pressable
                             onPress={() => {
                               if (relation === "none") void handleFriendRequest(post.authorId);
+                              else if (relation === "pending_incoming") {
+                                void openUserProfile(post.authorId);
+                              }
                             }}
-                            disabled={relation !== "none"}
+                            disabled={relation === "pending_outgoing" || relation === "friends"}
                             className="flex-row items-center"
                           >
                             <Ionicons
@@ -1226,7 +1312,7 @@ export default function CommunityScreen() {
           ) : (
             <View className="gap-0">
               {displayChats.length === 0 ? (
-                <View className="px-4 py-8 items-center" style={cardStyle}>
+                <View className="px-4 py-8 items-center rounded-2xl" style={surfaceStyle}>
                   <Text className="text-sm text-center" style={textMuted}>
                     Add friends from the feed to start chatting.
                   </Text>
@@ -1242,8 +1328,8 @@ export default function CommunityScreen() {
                 return (
                   <View
                     key={chat.id}
-                    className="flex-row items-center px-4 py-4 border-b"
-                    style={{ ...cardStyle, borderRadius: 0, borderWidth: 0, borderBottomWidth: 1 }}
+                    className="flex-row items-center px-4 py-4 rounded-2xl mb-2"
+                    style={surfaceStyle}
                   >
                     <Pressable onPress={() => void openUserProfile(otherUid)}>
                       <ProfileAvatar uri={image} />
@@ -1353,6 +1439,9 @@ export default function CommunityScreen() {
         onAddFriend={() => {
           if (profileUserId) void handleFriendRequest(profileUserId);
         }}
+        onAcceptFriend={() => void handleAcceptFriendFromProfile()}
+        onDeclineFriend={() => void handleDeclineFriendFromProfile()}
+        friendActionBusy={profileFriendBusy}
         onChat={
           profileUserId === adminUid
             ? () => void handleOpenSupportChat()

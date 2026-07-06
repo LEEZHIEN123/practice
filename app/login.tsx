@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useLightScreen } from "@/lib/useLightScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,12 +10,24 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { useState } from "react";
-import { ActivityIndicator, Alert, Modal, Text, TextInput, View } from "react-native";
+import { useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 
 export default function Login() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     theme,
     cardStyle,
@@ -26,6 +39,11 @@ export default function Login() {
     textSecondary,
     textAccent,
   } = useLightScreen();
+  const { scrollRef, scrollFieldIntoView, scrollBottomPad, onScroll } =
+    useScrollFieldAboveKeyboard();
+  const emailWrapRef = useRef<View>(null);
+  const passwordWrapRef = useRef<View>(null);
+  const forgotEmailWrapRef = useRef<View>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -146,113 +164,136 @@ export default function Login() {
   };
 
   return (
-    <View className="flex-1 justify-center px-3" style={screenStyle}>
-      <View className="items-center mb-6">
-        <View
-          className="w-28 h-28 rounded-full items-center justify-center shadow-lg"
-          style={cardStyle}
-        >
-          <Ionicons name="person" size={50} color={theme.accent} />
+    <KeyboardAvoidingView
+      className="flex-1"
+      style={screenStyle}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
+      <ScrollView
+        ref={scrollRef}
+        className="flex-1 px-3"
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          paddingTop: insets.top + 12,
+          paddingBottom: scrollBottomPad,
+        }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onScroll={(event) => onScroll(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="items-center mb-6">
+          <View
+            className="w-28 h-28 rounded-full items-center justify-center shadow-lg"
+            style={cardStyle}
+          >
+            <Ionicons name="person" size={50} color={theme.accent} />
+          </View>
         </View>
-      </View>
 
-      <Text className="text-3xl font-bold text-center mb-2" style={textPrimary}>
-        Login
-      </Text>
-
-      <Text className="text-center text-lg mb-8" style={textSecondary}>
-        Welcome back!{"\n"}Please enter your email and password to login.
-      </Text>
-
-      <Text className="mb-2 ml-2" style={textPrimary}>
-        Email Address
-      </Text>
-      <View className="mb-5">
-        <TextInput
-          placeholder="hello123@gmail.com"
-          placeholderTextColor={placeholderColor}
-          value={email}
-          onChangeText={(v) => {
-            setEmail(v);
-            if (emailError) setEmailError("");
-          }}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          className="rounded-xl px-4 py-4"
-          style={inputStyle}
-        />
-        {!!emailError && (
-          <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>
-        )}
-      </View>
-
-      <View className="flex-row justify-between items-center mb-2">
-        <Text className="ml-2" style={textPrimary}>
-          Password
+        <Text className="text-3xl font-bold text-center mb-2" style={textPrimary}>
+          Login
         </Text>
 
-        <Pressable onPress={openForgotPassword} hitSlop={10}>
-          <Text className="font-semibold" style={textAccent}>
-            Forgot Password?
-          </Text>
-        </Pressable>
-      </View>
+        <Text className="text-center text-lg mb-8" style={textSecondary}>
+          Welcome back!{"\n"}Please enter your email and password to login.
+        </Text>
 
-      <View className="mb-6">
-        <View className="relative">
+        <View ref={emailWrapRef} className="mb-5">
+          <Text className="mb-2 ml-2" style={textPrimary}>
+            Email Address
+          </Text>
           <TextInput
-            placeholder="Enter your password here"
+            placeholder="hello123@gmail.com"
             placeholderTextColor={placeholderColor}
-            value={password}
+            value={email}
             onChangeText={(v) => {
-              setPassword(v);
-              if (passwordError) setPasswordError("");
+              setEmail(v);
+              if (emailError) setEmailError("");
             }}
-            secureTextEntry={!showPassword}
-            className="rounded-xl px-4 py-4 pr-12"
+            onFocus={() => scrollFieldIntoView(emailWrapRef)}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            className="rounded-xl px-4 py-4"
             style={inputStyle}
           />
-
-          <Pressable
-            onPress={() => setShowPassword((prev) => !prev)}
-            style={{ position: "absolute", right: 15, top: 18 }}
-            hitSlop={10}
-          >
-            <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
-              size={22}
-              color={theme.iconMuted}
-            />
-          </Pressable>
-        </View>
-        {!!passwordError && (
-          <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>
-        )}
-      </View>
-
-      <Pressable
-        onPress={login}
-        className={`rounded-full overflow-hidden mb-6 ${loading ? "opacity-60" : "opacity-100"}`}
-        disabled={loading}
-      >
-        <LinearGradient
-          colors={[theme.accent, theme.accentText]}
-          className="py-4 items-center rounded-2xl"
-        >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text className="text-white text-lg font-semibold">Login</Text>
+          {!!emailError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>
           )}
-        </LinearGradient>
-      </Pressable>
+        </View>
 
-      <Text className="text-center" style={textSecondary}>
-        New here?{" "}
-        <Text className="font-semibold" style={textAccent} onPress={() => router.push("/register")}>
-          Click Here to Register
+        <View ref={passwordWrapRef} className="mb-6">
+          <View className="flex-row justify-between items-center mb-2">
+            <Text className="ml-2" style={textPrimary}>
+              Password
+            </Text>
+
+            <Pressable onPress={openForgotPassword} hitSlop={10}>
+              <Text className="font-semibold" style={textAccent}>
+                Forgot Password?
+              </Text>
+            </Pressable>
+          </View>
+
+          <View className="relative">
+            <TextInput
+              placeholder="Enter your password here"
+              placeholderTextColor={placeholderColor}
+              value={password}
+              onChangeText={(v) => {
+                setPassword(v);
+                if (passwordError) setPasswordError("");
+              }}
+              onFocus={() => scrollFieldIntoView(passwordWrapRef)}
+              secureTextEntry={!showPassword}
+              className="rounded-xl px-4 py-4 pr-12"
+              style={inputStyle}
+            />
+
+            <Pressable
+              onPress={() => setShowPassword((prev) => !prev)}
+              style={{ position: "absolute", right: 15, top: 18 }}
+              hitSlop={10}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={22}
+                color={theme.iconMuted}
+              />
+            </Pressable>
+          </View>
+          {!!passwordError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>
+          )}
+        </View>
+
+        <Pressable
+          onPress={login}
+          className={`rounded-full overflow-hidden mb-6 ${loading ? "opacity-60" : "opacity-100"}`}
+          disabled={loading}
+        >
+          <LinearGradient
+            colors={[theme.accent, theme.accentText]}
+            className="py-4 items-center rounded-2xl"
+          >
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text className="text-white text-lg font-semibold">Login</Text>
+            )}
+          </LinearGradient>
+        </Pressable>
+
+        <Text className="text-center" style={textSecondary}>
+          New here?{" "}
+          <Text className="font-semibold" style={textAccent} onPress={() => router.push("/register")}>
+            Click Here to Register
+          </Text>
         </Text>
-      </Text>
+      </ScrollView>
 
       <Modal
         visible={forgotVisible}
@@ -260,65 +301,80 @@ export default function Login() {
         animationType="fade"
         onRequestClose={() => setForgotVisible(false)}
       >
-        <View
-          className="flex-1 items-center justify-center px-6"
+        <KeyboardAvoidingView
+          className="flex-1"
+          behavior="padding"
           style={{ backgroundColor: theme.modalOverlay }}
         >
-          <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
-            <Text className="text-xl font-extrabold" style={textPrimary}>
-              Reset password
-            </Text>
-            <Text className="mt-2" style={textSecondary}>
-              Enter your email and we will send you a reset link.
-            </Text>
-
-            <TextInput
-              placeholder="hello123@gmail.com"
-              placeholderTextColor={placeholderColor}
-              value={forgotEmail}
-              onChangeText={(v) => {
-                setForgotEmail(v);
-                if (forgotEmailError) setForgotEmailError("");
-              }}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              className="mt-4 rounded-xl px-4 py-4"
-              style={inputStyle}
-            />
-            {!!forgotEmailError && (
-              <Text className="text-red-500 text-xs mt-2 ml-2">{forgotEmailError}</Text>
-            )}
-
-            <Pressable
-              onPress={handleForgotPassword}
-              disabled={sendingReset}
-              className={`mt-4 rounded-full overflow-hidden ${sendingReset ? "opacity-60" : "opacity-100"}`}
-            >
-              <LinearGradient
-                colors={[theme.accent, theme.accentText]}
-                className="py-4 items-center rounded-2xl"
-              >
-                {sendingReset ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text className="text-white text-lg font-semibold">Send Reset Link</Text>
-                )}
-              </LinearGradient>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setForgotVisible(false)}
-              disabled={sendingReset}
-              className="mt-3 rounded-full py-3.5 items-center border"
-              style={cardStyle}
-            >
-              <Text className="font-semibold" style={textPrimary}>
-                Cancel
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: "center",
+              paddingHorizontal: 24,
+              paddingVertical: 32,
+            }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
+            <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
+              <Text className="text-xl font-extrabold" style={textPrimary}>
+                Reset password
               </Text>
-            </Pressable>
-          </View>
-        </View>
+              <Text className="mt-2" style={textSecondary}>
+                Enter your email and we will send you a reset link.
+              </Text>
+
+              <View ref={forgotEmailWrapRef}>
+                <TextInput
+                  placeholder="hello123@gmail.com"
+                  placeholderTextColor={placeholderColor}
+                  value={forgotEmail}
+                  onChangeText={(v) => {
+                    setForgotEmail(v);
+                    if (forgotEmailError) setForgotEmailError("");
+                  }}
+                  onFocus={() => scrollFieldIntoView(forgotEmailWrapRef)}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  className="mt-4 rounded-xl px-4 py-4"
+                  style={inputStyle}
+                />
+                {!!forgotEmailError && (
+                  <Text className="text-red-500 text-xs mt-2 ml-2">{forgotEmailError}</Text>
+                )}
+              </View>
+
+              <Pressable
+                onPress={handleForgotPassword}
+                disabled={sendingReset}
+                className={`mt-4 rounded-full overflow-hidden ${sendingReset ? "opacity-60" : "opacity-100"}`}
+              >
+                <LinearGradient
+                  colors={[theme.accent, theme.accentText]}
+                  className="py-4 items-center rounded-2xl"
+                >
+                  {sendingReset ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-white text-lg font-semibold">Send Reset Link</Text>
+                  )}
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setForgotVisible(false)}
+                disabled={sendingReset}
+                className="mt-3 rounded-full py-3.5 items-center border"
+                style={cardStyle}
+              >
+                <Text className="font-semibold" style={textPrimary}>
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

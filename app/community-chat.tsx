@@ -146,7 +146,7 @@ function SupportWelcomeMessage({
 export default function CommunityChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cardStyle, textSecondary, theme, iconButtonStyle } = useThemedScreen();
+  const { cardStyle, textSecondary, theme } = useThemedScreen();
   const { inputStyle, placeholderColor, rowBorderStyle } = useProfileCardStyles();
   const scrollRef = useRef<ScrollView>(null);
   const params = useLocalSearchParams<{
@@ -538,35 +538,37 @@ export default function CommunityChatScreen() {
   return (
     <ThemedScreen>
       <View className="flex-1">
-        <View
-          style={{ paddingTop: insets.top + 12, paddingHorizontal: 12 }}
-          className="flex-row items-center mb-2"
-        >
-          <ThemedBackButton
-            onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
-            className="mr-3"
-          />
-          <Pressable
-            onPress={() => void openOtherProfile()}
-            disabled={!otherUserId || otherUserId === currentUserId}
-            className="flex-row items-center flex-1"
-          >
-            <ProfileAvatar uri={chatImage} size={40} />
-            <ThemedText className="text-xl font-extrabold flex-1 ml-3">{displayChatName}</ThemedText>
-          </Pressable>
-          {isSupport ? (
-            <View className="w-8 h-8 rounded-full bg-[#dbeafe] items-center justify-center mr-1">
-              <Ionicons name="shield-checkmark" size={18} color="#2563eb" />
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 16 }} className="mb-2">
+          <View className="h-12 flex-row items-center">
+            <ThemedBackButton
+              onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
+              className="w-12 h-12 shrink-0"
+            />
+            <Pressable
+              onPress={() => void openOtherProfile()}
+              disabled={!otherUserId || otherUserId === currentUserId}
+              className="flex-1 flex-row items-center ml-2 mr-2 min-w-0"
+            >
+              <ProfileAvatar uri={chatImage} size={40} />
+              <ThemedText className="text-xl font-extrabold flex-1 ml-3" numberOfLines={1}>
+                {displayChatName}
+              </ThemedText>
+            </Pressable>
+            <View className="flex-row items-center shrink-0">
+              {isSupport ? (
+                <View className="w-8 h-8 rounded-full bg-[#dbeafe] items-center justify-center mr-1">
+                  <Ionicons name="shield-checkmark" size={18} color="#2563eb" />
+                </View>
+              ) : null}
+              <Pressable
+                onPress={() => setMenuVisible(true)}
+                className="w-12 h-12 rounded-full items-center justify-center active:opacity-70"
+              >
+                <Ionicons name="ellipsis-vertical" size={22} color={theme.iconMuted} />
+              </Pressable>
             </View>
-          ) : null}
-          <Pressable
-            onPress={() => setMenuVisible(true)}
-            className="w-10 h-10 rounded-full items-center justify-center border"
-            style={iconButtonStyle}
-          >
-            <Ionicons name="ellipsis-vertical" size={22} color={theme.iconMuted} />
-          </Pressable>
           </View>
+        </View>
 
         <ScrollView
           ref={scrollRef}
@@ -693,7 +695,10 @@ export default function CommunityChatScreen() {
           ) : null}
 
           {quotingMessage ? (
-            <View className="flex-row items-center rounded-xl px-3 py-2 mb-2" style={cardStyle}>
+            <View
+              className="flex-row items-center rounded-xl px-3 py-2 mb-2 border"
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+            >
               <View className="flex-1 border-l-2 pl-2" style={{ borderLeftColor: theme.accentText }}>
                 <ThemedText variant="accent" className="text-xs font-extrabold">
                   {resolveSenderName(quotingMessage.senderId)}
@@ -718,7 +723,7 @@ export default function CommunityChatScreen() {
               style={
                 stickerPickerVisible
                   ? { backgroundColor: theme.accent, borderColor: theme.accent }
-                  : { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }
+                  : { backgroundColor: theme.accentSoft, borderColor: theme.accent }
               }
             >
               <Ionicons

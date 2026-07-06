@@ -409,8 +409,8 @@ export default function AICoachScreen() {
                 <Pressable
                   onPress={() => void openHistory()}
                   hitSlop={8}
-                  className="w-10 h-10 rounded-full items-center justify-center border mr-2 shrink-0 active:opacity-90"
-                  style={[iconButtonStyle, { borderColor: theme.cardBorder }]}
+                  className="w-12 h-12 rounded-full items-center justify-center mr-2 shrink-0 active:opacity-90"
+                  style={iconButtonStyle}
                 >
                   <Ionicons name="time-outline" size={20} color={theme.textSecondary} />
                 </Pressable>

@@ -41,7 +41,7 @@ function ProfileAvatar({ uri, size = 44 }: { uri: string | null; size?: number }
 function relationLabel(relation: FriendRelation): string {
   if (relation === "friends") return "Friends";
   if (relation === "pending_outgoing") return "Pending";
-  if (relation === "pending_incoming") return "Respond in notifications";
+  if (relation === "pending_incoming") return "+ Friend";
   return "Add";
 }
 
@@ -182,8 +182,11 @@ export function AddFriendModal({ visible, onClose, onOpenProfile }: AddFriendMod
                     <Pressable
                       onPress={() => {
                         if (relation === "none") void handleAddFriend(user);
+                        else if (relation === "pending_incoming") onOpenProfile(user.id);
                       }}
-                      disabled={isFriend || isPending || actionId === user.id}
+                      disabled={
+                        isFriend || relation === "pending_outgoing" || actionId === user.id
+                      }
                       className="rounded-full px-3 py-1.5"
                       style={
                         isFriend || isPending

@@ -1,5 +1,5 @@
 import { formatCalendarDayKey, getDeviceIanaTimezone } from "@/lib/calendarDay";
-import { upsertMealHistory } from "@/lib/mealLogHistory";
+import { upsertMealHistory, descriptionsToLegacyString, normalizeMealDescriptions } from "@/lib/mealLogHistory";
 import { isManualMealType } from "@/lib/manualMealTypes";
 import { auth, db } from "../firebaseConfig";
 import {
@@ -26,6 +26,7 @@ export type LogMealInput = {
   fatG?: number;
   servings?: number;
   description?: string;
+  descriptionSections?: string[];
   photoUri?: string;
   logDate?: Date;
   calendarTz?: string | null;
@@ -47,13 +48,18 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
   const logDate = input.logDate ?? new Date();
   const day = new Date(logDate.getFullYear(), logDate.getMonth(), logDate.getDate());
   const dayKey = formatCalendarDayKey(logDate, input.calendarTz ?? getDeviceIanaTimezone());
-  const description = input.description?.trim();
+  const descriptionSections = normalizeMealDescriptions({
+    descriptionSections: input.descriptionSections,
+    description: input.description,
+  });
+  const description = descriptionsToLegacyString(descriptionSections);
 
   await addDoc(collection(db, "users", user.uid, "mealLogs"), {
     title,
     calories,
     source: input.source,
     ...(description ? { description } : {}),
+    ...(descriptionSections.length > 0 ? { descriptionSections } : {}),
     ...(input.photoUri ? { photoUri: input.photoUri } : {}),
     ...(input.category ? { category: input.category } : {}),
     ...(input.foodId ? { foodId: input.foodId } : {}),
@@ -79,8 +85,12 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
     await upsertMealHistory(user.uid, {
       title,
       calories,
+      proteinG: input.proteinG,
+      carbsG: input.carbsG,
+      fatG: input.fatG,
       mealType: isManualMealType(input.category) ? input.category : undefined,
-      description: description || undefined,
+      description,
+      descriptionSections,
       photoUri: input.photoUri,
     });
   }

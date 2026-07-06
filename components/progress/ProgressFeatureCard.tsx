@@ -1,14 +1,14 @@
 import { Pressable } from "@/components/Pressable";
+import { imageCardOverlayOpacity } from "@/lib/appearance";
 import {
   PROGRESS_METRIC_CARD_IMAGE_POSITION,
   PROGRESS_METRIC_CARD_IMAGES,
   PROGRESS_METRIC_CARD_OVERLAY_OPACITY,
   type ProgressMetricCardKey,
 } from "@/lib/progressCardImages";
-import { imageCardOverlayOpacity } from "@/lib/appearance";
 import { useThemedScreen } from "@/lib/useThemedScreen";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 

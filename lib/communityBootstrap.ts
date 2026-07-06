@@ -35,6 +35,20 @@ function notifyPosts(posts: CommunityPost[]) {
   for (const listener of postListeners) listener(posts);
 }
 
+/** Show a newly created post immediately while Firestore syncs. */
+export function prependCommunityPost(post: CommunityPost) {
+  const merged = [post, ...cachedPosts.filter((item) => item.id !== post.id)].sort(
+    (a, b) => b.createdAt - a.createdAt
+  );
+  notifyPosts(merged);
+}
+
+/** Patch a single post in the shared community feed cache. */
+export function patchCommunityPost(post: CommunityPost) {
+  const merged = cachedPosts.map((item) => (item.id === post.id ? post : item));
+  notifyPosts(merged);
+}
+
 let postsErrorHandler: ((error: Error) => void) | undefined;
 
 function ensurePostsListener() {

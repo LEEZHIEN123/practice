@@ -59,6 +59,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -112,6 +113,10 @@ function AdminTabHeader({
 export function AdminCommunityHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const reportDetailModalMaxHeight = Math.min(windowHeight - insets.top - insets.bottom - 48, 560);
+  const reportDetailModalWidth = Math.min(windowWidth - 40, 420);
+  const reportDetailScrollMaxHeight = reportDetailModalMaxHeight - 72;
   const {
     mode,
     theme,
@@ -253,9 +258,17 @@ export function AdminCommunityHub() {
   };
 
   const handleCreatePost = async () => {
+    if (!auth.currentUser?.uid) {
+      Alert.alert("Sign in required", "Please sign in to post.");
+      return;
+    }
     try {
       setPosting(true);
-      await createPost({ content: postText, tags: [] });
+      const created = await createPost({ content: postText, tags: [] });
+      setPosts((prev) => {
+        const merged = [created, ...prev.filter((item) => item.id !== created.id)];
+        return merged.sort((a, b) => b.createdAt - a.createdAt);
+      });
       setPostText("");
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not create post.");
@@ -279,9 +292,25 @@ export function AdminCommunityHub() {
   };
 
   const handleLike = async (post: CommunityPost) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("Sign in required", "Please sign in to like posts.");
+      return;
+    }
+
+    const liked = post.likedBy.includes(uid);
+    const optimistic: CommunityPost = {
+      ...post,
+      likedBy: liked ? post.likedBy.filter((id) => id !== uid) : [...post.likedBy, uid],
+      likeCount: Math.max(0, liked ? post.likeCount - 1 : post.likeCount + 1),
+    };
+
+    setPosts((prev) => prev.map((item) => (item.id === post.id ? optimistic : item)));
+
     try {
       await togglePostLike(post);
     } catch (e: unknown) {
+      setPosts((prev) => prev.map((item) => (item.id === post.id ? post : item)));
       Alert.alert("Error", e instanceof Error ? e.message : "Could not update like.");
     }
   };
@@ -306,12 +335,27 @@ export function AdminCommunityHub() {
   };
 
   const handleSavePost = async (values: { content: string; tags: string[] }) => {
+    if (!auth.currentUser?.uid) {
+      Alert.alert("Sign in required", "Please sign in to post.");
+      return;
+    }
     try {
       setPosting(true);
       if (editingPost) {
-        await updatePost(editingPost, values);
+        await updatePost(editingPost, {
+          content: values.content,
+          imageUrl: editingPost.imageUrl,
+          tags: values.tags,
+        });
       } else {
-        await createPost(values);
+        const created = await createPost({
+          content: values.content,
+          tags: values.tags,
+        });
+        setPosts((prev) => {
+          const merged = [created, ...prev.filter((item) => item.id !== created.id)];
+          return merged.sort((a, b) => b.createdAt - a.createdAt);
+        });
       }
       setComposerVisible(false);
       setEditingPost(null);
@@ -724,11 +768,11 @@ export function AdminCommunityHub() {
                       params: { chatId: chat.id, name, image: image ?? "", isAdmin: "1" },
                     })
                   }
-                  className="flex-row items-center rounded-2xl px-4 py-4 border"
+                  className="flex-row items-center rounded-2xl px-4 py-4"
                   style={[
                     surfaceStyle,
                     highlightChatId === chat.id
-                      ? { borderColor: theme.accent, borderWidth: 2 }
+                      ? { borderColor: theme.accent, borderWidth: 1 }
                       : undefined,
                   ]}
                 >
@@ -762,9 +806,14 @@ export function AdminCommunityHub() {
     <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
       <AdminTabHeader title="Report Management" />
       <View className="rounded-[28px] p-5 gap-3" style={cardStyle}>
-        <Text className="text-sm" style={textMuted}>
-          Total pending: {reports.length}
-        </Text>
+        <View className="flex-row items-baseline">
+          <Text className="text-base font-extrabold" style={textPrimary}>
+            Total pending:{" "}
+          </Text>
+          <Text className="text-base font-extrabold" style={{ color: "#ef4444" }}>
+            {reports.length}
+          </Text>
+        </View>
         {reports.length === 0 ? (
           <Text className="text-sm text-center py-8" style={textMuted}>
             No pending reports.
@@ -785,16 +834,20 @@ export function AdminCommunityHub() {
               </Text>
               <Text
                 className="text-sm mt-3 rounded-xl px-3 py-3 border"
-                style={[cardStyle, textSecondary]}
+                style={[
+                  { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
+                  textSecondary,
+                ]}
               >
                 {report.targetContent}
               </Text>
               {report.targetType === "post" ? (
                 <Pressable
                   onPress={() => void openReportPostDetail(report)}
-                  className="mt-3 rounded-full py-2.5 items-center bg-[#eaf7f0] border border-[#b7e4c7]"
+                  className="mt-3 rounded-full py-2.5 items-center border"
+                  style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7" }}
                 >
-                  <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
+                  <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
                 </Pressable>
               ) : null}
               {report.targetType === "post" ? (
@@ -1366,7 +1419,15 @@ export function AdminCommunityHub() {
           setReportDetailPost(null);
         }}
       >
-        <View className="flex-1 justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+        <View
+          className="flex-1 items-center justify-center"
+          style={{
+            backgroundColor: theme.modalOverlay,
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 16,
+            paddingHorizontal: 20,
+          }}
+        >
           <Pressable
             className="absolute inset-0"
             onPress={() => {
@@ -1375,11 +1436,20 @@ export function AdminCommunityHub() {
             }}
           />
           <View
-            className="rounded-[28px] px-5 pt-5 pb-8 max-h-[80%]"
-            style={[modalCardStyle, { marginBottom: insets.bottom }]}
+            className="rounded-[28px] border overflow-hidden"
+            style={[
+              modalCardStyle,
+              {
+                width: reportDetailModalWidth,
+                maxHeight: reportDetailModalMaxHeight,
+                borderColor: "#b7e4c7",
+                backgroundColor: theme.modalBg,
+                zIndex: 1,
+              },
+            ]}
           >
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xl font-extrabold" style={textPrimary}>
+            <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
+              <Text className="text-xl font-extrabold flex-1 pr-3" style={textPrimary}>
                 Post details
               </Text>
               <Pressable
@@ -1395,15 +1465,21 @@ export function AdminCommunityHub() {
             </View>
 
             {reportDetailLoading ? (
-              <View className="py-12 items-center">
+              <View className="py-12 items-center px-5">
                 <ActivityIndicator size="large" color={theme.accentText} />
               </View>
             ) : reportDetailPost ? (
-              <ScrollView showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={{ maxHeight: reportDetailScrollMaxHeight }}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+                showsVerticalScrollIndicator
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+              >
                 <View className="flex-row items-center mb-4">
                   <ProfileAvatar uri={reportDetailPost.authorProfileImage} size={44} />
                   <View className="ml-3 flex-1">
-                    <Text className="text-base font-extrabold" style={textPrimary}>
+                    <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
                       {reportDetailPost.authorName}
                     </Text>
                     <Text className="text-xs mt-0.5" style={textMuted}>
@@ -1419,7 +1495,13 @@ export function AdminCommunityHub() {
                 {reportDetailPost.imageUrl ? (
                   <Image
                     source={{ uri: reportDetailPost.imageUrl }}
-                    style={{ width: "100%", height: 220, borderRadius: 16, marginTop: 12 }}
+                    style={{
+                      width: "100%",
+                      aspectRatio: 4 / 3,
+                      maxHeight: 220,
+                      borderRadius: 16,
+                      marginTop: 12,
+                    }}
                     contentFit="cover"
                   />
                 ) : null}
@@ -1449,16 +1531,18 @@ export function AdminCommunityHub() {
                     <Text className="text-xs font-extrabold uppercase" style={{ color: theme.danger }}>
                       Report
                     </Text>
-                    <Text className="text-sm mt-2" style={textSecondary}>
+                    <Text className="text-sm mt-2 leading-5" style={textSecondary}>
                       By {reportDetailReport.reporterName}: {reportDetailReport.reason}
                     </Text>
                   </View>
                 ) : null}
               </ScrollView>
             ) : (
-              <Text className="text-sm text-center py-8" style={textMuted}>
-                Post not found. It may have been removed already.
-              </Text>
+              <View className="px-5 pb-8">
+                <Text className="text-sm text-center py-8" style={textMuted}>
+                  Post not found. It may have been removed already.
+                </Text>
+              </View>
             )}
           </View>
         </View>

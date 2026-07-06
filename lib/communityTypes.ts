@@ -52,6 +52,7 @@ export type CommunityReport = {
   targetContent: string;
   targetAuthorId: string;
   targetAuthorName: string;
+  read: boolean;
 };
 
 export type FriendRequest = {

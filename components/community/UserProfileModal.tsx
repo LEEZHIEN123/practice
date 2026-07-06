@@ -29,7 +29,7 @@ function ProfileAvatar({ uri, size = 72 }: { uri: string | null; size?: number }
 function friendLabel(relation: FriendRelation): string {
   if (relation === "friends") return "Friends";
   if (relation === "pending_outgoing") return "Pending";
-  if (relation === "pending_incoming") return "Respond in notifications";
+  if (relation === "pending_incoming") return "Friend request";
   return "Add friend";
 }
 
@@ -44,6 +44,9 @@ type UserProfileModalProps = {
   isSupportAdmin?: boolean;
   onClose: () => void;
   onAddFriend: () => void;
+  onAcceptFriend?: () => void;
+  onDeclineFriend?: () => void;
+  friendActionBusy?: boolean;
   onChat?: () => void;
 };
 
@@ -58,6 +61,9 @@ export function UserProfileModal({
   isSupportAdmin = false,
   onClose,
   onAddFriend,
+  onAcceptFriend,
+  onDeclineFriend,
+  friendActionBusy = false,
   onChat,
 }: UserProfileModalProps) {
   const insets = useSafeAreaInsets();
@@ -137,10 +143,32 @@ export function UserProfileModal({
                 </View>
               ) : null}
               {!isSelf && !isSupportAdmin && relation === "pending_incoming" ? (
-                <View className="mt-3 rounded-full px-6 py-2.5" style={cardStyle}>
-                  <ThemedText variant="muted" className="text-sm font-extrabold">
-                    Respond in notifications
-                  </ThemedText>
+                <View className="mt-3 flex-row gap-2 w-full max-w-sm px-2">
+                  <Pressable
+                    onPress={onAcceptFriend}
+                    disabled={friendActionBusy || !onAcceptFriend}
+                    className="flex-1 flex-row items-center justify-center rounded-full px-5 py-2.5 bg-[#52B69A]"
+                    style={{ opacity: friendActionBusy || !onAcceptFriend ? 0.7 : 1 }}
+                  >
+                    {friendActionBusy ? (
+                      <ActivityIndicator color="white" size="small" />
+                    ) : (
+                      <Text className="text-sm font-extrabold text-white">Accept</Text>
+                    )}
+                  </Pressable>
+                  {onDeclineFriend ? (
+                    <Pressable
+                      onPress={onDeclineFriend}
+                      disabled={friendActionBusy}
+                      className="flex-1 flex-row items-center justify-center rounded-full px-5 py-2.5"
+                      style={{
+                        backgroundColor: theme.danger,
+                        opacity: friendActionBusy ? 0.7 : 1,
+                      }}
+                    >
+                      <Text className="text-sm font-extrabold text-white">Decline</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               ) : null}
             </View>

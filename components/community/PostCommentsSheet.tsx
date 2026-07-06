@@ -62,7 +62,7 @@ export function PostCommentsSheet({
   onBlockComment,
 }: PostCommentsSheetProps) {
   const insets = useSafeAreaInsets();
-  const { cardStyle, iconButtonStyle, theme } = useThemedScreen();
+  const { cardStyle, theme } = useThemedScreen();
   const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [text, setText] = useState("");
@@ -159,8 +159,7 @@ export function PostCommentsSheet({
             <ThemedText className="text-xl font-extrabold">Comments</ThemedText>
             <Pressable
               onPress={onClose}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={iconButtonStyle}
+              className="w-10 h-10 rounded-full items-center justify-center active:opacity-70"
             >
               <Ionicons name="close" size={22} color={theme.iconMuted} />
             </Pressable>

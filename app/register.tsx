@@ -1,27 +1,29 @@
 import { Pressable } from "@/components/Pressable";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useLightScreen } from "@/lib/useLightScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRegistration } from "../context/registrationContext";
 import { auth, db } from "../firebaseConfig";
 
 export default function Register() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { setAccount, reset } = useRegistration();
   const {
     theme,
@@ -34,6 +36,12 @@ export default function Register() {
     textMuted,
     textAccent,
   } = useLightScreen();
+  const { scrollRef, scrollFieldIntoView, scrollBottomPad, onScroll } =
+    useScrollFieldAboveKeyboard();
+  const nameWrapRef = useRef<View>(null);
+  const emailWrapRef = useRef<View>(null);
+  const passwordWrapRef = useRef<View>(null);
+  const confirmPasswordWrapRef = useRef<View>(null);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -160,17 +168,22 @@ export default function Register() {
     <KeyboardAvoidingView
       className="flex-1"
       style={screenStyle}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: "center",
           paddingHorizontal: 12,
-          paddingVertical: 32,
+          paddingTop: insets.top + 12,
+          paddingBottom: scrollBottomPad,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onScroll={(event) => onScroll(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
         <View className="items-center mb-6">
@@ -189,128 +202,140 @@ export default function Register() {
           Join us to start your fitness journey!
         </Text>
 
-        <View className="flex-row items-center justify-between mb-2">
-          <Text className="ml-2" style={textPrimary}>
-            Full Name
-          </Text>
-          <Text className="text-sm font-semibold mr-2" style={textMuted}>
-            {Math.min(name.length, 14)}/14
-          </Text>
-        </View>
-        <TextInput
-          placeholder="Jane Doe"
-          placeholderTextColor={placeholderColor}
-          value={name}
-          onChangeText={(v) => {
-            setName(v.slice(0, 14));
-            if (nameError) setNameError("");
-          }}
-          maxLength={14}
-          className="mb-4 rounded-xl px-4 py-4"
-          style={inputStyle}
-        />
-        {!!nameError && (
-          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{nameError}</Text>
-        )}
-
-        <Text className="mb-2 ml-2" style={textPrimary}>
-          Email Address
-        </Text>
-        <TextInput
-          placeholder="jane@gmail.com"
-          placeholderTextColor={placeholderColor}
-          value={email}
-          onChangeText={(v) => {
-            setEmail(v);
-            if (emailError) setEmailError("");
-          }}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          className="mb-4 rounded-xl px-4 py-4"
-          style={inputStyle}
-        />
-        {!!emailError && (
-          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{emailError}</Text>
-        )}
-
-        <View className="flex-row justify-between items-center mb-2">
-          <Text className="ml-2" style={textPrimary}>
-            Password
-          </Text>
-          <View className="flex-row items-center flex-1 justify-end ml-2">
-            <Text className="text-xs mr-1.5 text-right" style={textSecondary}>
-              {passwordRule}
+        <View ref={nameWrapRef} className="mb-4">
+          <View className="flex-row items-center justify-between mb-2">
+            <Text className="ml-2" style={textPrimary}>
+              Full Name
             </Text>
-            {passwordMeetsRule ? (
-              <Ionicons name="checkmark-circle" size={18} color={theme.accent} />
-            ) : null}
+            <Text className="text-sm font-semibold mr-2" style={textMuted}>
+              {Math.min(name.length, 14)}/14
+            </Text>
           </View>
-        </View>
-        <View className="relative mb-4">
           <TextInput
-            placeholder="abc123"
+            placeholder="Jane Doe"
             placeholderTextColor={placeholderColor}
-            value={password}
+            value={name}
             onChangeText={(v) => {
-              setPassword(v);
-              if (passwordError) setPasswordError("");
-              if (confirmPassword.length > 0) {
-                setConfirmPasswordError(v === confirmPassword ? "" : "Passwords do not match.");
-              }
+              setName(v.slice(0, 14));
+              if (nameError) setNameError("");
             }}
-            secureTextEntry={!showPassword}
-            className="rounded-xl px-4 py-4 pr-12"
+            onFocus={() => scrollFieldIntoView(nameWrapRef)}
+            maxLength={14}
+            className="rounded-xl px-4 py-4"
             style={inputStyle}
           />
-          <Pressable
-            onPress={() => setShowPassword((p) => !p)}
-            style={{ position: "absolute", right: 15, top: 18 }}
-          >
-            <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
-              size={22}
-              color={theme.iconMuted}
-            />
-          </Pressable>
+          {!!nameError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{nameError}</Text>
+          )}
         </View>
-        {!!passwordError && (
-          <Text className="text-red-500 text-xs -mt-3 mb-3 ml-2">{passwordError}</Text>
-        )}
 
-        <Text className="mb-2 ml-2" style={textPrimary}>
-          Confirm Password
-        </Text>
-        <View className="relative mb-4">
+        <View ref={emailWrapRef} className="mb-4">
+          <Text className="mb-2 ml-2" style={textPrimary}>
+            Email Address
+          </Text>
           <TextInput
-            placeholder="abc123"
+            placeholder="jane@gmail.com"
             placeholderTextColor={placeholderColor}
-            value={confirmPassword}
+            value={email}
             onChangeText={(v) => {
-              setConfirmPassword(v);
-              if (!v) {
-                setConfirmPasswordError("");
-                return;
-              }
-              setConfirmPasswordError(v === password ? "" : "Passwords do not match.");
+              setEmail(v);
+              if (emailError) setEmailError("");
             }}
-            secureTextEntry={!showConfirmPassword}
-            className="rounded-xl px-4 py-4 pr-12"
+            onFocus={() => scrollFieldIntoView(emailWrapRef)}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            className="rounded-xl px-4 py-4"
             style={inputStyle}
           />
-          <Pressable
-            onPress={() => setShowConfirmPassword((p) => !p)}
-            style={{ position: "absolute", right: 15, top: 18 }}
-          >
-            <Ionicons
-              name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-              size={22}
-              color={theme.iconMuted}
-            />
-          </Pressable>
+          {!!emailError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>
+          )}
         </View>
-        {!!confirmPasswordError && (
-          <Text className="text-red-500 text-xs -mt-3 mb-4 ml-2">{confirmPasswordError}</Text>
-        )}
+
+        <View ref={passwordWrapRef} className="mb-4">
+          <View className="flex-row justify-between items-center mb-2">
+            <Text className="ml-2" style={textPrimary}>
+              Password
+            </Text>
+            <View className="flex-row items-center flex-1 justify-end ml-2">
+              <Text className="text-xs mr-1.5 text-right" style={textSecondary}>
+                {passwordRule}
+              </Text>
+              {passwordMeetsRule ? (
+                <Ionicons name="checkmark-circle" size={18} color={theme.accent} />
+              ) : null}
+            </View>
+          </View>
+          <View className="relative">
+            <TextInput
+              placeholder="abc123"
+              placeholderTextColor={placeholderColor}
+              value={password}
+              onChangeText={(v) => {
+                setPassword(v);
+                if (passwordError) setPasswordError("");
+                if (confirmPassword.length > 0) {
+                  setConfirmPasswordError(v === confirmPassword ? "" : "Passwords do not match.");
+                }
+              }}
+              onFocus={() => scrollFieldIntoView(passwordWrapRef)}
+              secureTextEntry={!showPassword}
+              className="rounded-xl px-4 py-4 pr-12"
+              style={inputStyle}
+            />
+            <Pressable
+              onPress={() => setShowPassword((p) => !p)}
+              style={{ position: "absolute", right: 15, top: 18 }}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={22}
+                color={theme.iconMuted}
+              />
+            </Pressable>
+          </View>
+          {!!passwordError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>
+          )}
+        </View>
+
+        <View ref={confirmPasswordWrapRef} className="mb-4">
+          <Text className="mb-2 ml-2" style={textPrimary}>
+            Confirm Password
+          </Text>
+          <View className="relative">
+            <TextInput
+              placeholder="abc123"
+              placeholderTextColor={placeholderColor}
+              value={confirmPassword}
+              onChangeText={(v) => {
+                setConfirmPassword(v);
+                if (!v) {
+                  setConfirmPasswordError("");
+                  return;
+                }
+                setConfirmPasswordError(v === password ? "" : "Passwords do not match.");
+              }}
+              onFocus={() => scrollFieldIntoView(confirmPasswordWrapRef)}
+              secureTextEntry={!showConfirmPassword}
+              className="rounded-xl px-4 py-4 pr-12"
+              style={inputStyle}
+            />
+            <Pressable
+              onPress={() => setShowConfirmPassword((p) => !p)}
+              style={{ position: "absolute", right: 15, top: 18 }}
+            >
+              <Ionicons
+                name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                size={22}
+                color={theme.iconMuted}
+              />
+            </Pressable>
+          </View>
+          {!!confirmPasswordError && (
+            <Text className="text-red-500 text-xs mt-1 ml-2">{confirmPasswordError}</Text>
+          )}
+        </View>
 
         <View className="flex-row items-start mb-2">
           <Pressable

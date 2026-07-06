@@ -1,9 +1,13 @@
 import { Pressable } from "@/components/Pressable";
+import { MealDescriptionSections } from "@/components/nutrition/MealDescriptionSections";
 import { MealTypePicker } from "@/components/nutrition/MealTypePicker";
 import { MealPhotoSection } from "@/components/nutrition/MealPhotoSection";
 import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import {
+  formatHistoryMacros,
   getMealHistoryEntry,
+  normalizeMealDescriptions,
+  parseOptionalGrams,
   updateMealHistoryEntry,
   type MealHistoryEntry,
 } from "@/lib/mealLogHistory";
@@ -46,7 +50,10 @@ export default function MealHistoryEditScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [foodName, setFoodName] = useState("");
   const [caloriesText, setCaloriesText] = useState("");
-  const [description, setDescription] = useState("");
+  const [proteinText, setProteinText] = useState("");
+  const [carbsText, setCarbsText] = useState("");
+  const [fatText, setFatText] = useState("");
+  const [descriptionSections, setDescriptionSections] = useState<string[]>([""]);
   const [mealType, setMealType] = useState<ManualMealType>("breakfast");
   const scrollRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -88,7 +95,14 @@ export default function MealHistoryEditScreen() {
     if (row) {
       setFoodName(row.title);
       setCaloriesText(String(row.calories));
-      setDescription(row.description ?? "");
+      setProteinText(row.proteinG != null ? String(row.proteinG) : "");
+      setCarbsText(row.carbsG != null ? String(row.carbsG) : "");
+      setFatText(row.fatG != null ? String(row.fatG) : "");
+      const sections = normalizeMealDescriptions({
+        descriptionSections: row.descriptionSections,
+        description: row.description,
+      });
+      setDescriptionSections(sections.length > 0 ? sections : [""]);
       setImageUri(row.photoUri ?? null);
       setMealType(row.mealType ?? "other");
     }
@@ -113,8 +127,11 @@ export default function MealHistoryEditScreen() {
     return {
       title,
       calories,
+      proteinG: parseOptionalGrams(proteinText),
+      carbsG: parseOptionalGrams(carbsText),
+      fatG: parseOptionalGrams(fatText),
       mealType,
-      description: description.trim() || undefined,
+      descriptionSections: normalizeMealDescriptions({ descriptionSections }),
       photoUri: imageUri ?? undefined,
     };
   };
@@ -141,7 +158,9 @@ export default function MealHistoryEditScreen() {
 
     Alert.alert(
       "Log this meal?",
-      `Food: ${values.title}\nCalories: ${values.calories} kcal\nType: ${MANUAL_MEAL_TYPE_LABELS[values.mealType]}\n\nAdd this meal to today?`,
+      `Food: ${values.title}\nCalories: ${values.calories} kcal\nType: ${MANUAL_MEAL_TYPE_LABELS[values.mealType]}${
+        formatHistoryMacros(values) ? `\n${formatHistoryMacros(values)}` : ""
+      }\n\nAdd this meal to today?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -156,8 +175,11 @@ export default function MealHistoryEditScreen() {
     title: string;
     calories: number;
     mealType: ManualMealType;
-    description?: string;
+    descriptionSections?: string[];
     photoUri?: string;
+    proteinG?: number;
+    carbsG?: number;
+    fatG?: number;
   }) => {
     if (!authUid) {
       Alert.alert("Sign in required", "Log in to save meals.");
@@ -170,8 +192,11 @@ export default function MealHistoryEditScreen() {
         calories: values.calories,
         source: "manual",
         category: values.mealType,
-        description: values.description,
+        descriptionSections: values.descriptionSections,
         photoUri: values.photoUri,
+        proteinG: values.proteinG,
+        carbsG: values.carbsG,
+        fatG: values.fatG,
         calendarTz,
       });
       Alert.alert("Logged", `${values.title} (${values.calories} kcal) added to today.`);
@@ -259,19 +284,64 @@ export default function MealHistoryEditScreen() {
             placeholder="e.g. 450"
           />
 
-          <ThemedText variant="muted" className="text-xs mb-1">
-            Description (optional)
+          <ThemedText variant="muted" className="text-xs mb-2">
+            Macros (optional)
           </ThemedText>
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
+          <View className="flex-row gap-2 mb-3">
+            <View className="flex-1">
+              <ThemedText variant="muted" className="text-[10px] mb-1">
+                Protein (g)
+              </ThemedText>
+              <TextInput
+                value={proteinText}
+                onChangeText={setProteinText}
+                onFocus={scrollToField}
+                keyboardType="decimal-pad"
+                className="rounded-xl px-3 py-3 text-base"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
+                placeholder="—"
+              />
+            </View>
+            <View className="flex-1">
+              <ThemedText variant="muted" className="text-[10px] mb-1">
+                Carbs (g)
+              </ThemedText>
+              <TextInput
+                value={carbsText}
+                onChangeText={setCarbsText}
+                onFocus={scrollToField}
+                keyboardType="decimal-pad"
+                className="rounded-xl px-3 py-3 text-base"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
+                placeholder="—"
+              />
+            </View>
+            <View className="flex-1">
+              <ThemedText variant="muted" className="text-[10px] mb-1">
+                Fat (g)
+              </ThemedText>
+              <TextInput
+                value={fatText}
+                onChangeText={setFatText}
+                onFocus={scrollToField}
+                keyboardType="decimal-pad"
+                className="rounded-xl px-3 py-3 text-base"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
+                placeholder="—"
+              />
+            </View>
+          </View>
+
+          <MealDescriptionSections
+            sections={descriptionSections}
+            onChange={setDescriptionSections}
             onFocus={scrollToField}
-            multiline
-            textAlignVertical="top"
-            className="rounded-xl px-3 py-3 text-base min-h-[80px]"
-            style={inputStyle}
-            placeholderTextColor={placeholderColor}
-            placeholder="Notes about portions, ingredients, etc."
+            inputStyle={inputStyle}
+            placeholderColor={placeholderColor}
+            theme={theme}
           />
         </ScrollView>
 

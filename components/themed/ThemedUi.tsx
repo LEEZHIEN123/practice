@@ -43,38 +43,84 @@ export function ProfileScreenHeader({
   title,
   onBack,
   rightSlot,
+  centerSlot,
   titleClassName = "text-2xl",
+  titleBadgeCount,
   className = "mb-2",
   backButtonClassName = "w-12 h-12",
+  backIcon = "arrow-back",
   backIconSize = 24,
   headerHeightClassName = "h-12",
 }: {
   title: string;
   onBack: () => void;
   rightSlot?: React.ReactNode;
+  centerSlot?: React.ReactNode;
   titleClassName?: string;
+  titleBadgeCount?: number;
   className?: string;
   backButtonClassName?: string;
+  backIcon?: keyof typeof Ionicons.glyphMap;
   backIconSize?: number;
   headerHeightClassName?: string;
 }) {
   const { textPrimary } = useThemedScreen();
+  const badgeLabel =
+    titleBadgeCount && titleBadgeCount > 0
+      ? titleBadgeCount > 9
+        ? "9+"
+        : String(titleBadgeCount)
+      : null;
   return (
     <View className={`relative justify-center ${headerHeightClassName} ${className}`} pointerEvents="box-none">
       <View className="absolute left-0 top-0 h-full w-20 justify-center pl-2 z-10">
-        <ThemedBackButton onPress={onBack} className={backButtonClassName} size={backIconSize} />
+        <ThemedBackButton
+          onPress={onBack}
+          className={backButtonClassName}
+          icon={backIcon}
+          size={backIconSize}
+        />
       </View>
       {rightSlot ? (
         <View className="absolute right-0 top-0 h-full justify-center pr-2 z-10">{rightSlot}</View>
       ) : null}
-      <Text
-        pointerEvents="none"
-        numberOfLines={2}
-        className={`absolute left-0 right-0 text-center font-extrabold px-16 ${titleClassName}`}
-        style={textPrimary}
-      >
-        {title}
-      </Text>
+      {centerSlot ? (
+        <View
+          pointerEvents="box-none"
+          className="absolute left-0 right-0 flex-row items-center pl-[5.5rem] pr-16"
+        >
+          {centerSlot}
+        </View>
+      ) : (
+        <View
+          pointerEvents="none"
+          className="absolute left-0 right-0 flex-row items-center justify-center px-16"
+        >
+          <Text
+            numberOfLines={2}
+            className={`text-center font-extrabold ${titleClassName}`}
+            style={textPrimary}
+          >
+            {title}
+          </Text>
+          {badgeLabel ? (
+            <View
+              style={{
+                marginLeft: 8,
+                minWidth: 20,
+                height: 20,
+                paddingHorizontal: 5,
+                borderRadius: 10,
+                backgroundColor: "#ef4444",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "800", color: "#ffffff" }}>{badgeLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+      )}
     </View>
   );
 }

@@ -73,6 +73,20 @@ type UserProfile = {
   isAdmin?: boolean;
 };
 
+function firestoreWriteError(e: unknown, action: string): Error {
+  const code = (e as { code?: string })?.code;
+  if (code === "permission-denied") {
+    return new Error(
+      `Could not ${action}. Sign in again, or publish the latest Firestore rules in Firebase Console.`
+    );
+  }
+  if (code === "unavailable" || code === "network-request-failed") {
+    return new Error("Network unavailable. Check your connection and try again.");
+  }
+  if (e instanceof Error && e.message.length > 0) return e;
+  return new Error(`Could not ${action}. Please try again.`);
+}
+
 async function getCurrentUserProfile(): Promise<{ uid: string; profile: UserProfile }> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
@@ -189,6 +203,7 @@ function mapReport(id: string, data: Record<string, unknown>): CommunityReport {
     targetContent: String(data.targetContent ?? ""),
     targetAuthorId: String(data.targetAuthorId ?? ""),
     targetAuthorName: String(data.targetAuthorName ?? "User"),
+    read: data.read === true,
   };
 }
 
@@ -399,13 +414,13 @@ export function subscribePosts(
   onData: (posts: CommunityPost[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  // Single-field filter only — no composite index required. Sort client-side.
-  const q = query(collection(db, "communityPosts"), where("blocked", "==", false));
+  // No query filters — avoids composite indexes and includes legacy posts missing `blocked`.
   return onSnapshot(
-    q,
+    collection(db, "communityPosts"),
     (snap) => {
       const posts = snap.docs
         .map((d) => mapPost(d.id, d.data() as Record<string, unknown>))
+        .filter((post) => !post.blocked)
         .sort((a, b) => b.createdAt - a.createdAt);
       onData(posts);
     },
@@ -435,7 +450,11 @@ export async function uploadChatAudio(localUri: string, chatId: string): Promise
 export async function createPost(params: {
   content: string;
   tags?: string[];
-}): Promise<void> {
+}): Promise<CommunityPost> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  await user.getIdToken(true).catch(() => {});
+
   const { uid, profile } = await getCurrentUserProfile();
   const trimmed = params.content.trim();
   if (!trimmed) throw new Error("Add text to post");
@@ -443,23 +462,46 @@ export async function createPost(params: {
   const tags = (params.tags ?? []).map((t) => t.trim()).filter(Boolean);
   const now = Date.now();
 
-  await addDoc(collection(db, "communityPosts"), {
+  const payload = {
     authorId: uid,
     authorName: profile.name,
-    authorProfileImage: profile.profileImage,
+    authorProfileImage: profile.profileImage ?? null,
     content: trimmed,
-    category: "general",
+    category: "general" as PostCategory,
     imageUrl: null,
     tags,
-    editHistory: [],
+    editHistory: [] as PostEditSnapshot[],
     updatedAt: now,
     likeCount: 0,
     commentCount: 0,
-    likedBy: [],
+    likedBy: [] as string[],
     blocked: false,
     createdAt: now,
     createdAtServer: serverTimestamp(),
-  });
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, "communityPosts"), payload);
+    return {
+      id: docRef.id,
+      authorId: uid,
+      authorName: profile.name,
+      authorProfileImage: profile.profileImage ?? null,
+      content: trimmed,
+      category: "general",
+      imageUrl: null,
+      tags,
+      editHistory: [],
+      updatedAt: now,
+      likeCount: 0,
+      commentCount: 0,
+      likedBy: [],
+      blocked: false,
+      createdAt: now,
+    };
+  } catch (e) {
+    throw firestoreWriteError(e, "create post");
+  }
 }
 
 export async function updatePost(
@@ -692,26 +734,43 @@ export function subscribeChatMeta(
 export async function togglePostLike(post: CommunityPost): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
+  await user.getIdToken(true).catch(() => {});
 
   const postRef = doc(db, "communityPosts", post.id);
-  const liked = post.likedBy.includes(user.uid);
+  const snap = await getDoc(postRef);
+  if (!snap.exists()) throw new Error("Post not found");
 
-  await updateDoc(postRef, {
-    likedBy: liked ? arrayRemove(user.uid) : arrayUnion(user.uid),
-    likeCount: increment(liked ? -1 : 1),
-  });
+  const data = snap.data() as Record<string, unknown>;
+  const likedBy = Array.isArray(data.likedBy) ? data.likedBy.map(String) : [];
+  const liked = likedBy.includes(user.uid);
+  const nextLikedBy = liked
+    ? likedBy.filter((id) => id !== user.uid)
+    : [...likedBy, user.uid];
 
-  if (!liked) {
-    const { profile } = await getCurrentUserProfile();
-    await createCommunityNotification({
-      userId: post.authorId,
-      type: "post_like",
-      fromUserId: user.uid,
-      fromUserName: profile.name,
-      fromUserProfileImage: profile.profileImage,
-      postId: post.id,
-      postPreview: post.content.slice(0, 80),
+  try {
+    await updateDoc(postRef, {
+      likedBy: nextLikedBy,
+      likeCount: nextLikedBy.length,
     });
+  } catch (e) {
+    throw firestoreWriteError(e, "update like");
+  }
+
+  if (!liked && post.authorId !== user.uid) {
+    try {
+      const { profile } = await getCurrentUserProfile();
+      await createCommunityNotification({
+        userId: post.authorId,
+        type: "post_like",
+        fromUserId: user.uid,
+        fromUserName: profile.name,
+        fromUserProfileImage: profile.profileImage,
+        postId: post.id,
+        postPreview: post.content.slice(0, 80),
+      });
+    } catch {
+      // Like saved even if notifying the author fails.
+    }
   }
 }
 
@@ -863,6 +922,7 @@ export async function submitReport(params: {
     targetAuthorName: params.targetAuthorName,
     createdAt: Date.now(),
     createdAtServer: serverTimestamp(),
+    read: false,
   });
 
   if (params.targetType === "post") {
@@ -1087,6 +1147,48 @@ export async function rejectFriendRequest(requestId: string): Promise<void> {
   await updateDoc(doc(db, "friendRequests", requestId), { status: "rejected" });
 }
 
+export async function getPendingIncomingFriendRequest(
+  fromUserId: string
+): Promise<FriendRequest | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+
+  const snap = await getDocs(
+    query(
+      collection(db, "friendRequests"),
+      where("fromUserId", "==", fromUserId),
+      where("toUserId", "==", user.uid),
+      where("status", "==", "pending")
+    )
+  );
+  if (snap.empty) return null;
+  const docSnap = snap.docs[0];
+  return mapFriendRequest(docSnap.id, docSnap.data() as Record<string, unknown>);
+}
+
+export async function resolveFriendRequestNotificationByRequestId(
+  friendRequestId: string,
+  status: "accepted" | "rejected"
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const snap = await getDocs(
+    query(
+      collection(db, "communityNotifications"),
+      where("userId", "==", user.uid),
+      where("friendRequestId", "==", friendRequestId)
+    )
+  );
+  if (snap.empty) return;
+
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => {
+    batch.update(d.ref, { friendRequestStatus: status, read: true });
+  });
+  await batch.commit();
+}
+
 export function subscribeNotifications(
   onData: (items: CommunityNotification[]) => void,
   onError?: (error: Error) => void
@@ -1110,15 +1212,27 @@ export function subscribeNotifications(
   );
 }
 
+async function assertOwnNotification(notificationId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  const snap = await getDoc(doc(db, "communityNotifications", notificationId));
+  if (!snap.exists()) throw new Error("Notification not found");
+  const data = snap.data() as Record<string, unknown>;
+  if (data.userId !== user.uid) throw new Error("Not allowed");
+}
+
 export async function markNotificationRead(notificationId: string): Promise<void> {
+  await assertOwnNotification(notificationId);
   await updateDoc(doc(db, "communityNotifications", notificationId), { read: true });
 }
 
 export async function markNotificationUnread(notificationId: string): Promise<void> {
+  await assertOwnNotification(notificationId);
   await updateDoc(doc(db, "communityNotifications", notificationId), { read: false });
 }
 
 export async function deleteNotification(notificationId: string): Promise<void> {
+  await assertOwnNotification(notificationId);
   await deleteDoc(doc(db, "communityNotifications", notificationId));
 }
 
@@ -1546,6 +1660,10 @@ export function subscribePendingReports(
     },
     (error) => onError?.(error)
   );
+}
+
+export async function markReportRead(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "communityReports", reportId), { read: true });
 }
 
 async function sendAdminDirectMessage(recipientUserId: string, messageText: string): Promise<void> {

@@ -13,20 +13,24 @@ export type MealPhotoAnalysis = {
 
 export { isGeminiConfigured };
 
+export const NOT_FOOD_MESSAGE =
+  "This photo doesn't appear to contain food. Please take a photo of your meal or enter details manually.";
+
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 const ANALYSIS_PROMPT = `Analyze this meal photo. Estimate nutrition for the visible portion only.
 
 Return JSON with these exact keys:
-- title (string): short dish name
-- calories (number): estimated kcal
+- isFood (boolean): true only if the image clearly shows food or drink; false otherwise
+- title (string): short dish name when isFood is true; empty string when false
+- calories (number): estimated kcal when isFood is true; 0 when false
 - proteinG (number or null)
 - carbsG (number or null)
 - fatG (number or null)
-- description (string): one short portion note
+- description (string): one short portion note when isFood is true; empty string when false
 - confidence ("low" | "medium" | "high")
 
-If the image is not food, use title "Unknown food", calories 1, confidence "low".`;
+If the image is not food or drink, set isFood to false. Do not invent a food name or nutrition values.`;
 
 type GeminiPart = {
   text?: string;
@@ -105,6 +109,28 @@ function extractResponseText(data: GeminiGenerateResponse): string {
   return textParts.map((part) => part.text ?? "").join("").trim();
 }
 
+function isNotFoodResult(parsed: Record<string, unknown>, title: string): boolean {
+  if (parsed.isFood === false) return true;
+  if (typeof parsed.isFood === "string" && parsed.isFood.trim().toLowerCase() === "false") {
+    return true;
+  }
+
+  const normalizedTitle = title.toLowerCase().trim();
+  const notFoodTitles = [
+    "unknown food",
+    "not food",
+    "no food",
+    "non-food",
+    "non food",
+    "not a food",
+    "no meal",
+    "none",
+  ];
+  return notFoodTitles.some(
+    (phrase) => normalizedTitle === phrase || normalizedTitle.includes(phrase)
+  );
+}
+
 function parseAnalysisJson(raw: string): MealPhotoAnalysis {
   const payload = extractJsonPayload(raw);
   let parsed: Record<string, unknown>;
@@ -123,8 +149,12 @@ function parseAnalysisJson(raw: string): MealPhotoAnalysis {
       : "medium";
   const description = pickString(parsed, "description", "notes", "portion", "summary");
 
+  if (isNotFoodResult(parsed, title)) {
+    throw new Error(NOT_FOOD_MESSAGE);
+  }
+
   if (!title || !Number.isFinite(calories) || calories <= 0) {
-    throw new Error("Could not identify food in this photo. Enter the meal details manually.");
+    throw new Error(NOT_FOOD_MESSAGE);
   }
 
   return {
@@ -152,17 +182,6 @@ async function imageUriToBase64Jpeg(uri: string): Promise<string> {
     throw new Error("Could not prepare the photo for analysis.");
   }
   return result.base64;
-}
-
-function formatAnalysisDescription(analysis: MealPhotoAnalysis): string {
-  const macroParts: string[] = [];
-  if (analysis.proteinG != null) macroParts.push(`Protein ${analysis.proteinG}g`);
-  if (analysis.carbsG != null) macroParts.push(`Carbs ${analysis.carbsG}g`);
-  if (analysis.fatG != null) macroParts.push(`Fat ${analysis.fatG}g`);
-  const macroLine = macroParts.length > 0 ? macroParts.join(" · ") : "";
-  const estimateLabel = `AI estimate (${analysis.confidence} confidence)`;
-  const notes = analysis.description.trim();
-  return [estimateLabel, macroLine, notes].filter(Boolean).join("\n");
 }
 
 /** Send a meal photo to Gemini Vision and return estimated nutrition fields. */
@@ -195,6 +214,7 @@ export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnaly
         responseSchema: {
           type: "object",
           properties: {
+            isFood: { type: "boolean" },
             title: { type: "string" },
             calories: { type: "number" },
             proteinG: { type: "number", nullable: true },
@@ -203,7 +223,7 @@ export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnaly
             description: { type: "string" },
             confidence: { type: "string", enum: ["low", "medium", "high"] },
           },
-          required: ["title", "calories", "description", "confidence"],
+          required: ["isFood", "title", "calories", "description", "confidence"],
         },
         thinkingConfig: { thinkingBudget: 0 },
       },
@@ -268,6 +288,6 @@ export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnaly
   const analysis = parseAnalysisJson(text);
   return {
     ...analysis,
-    description: formatAnalysisDescription(analysis),
+    description: analysis.description.trim(),
   };
 }

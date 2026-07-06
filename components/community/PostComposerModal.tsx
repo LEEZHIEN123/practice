@@ -1,5 +1,5 @@
 import { Pressable } from "@/components/Pressable";
-import { ThemedBackButton, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { DEFAULT_POST_TAGS } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -45,9 +46,13 @@ export function PostComposerModal({
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setBusy(false);
+      return;
+    }
     setContent(initial?.content ?? "");
     setTags(initial?.tags ?? []);
     setCustomTag("");
@@ -71,12 +76,21 @@ export function PostComposerModal({
   };
 
   const handleSubmit = async () => {
+    if (submitting || busy) return;
     if (!content.trim()) {
       Alert.alert("Post", "Add some text to your post.");
       return;
     }
-    await onSubmit({ content, tags });
+    setBusy(true);
+    Keyboard.dismiss();
+    try {
+      await onSubmit({ content, tags });
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const isSubmitting = submitting || busy;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -85,24 +99,36 @@ export function PostComposerModal({
         style={screenStyle}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={{ paddingTop: insets.top + 8 }} className="flex-1">
-          <View className="flex-row items-center px-4 mb-4">
-            <ThemedBackButton onPress={onClose} icon="close" size={24} className="mr-3" />
-            <ThemedText className="text-xl font-extrabold flex-1">{title}</ThemedText>
-            <Pressable
-              onPress={() => void handleSubmit()}
-              disabled={submitting}
-              className="rounded-full px-5 py-2.5 bg-[#52B69A]"
-            >
-              {submitting ? (
-                <ActivityIndicator color="white" size="small" />
-              ) : (
-                <Text className="text-sm font-extrabold text-white">Post</Text>
-              )}
-            </Pressable>
+        <View style={{ paddingTop: insets.top + 12 }} className="flex-1">
+          <View className="px-4 mb-4">
+            <ProfileScreenHeader
+              title={title}
+              onBack={onClose}
+              backIcon="close"
+              titleClassName="text-2xl"
+              rightSlot={
+                <Pressable
+                  onPress={() => void handleSubmit()}
+                  disabled={isSubmitting}
+                  hitSlop={8}
+                  className="rounded-full px-5 py-2.5"
+                  style={{ backgroundColor: "#52B69A", opacity: isSubmitting ? 0.7 : 1 }}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <Text className="text-sm font-extrabold text-white">Post</Text>
+                  )}
+                </Pressable>
+              }
+            />
           </View>
 
-          <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView
+            className="flex-1 px-4"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <TextInput
               value={content}
               onChangeText={setContent}

@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { imageCardOverlayOpacity } from "@/lib/appearance";
 import {
   DISCOVER_CARD_IMAGES,
   DISCOVER_CARD_IMAGE_POSITION,
@@ -7,7 +8,6 @@ import {
   DISCOVER_STACK_CARD_HEIGHT,
   type DiscoverCardKey,
 } from "@/lib/discoverCardImages";
-import { imageCardOverlayOpacity } from "@/lib/appearance";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";

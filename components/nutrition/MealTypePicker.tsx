@@ -1,8 +1,8 @@
 import { Pressable } from "@/components/Pressable";
 import { ThemedText } from "@/components/themed/ThemedUi";
 import {
-  MANUAL_MEAL_TYPES,
   MANUAL_MEAL_TYPE_LABELS,
+  MANUAL_MEAL_TYPES,
   MEAL_HISTORY_FILTER_LABELS,
   MEAL_HISTORY_FILTERS,
   type ManualMealType,

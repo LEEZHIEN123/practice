@@ -3,24 +3,35 @@ import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { BarcodeCameraScanner } from "@/components/nutrition/BarcodeCameraScanner";
 import { FoodLibraryRowMemo } from "@/components/nutrition/FoodLibraryRow";
 import { FoodLogSheet } from "@/components/nutrition/FoodLogSheet";
-import { MealHistoryFilterBar, MealLogModePicker, MealTypePicker } from "@/components/nutrition/MealTypePicker";
+import { MealDescriptionSections } from "@/components/nutrition/MealDescriptionSections";
 import { MealPhotoSection } from "@/components/nutrition/MealPhotoSection";
-import { ThemedBackButton, ThemedCard, ThemedText, useProfileCardStyles, ProfileScreenHeader } from "@/components/themed/ThemedUi";
+import { MealHistoryFilterBar, MealLogModePicker, MealTypePicker } from "@/components/nutrition/MealTypePicker";
+import { ProfileScreenHeader, ThemedCard, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import {
-  FOOD_INDEX,
-  getFoodDatasetForSearch,
-  prefetchFoodDataset,
-  type FoodListItem,
+    FOOD_INDEX,
+    getFoodDatasetForSearch,
+    prefetchFoodDataset,
+    type FoodListItem,
 } from "@/lib/foodDataset";
-import { loadMealHistory, removeMealHistoryEntry, type MealHistoryEntry } from "@/lib/mealLogHistory";
-import { logMealFood } from "@/lib/mealLogService";
-import {
-  MANUAL_MEAL_TYPE_LABELS,
-  type ManualMealType,
-  type MealHistoryFilter,
-} from "@/lib/manualMealTypes";
-import { fetchFoodByBarcode, type ScannedFoodProduct } from "@/lib/openFoodFacts";
 import { analyzeMealPhoto, isGeminiConfigured } from "@/lib/geminiFoodVision";
+import {
+    MANUAL_MEAL_TYPE_LABELS,
+    type ManualMealType,
+    type MealHistoryFilter,
+} from "@/lib/manualMealTypes";
+import {
+    findMealHistoryMatch,
+    formatDescriptionPreview,
+    formatHistoryMacros,
+    loadMealHistory,
+    mealDescriptionsMatchSearch,
+    normalizeMealDescriptions,
+    parseOptionalGrams,
+    removeMealHistoryEntry,
+    type MealHistoryEntry,
+} from "@/lib/mealLogHistory";
+import { logMealFood } from "@/lib/mealLogService";
+import { fetchFoodByBarcode, type ScannedFoodProduct } from "@/lib/openFoodFacts";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,23 +39,28 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 
 type NutritionSection = "library" | "barcode" | "log";
+
+function macroTextFromAnalysis(value: number | null): string {
+  return value != null ? String(value) : "";
+}
 
 type LogTarget = { kind: "barcode"; product: ScannedFoodProduct };
 
@@ -373,6 +389,17 @@ function BarcodeSection({
   );
 }
 
+type ManualLogInput = {
+  title: string;
+  calories: number;
+  mealType: ManualMealType;
+  descriptionSections?: string[];
+  photoUri?: string;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
+};
+
 function MealLogSection({
   calendarTz,
   theme,
@@ -388,13 +415,21 @@ function MealLogSection({
   const insets = useSafeAreaInsets();
   const { segmentTrackStyle, segmentActiveStyle } = useThemedScreen();
   const scrollRef = useRef<ScrollView>(null);
+  const foodNameRef = useRef<TextInput>(null);
+  const foodNameWrapRef = useRef<View>(null);
+  const caloriesWrapRef = useRef<View>(null);
+  const scrollYRef = useRef(0);
+  const pendingScrollWrapRef = useRef<View | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
   const [foodName, setFoodName] = useState("");
   const [caloriesText, setCaloriesText] = useState("");
-  const [description, setDescription] = useState("");
+  const [descriptionSections, setDescriptionSections] = useState<string[]>([""]);
+  const [proteinText, setProteinText] = useState("");
+  const [carbsText, setCarbsText] = useState("");
+  const [fatText, setFatText] = useState("");
   const [logging, setLogging] = useState(false);
   const [history, setHistory] = useState<MealHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -406,6 +441,39 @@ function MealLogSection({
   const [detailItem, setDetailItem] = useState<MealHistoryEntry | null>(null);
   const [subTab, setSubTab] = useState<"log" | "history">("log");
 
+  const scrollFieldIntoView = useCallback(
+    (wrapRef: React.RefObject<View | null>) => {
+      pendingScrollWrapRef.current = wrapRef.current;
+      const run = () => {
+        const wrap = pendingScrollWrapRef.current;
+        if (!wrap) return;
+        wrap.measureInWindow((_x, y, _w, h) => {
+          const kb = keyboardHeight > 0 ? keyboardHeight : 280;
+          const screenHeight = Dimensions.get("window").height;
+          const fieldBottom = y + h;
+          const visibleBottom = screenHeight - kb - 16;
+          if (fieldBottom > visibleBottom) {
+            scrollRef.current?.scrollTo({
+              y: scrollYRef.current + (fieldBottom - visibleBottom),
+              animated: true,
+            });
+          }
+        });
+      };
+      setTimeout(run, Platform.OS === "ios" ? 80 : 180);
+    },
+    [keyboardHeight]
+  );
+
+  const focusFoodNameField = useCallback(() => {
+    setSubTab("log");
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      foodNameRef.current?.focus();
+      scrollFieldIntoView(foodNameWrapRef);
+    }, Platform.OS === "ios" ? 100 : 250);
+  }, [scrollFieldIntoView]);
+
   const scrollToField = useCallback(() => {
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
@@ -413,18 +481,27 @@ function MealLogSection({
   }, []);
 
   const runPhotoAnalysis = useCallback(async (uri: string) => {
-    if (!isGeminiConfigured()) return;
+    if (!isGeminiConfigured()) {
+      setLogMode("manual");
+      return;
+    }
 
     setAnalyzingPhoto(true);
     try {
       const analysis = await analyzeMealPhoto(uri);
       setFoodName(analysis.title);
       setCaloriesText(String(analysis.calories));
-      setDescription(analysis.description);
+      setProteinText(macroTextFromAnalysis(analysis.proteinG));
+      setCarbsText(macroTextFromAnalysis(analysis.carbsG));
+      setFatText(macroTextFromAnalysis(analysis.fatG));
+      setDescriptionSections(analysis.description ? [analysis.description] : [""]);
     } catch (e: unknown) {
+      setLogMode("manual");
+      const message =
+        e instanceof Error ? e.message : "Could not analyze this photo. Enter meal details manually.";
       Alert.alert(
-        "Photo analysis",
-        e instanceof Error ? e.message : "Could not analyze this photo. Enter meal details manually."
+        message.includes("doesn't appear to contain food") ? "No food detected" : "Photo analysis",
+        message
       );
     } finally {
       setAnalyzingPhoto(false);
@@ -456,12 +533,21 @@ function MealLogSection({
     const showSub = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(event.endCoordinates.height);
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      pendingScrollWrapRef.current = null;
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (keyboardHeight > 0 && pendingScrollWrapRef.current) {
+      scrollFieldIntoView({ current: pendingScrollWrapRef.current });
+    }
+  }, [keyboardHeight, scrollFieldIntoView]);
 
   const refreshHistory = useCallback(async (uid: string | null) => {
     setHistoryLoading(true);
@@ -496,26 +582,31 @@ function MealLogSection({
     if (!q) return rows;
     return rows.filter(
       (item) =>
-        item.title.toLowerCase().includes(q) ||
-        (item.description?.toLowerCase().includes(q) ?? false)
+        item.title.toLowerCase().includes(q) || mealDescriptionsMatchSearch(item, q)
     );
   }, [history, historySearch, historyCategoryFilter]);
 
   const mealLogConfirmMessage = (
     title: string,
     calories: number,
-    type?: ManualMealType
+    type?: ManualMealType,
+    macros?: Pick<MealHistoryEntry, "proteinG" | "carbsG" | "fatG">
   ) => {
     const typeLine = type ? `\nType: ${MANUAL_MEAL_TYPE_LABELS[type]}` : "";
-    return `Food: ${title}\nCalories: ${calories} kcal${typeLine}\n\nAdd this meal to today?`;
+    const macroLine = macros ? formatHistoryMacros(macros) : null;
+    const macrosText = macroLine ? `\n${macroLine}` : "";
+    return `Food: ${title}\nCalories: ${calories} kcal${typeLine}${macrosText}\n\nAdd this meal to today?`;
   };
 
   const submitLog = async (input: {
     title: string;
     calories: number;
     mealType?: ManualMealType;
-    description?: string;
+    descriptionSections?: string[];
     photoUri?: string;
+    proteinG?: number;
+    carbsG?: number;
+    fatG?: number;
   }): Promise<boolean> => {
     if (!authUid) {
       Alert.alert("Sign in required", "Log in to save meals.");
@@ -528,8 +619,11 @@ function MealLogSection({
         calories: input.calories,
         source: "manual",
         category: input.mealType,
-        description: input.description,
+        descriptionSections: input.descriptionSections,
         photoUri: input.photoUri,
+        proteinG: input.proteinG,
+        carbsG: input.carbsG,
+        fatG: input.fatG,
         calendarTz,
       });
       const rows = await loadMealHistory(authUid);
@@ -544,38 +638,52 @@ function MealLogSection({
     }
   };
 
-  const logFromForm = () => {
+  const parseLogForm = (): ManualLogInput | null => {
     const title = foodName.trim();
     const calories = Math.round(Number(caloriesText.replace(/[^\d.]/g, "")));
     if (!title) {
       Alert.alert("Food name", "Enter what you ate.");
-      return;
+      return null;
     }
     if (!Number.isFinite(calories) || calories <= 0) {
       Alert.alert("Calories", "Enter a valid calorie amount.");
-      return;
+      return null;
     }
+    return {
+      title,
+      calories,
+      mealType,
+      descriptionSections: normalizeMealDescriptions({ descriptionSections }),
+      photoUri: imageUri ?? undefined,
+      proteinG: parseOptionalGrams(proteinText),
+      carbsG: parseOptionalGrams(carbsText),
+      fatG: parseOptionalGrams(fatText),
+    };
+  };
+
+  const clearLogForm = () => {
+    setFoodName("");
+    setCaloriesText("");
+    setProteinText("");
+    setCarbsText("");
+    setFatText("");
+    setDescriptionSections([""]);
+    setImageUri(null);
+    setMealType("breakfast");
+  };
+
+  const confirmAndSubmitLog = (input: ManualLogInput) => {
     Alert.alert(
       "Log this meal?",
-      mealLogConfirmMessage(title, calories, mealType),
+      mealLogConfirmMessage(input.title, input.calories, input.mealType, input),
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Log meal",
           onPress: () => {
-            void submitLog({
-              title,
-              calories,
-              mealType,
-              description: description.trim() || undefined,
-              photoUri: imageUri ?? undefined,
-            }).then((ok) => {
+            void submitLog(input).then((ok) => {
               if (!ok) return;
-              setFoodName("");
-              setCaloriesText("");
-              setDescription("");
-              setImageUri(null);
-              setMealType("breakfast");
+              clearLogForm();
             });
           },
         },
@@ -583,10 +691,39 @@ function MealLogSection({
     );
   };
 
+  const logFromForm = () => {
+    const input = parseLogForm();
+    if (!input) return;
+
+    const existing = findMealHistoryMatch(history, input.title);
+    if (existing) {
+      Alert.alert(
+        "Already in meal history",
+        `"${existing.title}" is already saved in your meal history. Replace the saved entry, or rename it on the Log meal form.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Rename",
+            onPress: () => {
+              focusFoodNameField();
+            },
+          },
+          {
+            text: "Replace",
+            onPress: () => confirmAndSubmitLog(input),
+          },
+        ]
+      );
+      return;
+    }
+
+    confirmAndSubmitLog(input);
+  };
+
   const confirmLogFromHistory = (item: MealHistoryEntry, onLogged?: () => void) => {
     Alert.alert(
       "Log this meal?",
-      mealLogConfirmMessage(item.title, item.calories, item.mealType),
+      mealLogConfirmMessage(item.title, item.calories, item.mealType, item),
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -596,8 +733,11 @@ function MealLogSection({
               title: item.title,
               calories: item.calories,
               mealType: item.mealType,
-              description: item.description,
+              descriptionSections: item.descriptionSections,
               photoUri: item.photoUri,
+              proteinG: item.proteinG,
+              carbsG: item.carbsG,
+              fatG: item.fatG,
             }).then((ok) => {
               if (ok) onLogged?.();
             });
@@ -668,8 +808,8 @@ function MealLogSection({
       {subTab === "log" ? (
         <KeyboardAvoidingView
           className="flex-1"
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 120 : 0}
+          behavior="padding"
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 100 : 0}
         >
           <ScrollView
             ref={scrollRef}
@@ -679,6 +819,10 @@ function MealLogSection({
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
+            onScroll={(event) => {
+              scrollYRef.current = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
           >
             <ThemedCard className="p-4">
               <MealLogModePicker
@@ -703,14 +847,15 @@ function MealLogSection({
 
               <MealTypePicker value={mealType} onChange={setMealType} />
 
-              <View>
+              <View ref={foodNameWrapRef}>
                 <ThemedText variant="muted" className="text-xs mb-1">
                   Food name
                 </ThemedText>
                 <TextInput
+                  ref={foodNameRef}
                   value={foodName}
                   onChangeText={setFoodName}
-                  onFocus={scrollToField}
+                  onFocus={() => scrollFieldIntoView(foodNameWrapRef)}
                   className="rounded-xl px-3 py-3 mb-3 text-base"
                   style={inputStyle}
                   placeholderTextColor={placeholderColor}
@@ -718,14 +863,14 @@ function MealLogSection({
                 />
               </View>
 
-              <View>
+              <View ref={caloriesWrapRef}>
                 <ThemedText variant="muted" className="text-xs mb-1">
                   Calories (kcal)
                 </ThemedText>
                 <TextInput
                   value={caloriesText}
                   onChangeText={setCaloriesText}
-                  onFocus={scrollToField}
+                  onFocus={() => scrollFieldIntoView(caloriesWrapRef)}
                   keyboardType="number-pad"
                   className="rounded-xl px-3 py-3 mb-3 text-base"
                   style={inputStyle}
@@ -734,22 +879,67 @@ function MealLogSection({
                 />
               </View>
 
-              <View>
-                <ThemedText variant="muted" className="text-xs mb-1">
-                  Description (optional)
+              <View className="mb-3">
+                <ThemedText variant="muted" className="text-xs mb-2">
+                  Macros (optional)
                 </ThemedText>
-                <TextInput
-                  value={description}
-                  onChangeText={setDescription}
-                  onFocus={scrollToField}
-                  multiline
-                  textAlignVertical="top"
-                  className="rounded-xl px-3 py-3 mb-4 text-base min-h-[80px]"
-                  style={inputStyle}
-                  placeholderTextColor={placeholderColor}
-                  placeholder="Notes about portions, ingredients, etc."
-                />
+                <View className="flex-row gap-2">
+                  <View className="flex-1">
+                    <ThemedText variant="muted" className="text-[10px] mb-1">
+                      Protein (g)
+                    </ThemedText>
+                    <TextInput
+                      value={proteinText}
+                      onChangeText={setProteinText}
+                      onFocus={scrollToField}
+                      keyboardType="decimal-pad"
+                      className="rounded-xl px-3 py-3 text-base"
+                      style={inputStyle}
+                      placeholderTextColor={placeholderColor}
+                      placeholder="—"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText variant="muted" className="text-[10px] mb-1">
+                      Carbs (g)
+                    </ThemedText>
+                    <TextInput
+                      value={carbsText}
+                      onChangeText={setCarbsText}
+                      onFocus={scrollToField}
+                      keyboardType="decimal-pad"
+                      className="rounded-xl px-3 py-3 text-base"
+                      style={inputStyle}
+                      placeholderTextColor={placeholderColor}
+                      placeholder="—"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText variant="muted" className="text-[10px] mb-1">
+                      Fat (g)
+                    </ThemedText>
+                    <TextInput
+                      value={fatText}
+                      onChangeText={setFatText}
+                      onFocus={scrollToField}
+                      keyboardType="decimal-pad"
+                      className="rounded-xl px-3 py-3 text-base"
+                      style={inputStyle}
+                      placeholderTextColor={placeholderColor}
+                      placeholder="—"
+                    />
+                  </View>
+                </View>
               </View>
+
+              <MealDescriptionSections
+                sections={descriptionSections}
+                onChange={setDescriptionSections}
+                onFocus={scrollToField}
+                inputStyle={inputStyle}
+                placeholderColor={placeholderColor}
+                theme={theme}
+              />
 
               <Pressable
                 onPress={logFromForm}
@@ -845,9 +1035,14 @@ function MealLogSection({
                           ? ` · ${MANUAL_MEAL_TYPE_LABELS[item.mealType]}`
                           : ""}
                       </ThemedText>
-                      {item.description ? (
+                      {formatHistoryMacros(item) ? (
+                        <ThemedText variant="secondary" className="text-xs mt-0.5">
+                          {formatHistoryMacros(item)}
+                        </ThemedText>
+                      ) : null}
+                      {formatDescriptionPreview(item) ? (
                         <ThemedText variant="secondary" className="text-xs mt-1" numberOfLines={2}>
-                          {item.description}
+                          {formatDescriptionPreview(item)}
                         </ThemedText>
                       ) : null}
                     </View>
@@ -925,13 +1120,22 @@ function MealLogSection({
                     ? ` · ${MANUAL_MEAL_TYPE_LABELS[detailItem.mealType]}`
                     : ""}
                 </ThemedText>
+                {formatHistoryMacros(detailItem) ? (
+                  <ThemedText variant="secondary" className="text-sm mt-2">
+                    {formatHistoryMacros(detailItem)}
+                  </ThemedText>
+                ) : null}
 
-                {detailItem.description ? (
-                  <View className="mt-4">
-                    <ThemedText variant="muted" className="text-xs font-bold mb-1">
-                      Description
-                    </ThemedText>
-                    <ThemedText className="text-sm leading-5">{detailItem.description}</ThemedText>
+                {normalizeMealDescriptions(detailItem).length > 0 ? (
+                  <View className="mt-4 gap-3">
+                    {normalizeMealDescriptions(detailItem).map((section, index) => (
+                      <View key={`${detailItem.id}-section-${index}`}>
+                        <ThemedText variant="muted" className="text-xs font-bold mb-1">
+                          Section {index + 1}
+                        </ThemedText>
+                        <ThemedText className="text-sm leading-5">{section}</ThemedText>
+                      </View>
+                    ))}
                   </View>
                 ) : (
                   <ThemedText variant="muted" className="text-sm mt-4">
