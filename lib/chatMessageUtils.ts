@@ -24,6 +24,12 @@ export function messageSummary(message: ChatMessage): string {
   if (message.messageType === "sticker") {
     return getChatSticker(message.stickerId ?? "")?.label ?? "Sticker";
   }
+  if (message.messageType === "post") {
+    const author = message.sharedPostAuthorName?.trim() || "Someone";
+    return message.text.trim()
+      ? `Shared ${author}'s post: ${message.text}`
+      : `Shared ${author}'s post`;
+  }
   if (message.text.trim()) return message.text;
   if (message.messageType === "image") return "Photo";
   if (message.messageType === "voice") return "Voice message";
@@ -44,6 +50,9 @@ export function buildMessageQuote(message: ChatMessage, senderName: string): Cha
 export function quotePreviewText(quote: ChatMessageQuote): string {
   if (quote.messageType === "sticker") {
     return getChatSticker(quote.stickerId ?? "")?.label ?? (quote.text || "Sticker");
+  }
+  if (quote.messageType === "post") {
+    return quote.text.trim() ? `Shared post: ${quote.text}` : "Shared post";
   }
   return quote.text;
 }

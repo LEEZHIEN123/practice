@@ -1,27 +1,29 @@
 import { Pressable } from "@/components/Pressable";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import {
-  ProfileScreenHeader,
-  ThemedCard,
-  ThemedScreen,
-  ThemedText,
-  useProfileCardStyles,
+    ProfileScreenHeader,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
-import type { CommunityNotification, CommunityPost, FriendRelation, PublicUserProfile } from "@/lib/communityTypes";
-import {
-  acceptFriendRequest,
-  deleteNotification,
-  getPostsByAuthor,
-  getPublicUserProfile,
-  loadFriendRelations,
-  markNotificationRead,
-  markNotificationUnread,
-  rejectFriendRequest,
-  resolveFriendRequestNotification,
-  subscribeNotifications,
-  subscribePosts,
-} from "@/lib/communityService";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
+import {
+    acceptFriendRequest,
+    deleteNotification,
+    deleteNotifications,
+    getPostsByAuthor,
+    getPublicUserProfile,
+    loadFriendRelations,
+    markNotificationRead,
+    markNotificationUnread,
+    markNotificationsRead,
+    rejectFriendRequest,
+    resolveFriendRequestNotification,
+    subscribeNotifications,
+    subscribePosts,
+} from "@/lib/communityService";
+import type { CommunityNotification, CommunityPost, FriendRelation, PublicUserProfile } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -57,6 +59,9 @@ export default function CommunityNotificationsScreen() {
   const [notifications, setNotifications] = useState<CommunityNotification[]>([]);
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [manageMode, setManageMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<PublicUserProfile | null>(null);
@@ -80,6 +85,40 @@ export default function CommunityNotificationsScreen() {
     () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId) : []),
     [allPosts, profileUserId]
   );
+
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.read).length,
+    [notifications]
+  );
+
+  const selectedCount = selectedIds.length;
+  const allSelected = notifications.length > 0 && selectedCount === notifications.length;
+
+  const exitManageMode = () => {
+    setManageMode(false);
+    setSelectedIds([]);
+  };
+
+  const toggleManageMode = () => {
+    if (manageMode) {
+      exitManageMode();
+      return;
+    }
+    setActionMenuId(null);
+    setManageMode(true);
+  };
+
+  const toggleSelected = (notificationId: string) => {
+    setSelectedIds((current) =>
+      current.includes(notificationId)
+        ? current.filter((id) => id !== notificationId)
+        : [...current, notificationId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : notifications.map((notification) => notification.id));
+  };
 
   const loadFriendRequest = async (requestId: string): Promise<FriendRequest | null> => {
     const snap = await getDoc(doc(db, "friendRequests", requestId));
@@ -209,7 +248,56 @@ export default function CommunityNotificationsScreen() {
     }
   };
 
+  const handleBulkMarkRead = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setBulkLoading(true);
+      await markNotificationsRead(selectedIds);
+      exitManageMode();
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not mark notifications as read.");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    Alert.alert(
+      "Delete notifications",
+      `Delete ${selectedIds.length} selected notification${selectedIds.length === 1 ? "" : "s"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                setBulkLoading(true);
+                await deleteNotifications(selectedIds);
+                exitManageMode();
+              } catch (e: unknown) {
+                Alert.alert(
+                  "Error",
+                  e instanceof Error ? e.message : "Could not delete notifications."
+                );
+              } finally {
+                setBulkLoading(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   const handleOpen = async (notification: CommunityNotification) => {
+    if (manageMode) {
+      toggleSelected(notification.id);
+      return;
+    }
+
     if (
       notification.type === "friend_request" &&
       notification.friendRequestId &&
@@ -223,12 +311,16 @@ export default function CommunityNotificationsScreen() {
       (notification.type === "post_like" || notification.type === "post_comment") &&
       notification.postId
     ) {
+      if (!notification.read) {
+        try {
+          await markNotificationRead(notification.id);
+        } catch {
+          // Continue navigation even if marking read fails.
+        }
+      }
       router.push({
-        pathname: "/community" as any,
-        params: {
-          openPostId: notification.postId,
-          openComments: notification.type === "post_comment" ? "1" : "0",
-        },
+        pathname: "/community-post" as any,
+        params: { postId: notification.postId },
       });
     }
   };
@@ -249,6 +341,8 @@ export default function CommunityNotificationsScreen() {
         return "liked your post";
       case "post_comment":
         return "commented on your post";
+      case "post_reported":
+        return "reported your post. Support Admin will review it";
       default:
         return "sent you a notification";
     }
@@ -259,16 +353,11 @@ export default function CommunityNotificationsScreen() {
     Boolean(notification.friendRequestId) &&
     (notification.friendRequestStatus ?? "pending") === "pending";
 
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.read).length,
-    [notifications]
-  );
-
   return (
     <ThemedScreen>
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: insets.bottom + 24,
+          paddingBottom: insets.bottom + (manageMode ? 96 : 24),
           paddingHorizontal: 12,
           paddingTop: insets.top + 12,
         }}
@@ -276,9 +365,45 @@ export default function CommunityNotificationsScreen() {
       >
         <ProfileScreenHeader
           title="Notifications"
-          onBack={() => router.back()}
-          titleBadgeCount={unreadCount}
+          onBack={() => (manageMode ? exitManageMode() : router.back())}
+          titleBadgeCount={manageMode ? undefined : unreadCount}
+          rightSlot={
+            notifications.length > 0 ? (
+              <Pressable
+                onPress={toggleManageMode}
+                className="w-12 h-12 rounded-full items-center justify-center active:opacity-70"
+                style={cardStyle}
+              >
+                <Ionicons
+                  name={manageMode ? "close" : "options-outline"}
+                  size={22}
+                  color={theme.textPrimary}
+                />
+              </Pressable>
+            ) : null
+          }
         />
+
+        {manageMode ? (
+          <Pressable
+            onPress={toggleSelectAll}
+            className="flex-row items-center mb-3 px-1 active:opacity-70"
+          >
+            <Ionicons
+              name={allSelected ? "checkbox" : "square-outline"}
+              size={20}
+              color={theme.accentText}
+            />
+            <ThemedText className="text-sm font-extrabold ml-2">
+              {allSelected ? "Deselect all" : "Select all"}
+            </ThemedText>
+            {selectedCount > 0 ? (
+              <ThemedText variant="muted" className="text-sm ml-2">
+                ({selectedCount} selected)
+              </ThemedText>
+            ) : null}
+          </Pressable>
+        ) : null}
 
         <ThemedCard className="p-5 gap-3" rounded="2xl">
           {notifications.length === 0 ? (
@@ -290,8 +415,9 @@ export default function CommunityNotificationsScreen() {
           {notifications.map((notification) => {
             const busy = loadingAction === notification.id;
             const unread = !notification.read;
-            const showActions = actionMenuId === notification.id;
+            const showActions = !manageMode && actionMenuId === notification.id;
             const pendingFriend = isPendingFriendRequest(notification);
+            const selected = selectedIds.includes(notification.id);
             return (
               <View
                 key={notification.id}
@@ -300,10 +426,13 @@ export default function CommunityNotificationsScreen() {
                   unread
                     ? { backgroundColor: theme.accentSoft, borderColor: theme.accentText }
                     : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
+                  manageMode && selected
+                    ? { borderColor: theme.accent, borderWidth: 2 }
+                    : undefined,
                   { position: "relative" },
                 ]}
               >
-                {unread ? (
+                {unread && !manageMode ? (
                   <View
                     style={{
                       position: "absolute",
@@ -330,16 +459,26 @@ export default function CommunityNotificationsScreen() {
                     }
                     void handleOpen(notification);
                   }}
-                  onLongPress={() =>
+                  onLongPress={() => {
+                    if (manageMode) return;
                     setActionMenuId((current) =>
                       current === notification.id ? null : notification.id
-                    )
-                  }
+                    );
+                  }}
                   delayLongPress={280}
                 >
                   <View className="flex-row items-center">
+                    {manageMode ? (
+                      <View className="mr-3">
+                        <Ionicons
+                          name={selected ? "checkbox" : "square-outline"}
+                          size={22}
+                          color={selected ? theme.accentText : theme.iconMuted}
+                        />
+                      </View>
+                    ) : null}
                     <ProfileAvatar uri={notification.fromUserProfileImage} size={44} />
-                    <View className="flex-1 ml-3" style={unread ? { paddingRight: 14 } : undefined}>
+                    <View className="flex-1 ml-3" style={unread && !manageMode ? { paddingRight: 14 } : undefined}>
                       <View className="flex-row items-start justify-between gap-2">
                         <ThemedText className="text-sm font-extrabold flex-1">
                           {notification.fromUserName}
@@ -360,7 +499,7 @@ export default function CommunityNotificationsScreen() {
                   </View>
                 </Pressable>
 
-                {pendingFriend ? (
+                {pendingFriend && !manageMode ? (
                   <Pressable
                     onPress={() => void openFriendRequestProfile(notification)}
                     disabled={busy}
@@ -415,6 +554,56 @@ export default function CommunityNotificationsScreen() {
           })}
         </ThemedCard>
       </ScrollView>
+
+      {manageMode ? (
+        <View
+          className="absolute left-0 right-0 flex-row gap-3 px-4 pt-3 border-t"
+          style={{
+            bottom: 0,
+            paddingBottom: insets.bottom + 12,
+            backgroundColor: theme.screenBg,
+            borderTopColor: theme.cardBorder,
+          }}
+        >
+          <Pressable
+            onPress={() => void handleBulkMarkRead()}
+            disabled={selectedCount === 0 || bulkLoading}
+            className="flex-1 rounded-full py-3.5 items-center border active:opacity-90"
+            style={[
+              cardStyle,
+              rowBorderStyle,
+              selectedCount === 0 || bulkLoading ? { opacity: 0.45 } : undefined,
+            ]}
+          >
+            {bulkLoading ? (
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            ) : (
+              <ThemedText variant="secondary" className="text-sm font-extrabold">
+                Mark as read
+              </ThemedText>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={handleBulkDelete}
+            disabled={selectedCount === 0 || bulkLoading}
+            className="flex-1 rounded-full py-3.5 items-center border active:opacity-90"
+            style={[
+              cardStyle,
+              rowBorderStyle,
+              { borderColor: theme.danger, backgroundColor: `${theme.danger}18` },
+              selectedCount === 0 || bulkLoading ? { opacity: 0.45 } : undefined,
+            ]}
+          >
+            {bulkLoading ? (
+              <ActivityIndicator size="small" color={theme.danger} />
+            ) : (
+              <Text className="text-sm font-extrabold" style={{ color: theme.danger }}>
+                Delete
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
 
       <UserProfileModal
         visible={profileUserId !== null}

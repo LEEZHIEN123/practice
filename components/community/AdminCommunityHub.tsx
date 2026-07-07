@@ -1,31 +1,38 @@
+import { AdminPendingReportTip } from "@/components/community/AdminPendingReportTip";
+import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { Pressable } from "@/components/Pressable";
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
-import { PostCommentsSheet } from "@/components/community/PostCommentsSheet";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
+import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { AppearanceModal } from "@/components/profile/AppearanceModal";
 import { ThemedBackButton, ProfileScreenHeader, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
-import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
+import { formatChatMessageTime, formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
   adminBlockComment,
   adminBlockPost,
+  adminPermanentlyDeleteReportTarget,
+  blockReportedComment,
   blockReportedPost,
   chatDisplayName,
   createPost,
   deletePost,
   dismissReport,
+  reopenReport,
+  restoreReportedPost,
   ensureDirectChat,
   fetchPostById,
   filterPostsByTag,
   getCurrentUserProfile,
-  inviteUserByEmail,
   subscribeChats,
-  subscribePendingReports,
+  subscribeReports,
+  syncPendingReviewFlags,
   subscribePosts,
   subscribeRegisteredUsers,
+  subscribeComments,
   syncAdminConfig,
   togglePostLike,
   updatePost,
@@ -48,12 +55,17 @@ import {
   updatePassword,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
+import {
+  adminDeleteUserAccount,
+  adminResendPasswordResetEmail,
+} from "@/lib/adminUserManagement";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -66,6 +78,39 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../firebaseConfig";
 
 type AdminTab = "community" | "reports" | "users" | "profile";
+type ReportTypeFilter = "all" | "post" | "comment";
+type ReviewedStatusFilter = "all" | "blocked" | "dismissed";
+
+function matchesReportSearch(report: CommunityReport, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [
+    report.reporterName,
+    report.reason,
+    report.targetContent,
+    report.targetAuthorName,
+    report.targetType,
+  ].some((field) => field.toLowerCase().includes(needle));
+}
+
+function filterReportsByType(reports: CommunityReport[], typeFilter: ReportTypeFilter): CommunityReport[] {
+  if (typeFilter === "all") return reports;
+  return reports.filter((report) => report.targetType === typeFilter);
+}
+
+function commentFromCommunityReport(report: CommunityReport): CommunityComment {
+  return {
+    id: report.targetId,
+    postId: report.postId,
+    authorId: report.targetAuthorId,
+    authorName: report.targetAuthorName,
+    authorProfileImage: null,
+    text: report.targetContent,
+    parentCommentId: null,
+    replyToAuthorName: null,
+    createdAt: report.createdAt,
+  };
+}
 
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
   return (
@@ -88,6 +133,92 @@ function AdminBadge({ small }: { small?: boolean }) {
       className={`rounded-full bg-[#dbeafe] items-center justify-center ${small ? "w-6 h-6 ml-1.5" : "w-8 h-8"}`}
     >
       <Ionicons name="shield-checkmark" size={small ? 14 : 18} color="#2563eb" />
+    </View>
+  );
+}
+
+function ReportFilterDropdown<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  open,
+  onOpenChange,
+}: {
+  label: string;
+  value: T;
+  options: { key: T; label: string }[];
+  onChange: (next: T) => void;
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+}) {
+  const { theme, cardStyle, surfaceStyle, textPrimary, textMuted } = useThemedScreen();
+  const selectedLabel = options.find((option) => option.key === value)?.label ?? value;
+
+  return (
+    <View
+      className="flex-1"
+      style={open ? { zIndex: 30, elevation: 30 } : { zIndex: 1, elevation: 1 }}
+    >
+      <Text className="text-xs font-extrabold mb-1.5" style={textMuted}>
+        {label}
+      </Text>
+      <View style={{ position: "relative" }}>
+        <Pressable
+          onPress={() => {
+            Keyboard.dismiss();
+            onOpenChange(!open);
+          }}
+          className="flex-row items-center justify-between rounded-2xl px-4 py-3 border"
+          style={cardStyle}
+        >
+          <Text className="text-sm font-bold" style={textPrimary}>
+            {selectedLabel}
+          </Text>
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={theme.iconMuted} />
+        </Pressable>
+        {open ? (
+          <View
+            className="absolute left-0 right-0 mt-1 rounded-2xl border overflow-hidden"
+            style={[
+              surfaceStyle,
+              {
+                top: "100%",
+                zIndex: 40,
+                elevation: 40,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.14,
+                shadowRadius: 8,
+              },
+            ]}
+          >
+            {options.map((option, index) => (
+              <Pressable
+                key={option.key}
+                onPress={() => {
+                  onChange(option.key);
+                  onOpenChange(false);
+                }}
+                className="px-4 py-3"
+                style={[
+                  { backgroundColor: theme.rowBg },
+                  index < options.length - 1
+                    ? { borderBottomWidth: 1, borderBottomColor: theme.cardBorder }
+                    : undefined,
+                ]}
+              >
+                <Text
+                  className="text-sm font-bold"
+                  style={{ color: value === option.key ? theme.accentText : theme.textMuted }}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -133,6 +264,29 @@ export function AdminCommunityHub() {
   const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [activeTab, setActiveTab] = useState<AdminTab>("community");
   const [communitySubTab, setCommunitySubTab] = useState<"feed" | "chat">("feed");
+  const [reportsSubTab, setReportsSubTab] = useState<"pending" | "reviewed">("pending");
+  const [pendingReportSearch, setPendingReportSearch] = useState("");
+  const [reviewedReportSearch, setReviewedReportSearch] = useState("");
+  const [pendingReportTypeFilter, setPendingReportTypeFilter] = useState<ReportTypeFilter>("all");
+  const [reviewedReportTypeFilter, setReviewedReportTypeFilter] = useState<ReportTypeFilter>("all");
+  const [reviewedReportStatusFilter, setReviewedReportStatusFilter] =
+    useState<ReviewedStatusFilter>("all");
+  const [openReportFilter, setOpenReportFilter] = useState<
+    "pending-type" | "reviewed-type" | "reviewed-status" | null
+  >(null);
+  const [reportDeleteMode, setReportDeleteMode] = useState(false);
+  const [selectedReportDeleteIds, setSelectedReportDeleteIds] = useState<string[]>([]);
+  const [reportBulkDeleting, setReportBulkDeleting] = useState(false);
+
+  const {
+    scrollRef: reportsScrollRef,
+    scrollFieldIntoView: scrollReportSearchIntoView,
+    scrollBottomPad: reportsScrollBottomPad,
+    keyboardHeight: reportsKeyboardHeight,
+    onScroll: onReportsScroll,
+  } = useScrollFieldAboveKeyboard();
+  const pendingReportSearchWrapRef = useRef<View>(null);
+  const reviewedReportSearchWrapRef = useRef<View>(null);
 
   const [myName, setMyName] = useState("Admin");
   const [myEmail, setMyEmail] = useState("");
@@ -144,12 +298,14 @@ export function AdminCommunityHub() {
   const [reports, setReports] = useState<CommunityReport[]>([]);
   const [users, setUsers] = useState<RegisteredUser[]>([]);
   const [reportActionId, setReportActionId] = useState<string | null>(null);
-  const [commentsPost, setCommentsPost] = useState<CommunityPost | null>(null);
   const [reportDetailReport, setReportDetailReport] = useState<CommunityReport | null>(null);
   const [reportDetailPost, setReportDetailPost] = useState<CommunityPost | null>(null);
   const [reportDetailLoading, setReportDetailLoading] = useState(false);
+  const [reportDetailComments, setReportDetailComments] = useState<CommunityComment[]>([]);
+  const [reportDetailCommentsReady, setReportDetailCommentsReady] = useState(false);
 
   const [menuPost, setMenuPost] = useState<CommunityPost | null>(null);
+  const [sharePost, setSharePost] = useState<CommunityPost | null>(null);
   const [historyPost, setHistoryPost] = useState<CommunityPost | null>(null);
   const [editingPost, setEditingPost] = useState<CommunityPost | null>(null);
   const [composerVisible, setComposerVisible] = useState(false);
@@ -165,9 +321,8 @@ export function AdminCommunityHub() {
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
 
-  const [inviteVisible, setInviteVisible] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviting, setInviting] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
+  const [userManagementActionId, setUserManagementActionId] = useState<string | null>(null);
 
   const [selectedUser, setSelectedUser] = useState<RegisteredUser | null>(null);
   const [userDetailVisible, setUserDetailVisible] = useState(false);
@@ -224,7 +379,7 @@ export function AdminCommunityHub() {
   }, [handleFirestoreErr]);
 
   useEffect(() => {
-    const unsub = subscribePendingReports(setReports, handleFirestoreErr);
+    const unsub = subscribeReports(setReports, handleFirestoreErr);
     return unsub;
   }, [handleFirestoreErr]);
 
@@ -242,10 +397,69 @@ export function AdminCommunityHub() {
     [chats, currentUserId]
   );
 
+  const pendingReports = useMemo(
+    () => reports.filter((report) => report.status === "pending"),
+    [reports]
+  );
+
+  const pendingReportPostIds = useMemo(
+    () => new Set(pendingReports.filter((report) => report.targetType === "post").map((report) => report.postId)),
+    [pendingReports]
+  );
+
+  const pendingPostIdsKey = useMemo(
+    () =>
+      pendingReports
+        .map((report) => report.postId)
+        .sort()
+        .join(","),
+    [pendingReports]
+  );
+
+  useEffect(() => {
+    if (!pendingPostIdsKey) return;
+    void syncPendingReviewFlags(pendingReports).catch(() => {});
+  }, [pendingPostIdsKey, pendingReports]);
+
+  const reviewedReports = useMemo(
+    () => reports.filter((report) => report.status !== "pending"),
+    [reports]
+  );
+
+  const filteredPendingReports = useMemo(() => {
+    let list = filterReportsByType(pendingReports, pendingReportTypeFilter);
+    if (pendingReportSearch.trim()) {
+      list = list.filter((report) => matchesReportSearch(report, pendingReportSearch));
+    }
+    return list;
+  }, [pendingReports, pendingReportTypeFilter, pendingReportSearch]);
+
+  const filteredReviewedReports = useMemo(() => {
+    let list = filterReportsByType(reviewedReports, reviewedReportTypeFilter);
+    if (reviewedReportStatusFilter === "blocked") {
+      list = list.filter((report) => report.status === "resolved");
+    } else if (reviewedReportStatusFilter === "dismissed") {
+      list = list.filter((report) => report.status === "dismissed");
+    }
+    if (reviewedReportSearch.trim()) {
+      list = list.filter((report) => matchesReportSearch(report, reviewedReportSearch));
+    }
+    return list;
+  }, [reviewedReports, reviewedReportTypeFilter, reviewedReportStatusFilter, reviewedReportSearch]);
+
   const displayedPosts = useMemo(
     () => filterPostsByTag(posts, tagFilterView ? activeTagFilter : null),
     [posts, activeTagFilter, tagFilterView]
   );
+
+  const filteredUsers = useMemo(() => {
+    const needle = userSearch.trim().toLowerCase();
+    if (!needle) return users;
+    return users.filter(
+      (user) =>
+        user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle)
+    );
+  }, [users, userSearch]);
 
   const openTagFromPost = (tag: string) => {
     setActiveTagFilter(tag);
@@ -278,14 +492,73 @@ export function AdminCommunityHub() {
   };
 
   const handleBlock = (report: CommunityReport) => {
+    const isComment = report.targetType === "comment";
     Alert.alert(
-      "Block Post",
-      "This post will be hidden from all users. The reporter and post author will be notified via Support Admin chat.",
+      isComment ? "Block Comment" : "Block Post",
+      isComment
+        ? "This comment will be removed. The reporter and comment author will be notified via Support Admin chat."
+        : "This post will be hidden from all users. The reporter and post author will be notified via Support Admin chat.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Continue",
           onPress: () => setBlockTarget({ type: "report", report }),
+        },
+      ]
+    );
+  };
+
+  const exitReportDeleteMode = () => {
+    setReportDeleteMode(false);
+    setSelectedReportDeleteIds([]);
+  };
+
+  const toggleReportDeleteSelection = (reportId: string) => {
+    setSelectedReportDeleteIds((prev) =>
+      prev.includes(reportId) ? prev.filter((id) => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const handleConfirmBulkPermanentDelete = (reportsToDelete: CommunityReport[]) => {
+    const selectedReports = reportsToDelete.filter((report) =>
+      selectedReportDeleteIds.includes(report.id)
+    );
+    if (selectedReports.length === 0) return;
+
+    Alert.alert(
+      "Permanently delete selected",
+      `Delete ${selectedReports.length} selected report${
+        selectedReports.length === 1 ? "" : "s"
+      } and permanently remove the related posts or comments? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete permanently",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                setReportBulkDeleting(true);
+                for (const report of selectedReports) {
+                  await adminPermanentlyDeleteReportTarget(report);
+                }
+                exitReportDeleteMode();
+                Alert.alert(
+                  "Deleted",
+                  `${selectedReports.length} item${
+                    selectedReports.length === 1 ? "" : "s"
+                  } permanently deleted.`
+                );
+              } catch (e: unknown) {
+                Alert.alert(
+                  "Error",
+                  e instanceof Error ? e.message : "Could not permanently delete content."
+                );
+              } finally {
+                setReportBulkDeleting(false);
+              }
+            })();
+          },
         },
       ]
     );
@@ -381,29 +654,18 @@ export function AdminCommunityHub() {
     );
   };
 
-  const requestBlockComment = (comment: CommunityComment) => {
-    if (!commentsPost) return;
-    Alert.alert(
-      "Block Comment",
-      "This comment will be removed and the author will be notified via Support Admin chat.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () =>
-            setBlockTarget({ type: "comment", post: commentsPost, comment }),
-        },
-      ]
-    );
-  };
-
   const handleConfirmBlock = async (reason: string) => {
     if (!blockTarget) return;
     try {
       if (blockTarget.type === "report" && blockTarget.report) {
         setReportActionId(blockTarget.report.id);
-        await blockReportedPost(blockTarget.report, reason);
-        Alert.alert("Post blocked", "The reporter and author have been notified.");
+        if (blockTarget.report.targetType === "comment") {
+          await blockReportedComment(blockTarget.report, reason);
+          Alert.alert("Comment blocked", "The reporter and author have been notified.");
+        } else {
+          await blockReportedPost(blockTarget.report, reason);
+          Alert.alert("Post blocked", "The reporter and author have been notified.");
+        }
       } else if (blockTarget.type === "post" && blockTarget.post) {
         await adminBlockPost(blockTarget.post, reason);
         Alert.alert("Post blocked", "The author has been notified.");
@@ -420,9 +682,32 @@ export function AdminCommunityHub() {
     }
   };
 
+  useEffect(() => {
+    if (!reportDetailPost || !reportDetailReport) {
+      setReportDetailComments([]);
+      setReportDetailCommentsReady(false);
+      return;
+    }
+    setReportDetailCommentsReady(false);
+    const unsub = subscribeComments(reportDetailPost.id, (comments) => {
+      setReportDetailComments(comments);
+      setReportDetailCommentsReady(true);
+    });
+    return unsub;
+  }, [reportDetailPost?.id, reportDetailReport?.id]);
+
+  const closeReportDetailModal = () => {
+    setReportDetailReport(null);
+    setReportDetailPost(null);
+    setReportDetailComments([]);
+    setReportDetailCommentsReady(false);
+  };
+
   const openReportPostDetail = async (report: CommunityReport) => {
     setReportDetailReport(report);
     setReportDetailPost(null);
+    setReportDetailComments([]);
+    setReportDetailCommentsReady(false);
     setReportDetailLoading(true);
     try {
       const fromFeed = posts.find((p) => p.id === report.postId);
@@ -434,32 +719,161 @@ export function AdminCommunityHub() {
       }
     } catch {
       Alert.alert("Error", "Could not load post details.");
-      setReportDetailReport(null);
+      closeReportDetailModal();
     } finally {
       setReportDetailLoading(false);
     }
   };
 
-  const handleInvite = async () => {
-    try {
-      setInviting(true);
-      await inviteUserByEmail(inviteEmail);
-      const clean = inviteEmail.trim().toLowerCase();
-      const subject = encodeURIComponent("Join our Fitness App");
-      const body = encodeURIComponent(
-        "You are invited to join our fitness community app. Please register using this email address."
-      );
-      const mailUrl = `mailto:${clean}?subject=${subject}&body=${body}`;
-      const canOpen = await Linking.canOpenURL(mailUrl);
-      if (canOpen) await Linking.openURL(mailUrl);
-      Alert.alert("Invite sent", `Invitation recorded for ${clean}.`);
-      setInviteVisible(false);
-      setInviteEmail("");
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not send invite.");
-    } finally {
-      setInviting(false);
+  const reportDetailReportedCommentDisplay = useMemo(() => {
+    if (!reportDetailReport || reportDetailReport.targetType !== "comment") return null;
+    if (!reportDetailPost) {
+      return { comment: commentFromCommunityReport(reportDetailReport), removed: true };
     }
+    const live = reportDetailComments.find((comment) => comment.id === reportDetailReport.targetId);
+    if (live) return { comment: live, removed: false };
+    if (!reportDetailCommentsReady) return null;
+    return { comment: commentFromCommunityReport(reportDetailReport), removed: true };
+  }, [
+    reportDetailComments,
+    reportDetailCommentsReady,
+    reportDetailPost,
+    reportDetailReport,
+  ]);
+
+  const renderReportDetailPostSummary = () => {
+    if (!reportDetailPost) return null;
+
+    return (
+      <View className="mb-4" style={{ borderBottomColor: theme.cardBorder }}>
+        <Text className="text-xs font-extrabold uppercase mb-3" style={{ color: theme.accentText }}>
+          Post
+        </Text>
+        <View className="flex-row items-center mb-3">
+          <ProfileAvatar uri={reportDetailPost.authorProfileImage} size={44} />
+          <View className="ml-3 flex-1">
+            <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
+              {reportDetailPost.authorName}
+            </Text>
+            <Text className="text-xs mt-0.5" style={textMuted}>
+              {formatPostDisplayTime(reportDetailPost.createdAt)}
+            </Text>
+          </View>
+        </View>
+        {reportDetailPost.content ? (
+          <Text className="text-sm leading-6" style={textSecondary}>
+            {reportDetailPost.content}
+          </Text>
+        ) : null}
+        {reportDetailPost.imageUrl ? (
+          <Image
+            source={{ uri: reportDetailPost.imageUrl }}
+            style={{
+              width: "100%",
+              aspectRatio: 4 / 3,
+              maxHeight: 220,
+              borderRadius: 16,
+              marginTop: 12,
+            }}
+            contentFit="cover"
+          />
+        ) : null}
+        {reportDetailPost.tags.length > 0 ? (
+          <View className="flex-row flex-wrap gap-2 mt-3">
+            {reportDetailPost.tags.map((tag) => (
+              <View
+                key={tag}
+                className="rounded-full px-2.5 py-1 border"
+                style={{ backgroundColor: theme.rowBg, borderColor: theme.accent }}
+              >
+                <Text className="text-[10px] font-bold" style={{ color: theme.accentText }}>
+                  #{tag}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        <Text className="text-xs font-bold mt-4" style={{ color: theme.accentText }}>
+          {reportDetailPost.likeCount} likes • {reportDetailPost.commentCount} comments
+        </Text>
+      </View>
+    );
+  };
+
+  const renderReportDetailCommentBody = (
+    comment: CommunityComment,
+    options?: { showReport?: boolean; highlighted?: boolean; removed?: boolean }
+  ) => (
+    <View
+      className="rounded-2xl px-4 py-3 border"
+      style={[
+        surfaceStyle,
+        options?.highlighted ? { borderColor: theme.danger, borderWidth: 2 } : undefined,
+      ]}
+    >
+      {options?.removed ? (
+        <Text className="text-[10px] font-extrabold uppercase mb-2" style={{ color: theme.danger }}>
+          Comment removed
+        </Text>
+      ) : null}
+      <View className="flex-row items-center">
+        <ProfileAvatar uri={comment.authorProfileImage} size={40} />
+        <View className="ml-3 flex-1">
+          <Text className="text-sm font-extrabold" style={textPrimary}>
+            {comment.authorName}
+          </Text>
+          <Text className="text-[10px] mt-0.5" style={textMuted}>
+            {formatChatMessageTime(comment.createdAt)}
+          </Text>
+        </View>
+      </View>
+      {comment.replyToAuthorName ? (
+        <Text className="text-xs font-bold mt-2" style={{ color: theme.accentText }}>
+          Replying to {comment.replyToAuthorName}
+        </Text>
+      ) : null}
+      <Text className="text-sm mt-2 leading-6" style={textSecondary}>
+        {comment.text}
+      </Text>
+      {options?.showReport && reportDetailReport ? (
+        <View
+          className="mt-4 rounded-2xl px-4 py-3 border"
+          style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
+        >
+          <Text className="text-xs font-extrabold uppercase" style={{ color: theme.danger }}>
+            Report
+          </Text>
+          <Text className="text-sm mt-2 leading-5" style={textSecondary}>
+            By {reportDetailReport.reporterName}: {reportDetailReport.reason}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const renderReportDetailReportedCommentSection = () => {
+    if (!reportDetailReport || reportDetailReport.targetType !== "comment") return null;
+
+    return (
+      <View className="mt-5">
+        <Text className="text-xs font-extrabold uppercase mb-3" style={{ color: theme.accentText }}>
+          Reported comment
+        </Text>
+        {!reportDetailPost || reportDetailCommentsReady ? (
+          reportDetailReportedCommentDisplay ? (
+            renderReportDetailCommentBody(reportDetailReportedCommentDisplay.comment, {
+              showReport: true,
+              highlighted: true,
+              removed: reportDetailReportedCommentDisplay.removed,
+            })
+          ) : null
+        ) : (
+          <View className="py-6 items-center">
+            <ActivityIndicator size="small" color={theme.accentText} />
+          </View>
+        )}
+      </View>
+    );
   };
 
   const handleChangePassword = async () => {
@@ -495,9 +909,31 @@ export function AdminCommunityHub() {
     }
   };
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.replace("/login");
+  const handleLogout = () => {
+    Alert.alert("Log out?", "You will need to sign in again to use your account.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            try {
+              await signOut(auth);
+              router.replace("/login");
+            } catch {
+              Alert.alert("Error", "Could not log out. Please try again.");
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
+  const openPostDetail = (postId: string) => {
+    router.push({
+      pathname: "/community-post" as any,
+      params: { postId },
+    });
   };
 
   const openUserDetail = async (user: RegisteredUser) => {
@@ -544,6 +980,64 @@ export function AdminCommunityHub() {
     }
   };
 
+  const handleResendPasswordReset = (user: RegisteredUser) => {
+    Alert.alert(
+      "Resend password link",
+      `Send a password reset email to ${user.email}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send",
+          onPress: () => {
+            void (async () => {
+              try {
+                setUserManagementActionId(user.id);
+                await adminResendPasswordResetEmail(user.email);
+                Alert.alert(
+                  "Email sent",
+                  `A password reset link was sent to ${user.email}. Ask them to check Inbox, Spam, and Promotions.`
+                );
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not send reset email.");
+              } finally {
+                setUserManagementActionId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteUserAccount = (user: RegisteredUser) => {
+    Alert.alert(
+      "Delete user account",
+      `Delete ${user.name}'s account and remove all app data? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                setUserManagementActionId(user.id);
+                await adminDeleteUserAccount(user.id, user.email);
+                setUserDetailVisible(false);
+                setSelectedUser(null);
+                Alert.alert("Account deleted", `${user.name}'s app data has been removed.`);
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete account.");
+              } finally {
+                setUserManagementActionId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   const handleDismiss = useCallback((report: CommunityReport) => {
     Alert.alert(
       "Dismiss report",
@@ -567,6 +1061,54 @@ export function AdminCommunityHub() {
         },
       ]
     );
+  }, []);
+
+  const handleReopenReport = useCallback((report: CommunityReport) => {
+    Alert.alert(
+      "Move to pending",
+      report.targetType === "post"
+        ? "Move this report back to pending review? The post will be visible in the community again with a notice for all users."
+        : "Move this report back to pending review?",
+      [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Move",
+        onPress: () => {
+          void (async () => {
+            try {
+              setReportActionId(report.id);
+              await reopenReport(report);
+            } catch (e: unknown) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Could not reopen report.");
+            } finally {
+              setReportActionId(null);
+            }
+          })();
+        },
+      },
+    ]);
+  }, []);
+
+  const handleRestorePost = useCallback((report: CommunityReport) => {
+    Alert.alert("Restore post", "Restore this blocked post to the community?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Restore",
+        onPress: () => {
+          void (async () => {
+            try {
+              setReportActionId(report.id);
+              await restoreReportedPost(report);
+              Alert.alert("Post restored", "The author has been notified.");
+            } catch (e: unknown) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Could not restore post.");
+            } finally {
+              setReportActionId(null);
+            }
+          })();
+        },
+      },
+    ]);
   }, []);
 
   const renderCommunityTab = () => (
@@ -669,8 +1211,14 @@ export function AdminCommunityHub() {
               {displayedPosts.map((post) => {
                 const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
                 const isOwnPost = post.authorId === currentUserId;
+                const hasPendingPostReport = pendingReportPostIds.has(post.id);
                 return (
-                <View key={post.id} className="rounded-2xl px-4 py-4" style={surfaceStyle}>
+                <Pressable
+                  key={post.id}
+                  onPress={() => openPostDetail(post.id)}
+                  className="rounded-2xl px-4 py-4"
+                  style={surfaceStyle}
+                >
                   <View className="flex-row items-center">
                     <ProfileAvatar uri={post.authorProfileImage} size={40} />
                     <View className="flex-1 ml-3">
@@ -694,6 +1242,11 @@ export function AdminCommunityHub() {
                       <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
                     </Pressable>
                   </View>
+                  {hasPendingPostReport ? (
+                    <View className="mt-3">
+                      <AdminPendingReportTip target="post" />
+                    </View>
+                  ) : null}
                   <Text className="text-sm mt-3 leading-6" style={textSecondary}>
                     {post.content}
                   </Text>
@@ -732,7 +1285,7 @@ export function AdminCommunityHub() {
                       </Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => setCommentsPost(post)}
+                      onPress={() => openPostDetail(post.id)}
                       className="flex-row items-center"
                     >
                       <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
@@ -742,7 +1295,7 @@ export function AdminCommunityHub() {
                       </Text>
                     </Pressable>
                   </View>
-                </View>
+                </Pressable>
               );
               })}
             </View>
@@ -802,145 +1355,501 @@ export function AdminCommunityHub() {
     </ScrollView>
   );
 
-  const renderReportsTab = () => (
-    <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
-      <AdminTabHeader title="Report Management" />
-      <View className="rounded-[28px] p-5 gap-3" style={cardStyle}>
-        <View className="flex-row items-baseline">
-          <Text className="text-base font-extrabold" style={textPrimary}>
-            Total pending:{" "}
-          </Text>
-          <Text className="text-base font-extrabold" style={{ color: "#ef4444" }}>
-            {reports.length}
-          </Text>
+  const renderReportsTab = () => {
+    const reportTypeOptions = [
+      { key: "all" as const, label: "All" },
+      { key: "post" as const, label: "Post" },
+      { key: "comment" as const, label: "Comment" },
+    ];
+    const reportStatusOptions = [
+      { key: "all" as const, label: "All" },
+      { key: "blocked" as const, label: "Blocked" },
+      { key: "dismissed" as const, label: "Dismissed" },
+    ];
+
+    const renderReportTotalsHeader = (
+      totalLabel: string,
+      totalCount: number,
+      totalColor: string,
+      reportsForDelete: CommunityReport[]
+    ) => (
+      <>
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-baseline">
+            <Text className="text-base font-extrabold" style={textPrimary}>
+              {totalLabel}:{" "}
+            </Text>
+            <Text className="text-base font-extrabold" style={{ color: totalColor }}>
+              {totalCount}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => {
+              if (reportDeleteMode) exitReportDeleteMode();
+              else {
+                setSelectedReportDeleteIds([]);
+                setReportDeleteMode(true);
+              }
+            }}
+            className="flex-row items-center rounded-full px-3 py-1.5 border"
+            style={{
+              backgroundColor: reportDeleteMode ? theme.rowBg : theme.dangerSoft,
+              borderColor: reportDeleteMode ? theme.cardBorder : theme.danger,
+            }}
+          >
+            <Ionicons
+              name={reportDeleteMode ? "close" : "trash-outline"}
+              size={14}
+              color={reportDeleteMode ? theme.iconMuted : theme.danger}
+            />
+            <Text
+              className="text-[10px] font-extrabold ml-1.5"
+              style={{ color: reportDeleteMode ? theme.textMuted : theme.danger }}
+            >
+              {reportDeleteMode ? "Cancel" : "Permanent delete"}
+            </Text>
+          </Pressable>
         </View>
-        {reports.length === 0 ? (
-          <Text className="text-sm text-center py-8" style={textMuted}>
-            No pending reports.
-          </Text>
+        {reportDeleteMode ? (
+          <Pressable
+            onPress={() => handleConfirmBulkPermanentDelete(reportsForDelete)}
+            disabled={selectedReportDeleteIds.length === 0 || reportBulkDeleting}
+            className="rounded-full py-2.5 items-center flex-row justify-center"
+            style={{
+              backgroundColor: "#ef4444",
+              opacity: selectedReportDeleteIds.length === 0 || reportBulkDeleting ? 0.5 : 1,
+            }}
+          >
+            {reportBulkDeleting ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" />
+                <Text className="text-xs font-extrabold text-white ml-1.5">
+                  Confirm delete ({selectedReportDeleteIds.length})
+                </Text>
+              </>
+            )}
+          </Pressable>
         ) : null}
-        {reports.map((report) => {
-          const busy = reportActionId === report.id;
-          return (
-            <View key={report.id} className="rounded-2xl px-4 py-4" style={surfaceStyle}>
-              <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
-                {report.targetType}
-              </Text>
-              <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
-                By {report.reporterName}
-              </Text>
-              <Text className="text-sm mt-1" style={textSecondary}>
-                Reason: {report.reason}
-              </Text>
-              <Text
-                className="text-sm mt-3 rounded-xl px-3 py-3 border"
-                style={[
-                  { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
-                  textSecondary,
-                ]}
-              >
-                {report.targetContent}
-              </Text>
-              {report.targetType === "post" ? (
-                <Pressable
-                  onPress={() => void openReportPostDetail(report)}
-                  className="mt-3 rounded-full py-2.5 items-center border"
-                  style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7" }}
-                >
-                  <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
-                </Pressable>
-              ) : null}
-              {report.targetType === "post" ? (
-                <View className="flex-row gap-2 mt-3">
-                  <Pressable
-                    onPress={() => void handleBlock(report)}
-                    disabled={busy}
-                    className="flex-1 rounded-full py-2.5 items-center bg-[#ef4444]"
-                  >
-                    <Text className="text-xs font-extrabold text-white">Block Post</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleDismiss(report)}
-                    disabled={busy}
-                    className="flex-1 rounded-full py-2.5 items-center border"
-                    style={cardStyle}
-                  >
-                    <Text className="text-xs font-extrabold" style={textSecondary}>
-                      Dismiss
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <Pressable
-                  onPress={() => handleDismiss(report)}
-                  disabled={busy}
-                  className="mt-3 rounded-full py-2.5 items-center border"
-                  style={cardStyle}
-                >
-                  <Text className="text-xs font-extrabold" style={textSecondary}>
-                    Dismiss
-                  </Text>
-                </Pressable>
-              )}
+      </>
+    );
+
+    const renderReportSelectionCheckbox = (reportId: string) => {
+      if (!reportDeleteMode) return null;
+      const selected = selectedReportDeleteIds.includes(reportId);
+      return (
+        <View className="mr-3">
+          <Ionicons
+            name={selected ? "checkbox" : "square-outline"}
+            size={22}
+            color={selected ? theme.accentText : theme.iconMuted}
+          />
+        </View>
+      );
+    };
+
+    return (
+    <KeyboardAvoidingView behavior="padding" className="flex-1">
+    <ScrollView
+      ref={reportsScrollRef}
+      keyboardShouldPersistTaps="handled"
+      onScroll={(event) => onReportsScroll(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
+      contentContainerStyle={{
+        paddingBottom: reportsScrollBottomPad + (reportsKeyboardHeight > 0 ? 24 : 100),
+        paddingHorizontal: 12,
+        paddingTop: 12,
+      }}
+    >
+      <AdminTabHeader title="Report Management" />
+      <View
+        className="rounded-[28px] p-5 gap-3"
+        style={[cardStyle, openReportFilter ? { overflow: "visible", zIndex: 20 } : undefined]}
+      >
+        <View className="flex-row mb-1">
+          <Pressable
+            onPress={() => {
+              setOpenReportFilter(null);
+              exitReportDeleteMode();
+              setReportsSubTab("pending");
+            }}
+            className="flex-1 rounded-full py-3 items-center mr-2"
+            style={reportsSubTab === "pending" ? segmentActiveStyle : segmentTrackStyle}
+          >
+            <Text
+              className="text-sm font-extrabold"
+              style={{ color: reportsSubTab === "pending" ? theme.accentText : theme.textMuted }}
+            >
+              Pending
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setOpenReportFilter(null);
+              exitReportDeleteMode();
+              setReportsSubTab("reviewed");
+            }}
+            className="flex-1 rounded-full py-3 items-center ml-2"
+            style={reportsSubTab === "reviewed" ? segmentActiveStyle : segmentTrackStyle}
+          >
+            <Text
+              className="text-sm font-extrabold"
+              style={{ color: reportsSubTab === "reviewed" ? theme.accentText : theme.textMuted }}
+            >
+              Reviewed
+            </Text>
+          </Pressable>
+        </View>
+
+        {reportsSubTab === "pending" ? (
+          <>
+            {renderReportTotalsHeader(
+              "Total pending",
+              pendingReports.length,
+              "#ef4444",
+              filteredPendingReports
+            )}
+            <CommunitySearchBar
+              value={pendingReportSearch}
+              onChangeText={setPendingReportSearch}
+              placeholder="Search reports..."
+              className="mb-0"
+              wrapRef={pendingReportSearchWrapRef}
+              onFocus={() => scrollReportSearchIntoView(pendingReportSearchWrapRef)}
+            />
+            <View
+              style={openReportFilter ? { zIndex: 30, elevation: 30, overflow: "visible" } : undefined}
+            >
+              <ReportFilterDropdown
+                label="Report Type"
+                value={pendingReportTypeFilter}
+                options={reportTypeOptions}
+                onChange={setPendingReportTypeFilter}
+                open={openReportFilter === "pending-type"}
+                onOpenChange={(next) => setOpenReportFilter(next ? "pending-type" : null)}
+              />
             </View>
-          );
-        })}
+            {pendingReports.length === 0 ? (
+              <Text className="text-sm text-center py-8" style={textMuted}>
+                No pending reports.
+              </Text>
+            ) : filteredPendingReports.length === 0 ? (
+              <Text className="text-sm text-center py-8" style={textMuted}>
+                No reports match your search or filters.
+              </Text>
+            ) : null}
+            {filteredPendingReports.map((report) => {
+              const busy = reportActionId === report.id;
+              const cardDisabled = reportDeleteMode || busy;
+              const selected = selectedReportDeleteIds.includes(report.id);
+              return (
+                <View
+                  key={report.id}
+                  className="rounded-2xl px-4 py-4"
+                  style={[
+                    surfaceStyle,
+                    reportDeleteMode && selected
+                      ? { borderColor: theme.accent, borderWidth: 2 }
+                      : undefined,
+                  ]}
+                >
+                  {reportDeleteMode ? (
+                    <Pressable
+                      onPress={() => toggleReportDeleteSelection(report.id)}
+                      className="flex-row items-center"
+                    >
+                      {renderReportSelectionCheckbox(report.id)}
+                      <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
+                        {report.targetType}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
+                      {report.targetType}
+                    </Text>
+                  )}
+                  <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
+                    By {report.reporterName}
+                  </Text>
+                  <Text className="text-sm mt-1" style={textSecondary}>
+                    Reason: {report.reason}
+                  </Text>
+                  <Text
+                    className="text-sm mt-3 rounded-xl px-3 py-3 border"
+                    style={[
+                      { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
+                      textSecondary,
+                    ]}
+                  >
+                    {report.targetContent}
+                  </Text>
+                  <Pressable
+                    onPress={() => void openReportPostDetail(report)}
+                    disabled={cardDisabled}
+                    className="mt-3 rounded-full py-2.5 items-center border"
+                    style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
+                  >
+                    <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
+                  </Pressable>
+                  <View className="flex-row gap-2 mt-3">
+                    <Pressable
+                      onPress={() => void handleBlock(report)}
+                      disabled={cardDisabled}
+                      className="flex-1 rounded-full py-2.5 items-center"
+                      style={{ backgroundColor: "#ef4444", opacity: cardDisabled ? 0.5 : 1 }}
+                    >
+                      <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                        {report.targetType === "comment" ? "Block Comment" : "Block Post"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDismiss(report)}
+                      disabled={cardDisabled}
+                      className="flex-1 rounded-full py-2.5 items-center border"
+                      style={[cardStyle, cardDisabled ? { opacity: 0.5 } : undefined]}
+                    >
+                      <Text className="text-xs font-extrabold" style={textSecondary}>
+                        Dismiss
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            {renderReportTotalsHeader(
+              "Total reviewed",
+              reviewedReports.length,
+              "#3b82f6",
+              filteredReviewedReports
+            )}
+            <CommunitySearchBar
+              value={reviewedReportSearch}
+              onChangeText={setReviewedReportSearch}
+              placeholder="Search reports..."
+              className="mb-0"
+              wrapRef={reviewedReportSearchWrapRef}
+              onFocus={() => scrollReportSearchIntoView(reviewedReportSearchWrapRef)}
+            />
+            <View
+              className="flex-row gap-3"
+              style={openReportFilter ? { zIndex: 30, elevation: 30, overflow: "visible" } : undefined}
+            >
+              <ReportFilterDropdown
+                label="Report Type"
+                value={reviewedReportTypeFilter}
+                options={reportTypeOptions}
+                onChange={setReviewedReportTypeFilter}
+                open={openReportFilter === "reviewed-type"}
+                onOpenChange={(next) => setOpenReportFilter(next ? "reviewed-type" : null)}
+              />
+              <ReportFilterDropdown
+                label="Status"
+                value={reviewedReportStatusFilter}
+                options={reportStatusOptions}
+                onChange={setReviewedReportStatusFilter}
+                open={openReportFilter === "reviewed-status"}
+                onOpenChange={(next) => setOpenReportFilter(next ? "reviewed-status" : null)}
+              />
+            </View>
+            {reviewedReports.length === 0 ? (
+              <Text className="text-sm text-center py-6" style={textMuted}>
+                No reviewed reports yet.
+              </Text>
+            ) : filteredReviewedReports.length === 0 ? (
+              <Text className="text-sm text-center py-6" style={textMuted}>
+                No reports match your search or filters.
+              </Text>
+            ) : null}
+            {filteredReviewedReports.map((report) => {
+              const busy = reportActionId === report.id;
+              const isResolved = report.status === "resolved";
+              const isDismissed = report.status === "dismissed";
+              const cardDisabled = reportDeleteMode || busy;
+              const selected = selectedReportDeleteIds.includes(report.id);
+              return (
+                <View
+                  key={report.id}
+                  className="rounded-2xl px-4 py-4 border"
+                  style={[
+                    cardStyle,
+                    reportDeleteMode && selected
+                      ? { borderColor: theme.accent, borderWidth: 2 }
+                      : undefined,
+                  ]}
+                >
+                  {reportDeleteMode ? (
+                    <Pressable
+                      onPress={() => toggleReportDeleteSelection(report.id)}
+                      className="flex-row items-center"
+                    >
+                      {renderReportSelectionCheckbox(report.id)}
+                      <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
+                        {report.targetType}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
+                      {report.targetType}
+                    </Text>
+                  )}
+                  <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
+                    By {report.reporterName}
+                  </Text>
+                  <Text className="text-sm mt-1" style={textSecondary}>
+                    Status: {report.status === "resolved" ? "Blocked" : "Dismissed"}
+                  </Text>
+                  <Text
+                    className="text-sm mt-3 rounded-xl px-3 py-3 border"
+                    style={[
+                      { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
+                      textSecondary,
+                    ]}
+                  >
+                    {report.targetContent}
+                  </Text>
+                  <Pressable
+                    onPress={() => void openReportPostDetail(report)}
+                    disabled={cardDisabled}
+                    className="mt-3 rounded-full py-2.5 items-center border"
+                    style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
+                  >
+                    <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
+                  </Pressable>
+                  <View className="flex-row gap-2 mt-3">
+                    {report.targetType === "post" && isResolved ? (
+                      <Pressable
+                        onPress={() => handleRestorePost(report)}
+                        disabled={cardDisabled}
+                        className="flex-1 rounded-full py-2.5 items-center"
+                        style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
+                      >
+                        <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                          Restore Post
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {isDismissed ? (
+                      <Pressable
+                        onPress={() => void handleBlock(report)}
+                        disabled={cardDisabled}
+                        className="flex-1 rounded-full py-2.5 items-center"
+                        style={{ backgroundColor: "#ef4444", opacity: cardDisabled ? 0.5 : 1 }}
+                      >
+                        <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                          {report.targetType === "comment" ? "Block Comment" : "Block Post"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={() => handleReopenReport(report)}
+                      disabled={cardDisabled}
+                      className="flex-1 rounded-full py-2.5 items-center"
+                      style={{ backgroundColor: "#2563eb", opacity: cardDisabled ? 0.5 : 1 }}
+                    >
+                      <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                        Move to Pending
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        )}
       </View>
     </ScrollView>
-  );
+    </KeyboardAvoidingView>
+    );
+  };
 
   const renderUsersTab = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
-      <View className="flex-row items-center mb-1">
-        <Text className="text-3xl font-extrabold flex-1" style={textPrimary}>
-          User Management
-        </Text>
-        <Pressable
-          onPress={() => {
-            setInviteEmail("");
-            setInviteVisible(true);
-          }}
-          className="rounded-full px-5 py-3 bg-[#52B69A] flex-row items-center"
-        >
-          <Ionicons name="mail-outline" size={18} color="white" />
-          <Text className="text-sm font-extrabold text-white ml-2">Invite</Text>
-        </Pressable>
-      </View>
-      <Text className="text-sm font-bold mb-3" style={{ color: theme.accentText }}>
-        {users.length} registered users
+      <Text className="text-3xl font-extrabold mb-1" style={textPrimary}>
+        User Management
       </Text>
+      <Text className="text-sm font-bold mb-3" style={{ color: theme.accentText }}>
+        {filteredUsers.length === users.length
+          ? `${users.length} registered users`
+          : `${filteredUsers.length} of ${users.length} users`}
+      </Text>
+      <CommunitySearchBar
+        className="mb-4"
+        value={userSearch}
+        onChangeText={setUserSearch}
+        placeholder="Search by name or email"
+      />
       <View className="rounded-[28px] p-5 gap-3" style={cardStyle}>
         {users.length === 0 ? (
           <Text className="text-sm text-center py-8" style={textMuted}>
             No registered users yet.
           </Text>
+        ) : filteredUsers.length === 0 ? (
+          <Text className="text-sm text-center py-8" style={textMuted}>
+            No users match your search.
+          </Text>
         ) : null}
-        {users.map((user) => (
+        {filteredUsers.map((user) => {
+          const busy = userManagementActionId === user.id;
+          return (
           <View
             key={user.id}
-            className="flex-row items-center rounded-2xl px-4 py-4"
+            className="rounded-2xl px-4 py-4"
             style={surfaceStyle}
           >
-            <ProfileAvatar uri={user.profileImage} size={40} />
-            <View className="flex-1 ml-3">
-              <Text className="text-sm font-extrabold" style={textPrimary}>
-                {user.name}
-              </Text>
-              <Text className="text-xs mt-0.5" style={textMuted}>
-                {user.email}
-              </Text>
+            <View className="flex-row items-center">
+              <ProfileAvatar uri={user.profileImage} size={40} />
+              <View className="flex-1 ml-3">
+                <Text className="text-sm font-extrabold" style={textPrimary}>
+                  {user.name}
+                </Text>
+                <Text className="text-xs mt-0.5" style={textMuted}>
+                  {user.email}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => void openUserDetail(user)}
+                className="rounded-full px-4 py-2 border flex-row items-center"
+                style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
+              >
+                <Ionicons name="eye-outline" size={14} color={theme.accentText} />
+                <Text className="text-xs font-extrabold ml-1.5" style={{ color: theme.accentText }}>
+                  View Profile
+                </Text>
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => void openUserDetail(user)}
-              className="rounded-full px-4 py-2 border"
-              style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
-            >
-              <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
-                View
-              </Text>
-            </Pressable>
+            <View className="flex-row gap-2 mt-3">
+              <Pressable
+                onPress={() => handleResendPasswordReset(user)}
+                disabled={busy}
+                className="flex-1 rounded-full py-2.5 items-center border flex-row justify-center"
+                style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: busy ? 0.6 : 1 }}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color="#52B69A" />
+                ) : (
+                  <>
+                    <Ionicons name="mail-outline" size={14} color="#52B69A" />
+                    <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => handleDeleteUserAccount(user)}
+                disabled={busy}
+                className="flex-1 rounded-full py-2.5 items-center flex-row justify-center"
+                style={{ backgroundColor: "#ef4444", opacity: busy ? 0.6 : 1 }}
+              >
+                <Ionicons name="trash-outline" size={14} color="#ffffff" />
+                <Text className="text-xs font-extrabold text-white ml-1.5">Delete account</Text>
+              </Pressable>
+            </View>
           </View>
-        ))}
+        );
+        })}
       </View>
     </ScrollView>
   );
@@ -1061,7 +1970,7 @@ export function AdminCommunityHub() {
       </Pressable>
 
       <Pressable
-        onPress={() => void handleLogout()}
+        onPress={handleLogout}
         className="rounded-3xl py-4 items-center justify-center mt-1"
         style={rowStyle}
       >
@@ -1097,6 +2006,7 @@ export function AdminCommunityHub() {
         {activeTab === "profile" ? renderProfileTab() : null}
       </View>
 
+      {!(activeTab === "reports" && reportsKeyboardHeight > 0) ? (
       <View
         className="flex-row px-2 pt-2"
         style={[navStyle, { paddingBottom: insets.bottom + 8 }]}
@@ -1104,8 +2014,8 @@ export function AdminCommunityHub() {
         {tabs.map((tab) => {
           const active = activeTab === tab.key;
           const badge =
-            tab.key === "reports" && reports.length > 0
-              ? reports.length
+            tab.key === "reports" && pendingReports.length > 0
+              ? pendingReports.length
               : tab.key === "community" && totalUnreadChats > 0
                 ? totalUnreadChats
                 : 0;
@@ -1134,6 +2044,7 @@ export function AdminCommunityHub() {
           );
         })}
       </View>
+      ) : null}
 
       <Modal
         visible={userDetailVisible && selectedUser !== null}
@@ -1211,6 +2122,34 @@ export function AdminCommunityHub() {
                   )}
                 </Pressable>
 
+                <View className="flex-row gap-2 mb-3">
+                  <Pressable
+                    onPress={() => handleResendPasswordReset(selectedUser)}
+                    disabled={userManagementActionId === selectedUser.id}
+                    className="flex-1 rounded-full py-3 items-center border flex-row justify-center"
+                    style={{
+                      backgroundColor: "#eaf7f0",
+                      borderColor: "#b7e4c7",
+                      opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
+                    }}
+                  >
+                    <Ionicons name="mail-outline" size={14} color="#52B69A" />
+                    <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleDeleteUserAccount(selectedUser)}
+                    disabled={userManagementActionId === selectedUser.id}
+                    className="flex-1 rounded-full py-3 items-center flex-row justify-center"
+                    style={{
+                      backgroundColor: "#ef4444",
+                      opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#ffffff" />
+                    <Text className="text-xs font-extrabold text-white ml-1.5">Delete account</Text>
+                  </Pressable>
+                </View>
+
                 <Pressable
                   onPress={() => {
                     setUserDetailVisible(false);
@@ -1229,59 +2168,32 @@ export function AdminCommunityHub() {
         </View>
       </Modal>
 
-      <Modal visible={inviteVisible} transparent animationType="slide" onRequestClose={() => setInviteVisible(false)}>
-        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <Modal
+        visible={passwordVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasswordVisible(false)}
+      >
+        <View
+          className="flex-1 items-center justify-center"
+          style={{
+            backgroundColor: theme.modalOverlay,
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 16,
+            paddingHorizontal: 20,
+          }}
+        >
+          <Pressable className="absolute inset-0" onPress={() => setPasswordVisible(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ width: reportDetailModalWidth, zIndex: 1 }}
+          >
             <View
-              className="rounded-t-[28px] px-5 pt-5 pb-8"
-              style={[modalCardStyle, { borderBottomWidth: 0 }]}
-            >
-              <Text className="text-xl font-extrabold" style={textPrimary}>
-                Invite user
-              </Text>
-              <TextInput
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="email@example.com"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                className="mt-4 rounded-2xl px-4 py-4 text-sm"
-                style={inputStyle}
-                placeholderTextColor={placeholderColor}
-              />
-              <View className="flex-row gap-3 mt-4">
-                <Pressable
-                  onPress={() => setInviteVisible(false)}
-                  className="flex-1 rounded-full py-3.5 items-center"
-                  style={surfaceStyle}
-                >
-                  <Text className="text-sm font-extrabold" style={textSecondary}>
-                    Cancel
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void handleInvite()}
-                  disabled={inviting || !inviteEmail.trim()}
-                  className="flex-1 rounded-full py-3.5 items-center bg-[#52B69A]"
-                >
-                  {inviting ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text className="text-sm font-extrabold text-white">Send Invite</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      <Modal visible={passwordVisible} transparent animationType="slide" onRequestClose={() => setPasswordVisible(false)}>
-        <View className="flex-1 justify-end" style={{ backgroundColor: theme.modalOverlay }}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <View
-              className="rounded-t-[28px] px-5 pt-5 pb-8"
-              style={[modalCardStyle, { borderBottomWidth: 0 }]}
+              className="rounded-[28px] px-5 pt-5 pb-6 border"
+              style={[
+                modalCardStyle,
+                { borderColor: "#b7e4c7", backgroundColor: theme.modalBg },
+              ]}
             >
               <Text className="text-xl font-extrabold" style={textPrimary}>
                 Change password
@@ -1340,15 +2252,6 @@ export function AdminCommunityHub() {
         </View>
       </Modal>
 
-      <PostCommentsSheet
-        visible={commentsPost !== null}
-        post={commentsPost}
-        currentUserId={currentUserId}
-        onClose={() => setCommentsPost(null)}
-        isAdmin
-        onBlockComment={requestBlockComment}
-      />
-
       <PostMenuModal
         visible={menuPost !== null}
         post={menuPost}
@@ -1370,6 +2273,20 @@ export function AdminCommunityHub() {
         onBlock={() => {
           if (menuPost) requestBlockPost(menuPost);
         }}
+        onShare={() => {
+          if (!menuPost) return;
+          setSharePost(menuPost);
+          setMenuPost(null);
+        }}
+      />
+
+      <SharePostToChatModal
+        visible={sharePost !== null}
+        post={sharePost}
+        chats={chats}
+        currentUserId={currentUserId}
+        adminUid={currentUserId}
+        onClose={() => setSharePost(null)}
       />
 
       <PostEditHistoryModal
@@ -1397,11 +2314,18 @@ export function AdminCommunityHub() {
 
       <BlockReasonModal
         visible={blockTarget !== null}
-        title={blockTarget?.type === "comment" ? "Block Comment" : "Block Post"}
+        title={
+          blockTarget?.type === "comment" ||
+          (blockTarget?.type === "report" && blockTarget.report?.targetType === "comment")
+            ? "Block Comment"
+            : "Block Post"
+        }
         description={
-          blockTarget?.type === "report"
-            ? "Choose a reason for blocking this reported post. The reporter and author will be notified via Support Admin chat."
-            : "Provide a reason. The content author will receive this via Support Admin chat."
+          blockTarget?.type === "report" && blockTarget.report?.targetType === "comment"
+            ? "Choose a reason for blocking this reported comment. The reporter and author will be notified via Support Admin chat."
+            : blockTarget?.type === "report"
+              ? "Choose a reason for blocking this reported post. The reporter and author will be notified via Support Admin chat."
+              : "Provide a reason. The content author will receive this via Support Admin chat."
         }
         presetReasons={
           blockTarget?.type === "report" ? ADMIN_BLOCK_POST_REASONS : undefined
@@ -1414,10 +2338,7 @@ export function AdminCommunityHub() {
         visible={reportDetailReport !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          setReportDetailReport(null);
-          setReportDetailPost(null);
-        }}
+        onRequestClose={closeReportDetailModal}
       >
         <View
           className="flex-1 items-center justify-center"
@@ -1428,13 +2349,7 @@ export function AdminCommunityHub() {
             paddingHorizontal: 20,
           }}
         >
-          <Pressable
-            className="absolute inset-0"
-            onPress={() => {
-              setReportDetailReport(null);
-              setReportDetailPost(null);
-            }}
-          />
+          <Pressable className="absolute inset-0" onPress={closeReportDetailModal} />
           <View
             className="rounded-[28px] border overflow-hidden"
             style={[
@@ -1449,14 +2364,14 @@ export function AdminCommunityHub() {
             ]}
           >
             <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
-              <Text className="text-xl font-extrabold flex-1 pr-3" style={textPrimary}>
-                Post details
+              <View className="w-10" />
+              <Text className="text-xl font-extrabold flex-1 text-center px-2" style={textPrimary}>
+                {reportDetailReport?.targetType === "comment"
+                  ? "Post & comment details"
+                  : "Post details"}
               </Text>
               <Pressable
-                onPress={() => {
-                  setReportDetailReport(null);
-                  setReportDetailPost(null);
-                }}
+                onPress={closeReportDetailModal}
                 className="w-10 h-10 rounded-full items-center justify-center"
                 style={surfaceStyle}
               >
@@ -1476,54 +2391,8 @@ export function AdminCommunityHub() {
                 bounces={false}
                 keyboardShouldPersistTaps="handled"
               >
-                <View className="flex-row items-center mb-4">
-                  <ProfileAvatar uri={reportDetailPost.authorProfileImage} size={44} />
-                  <View className="ml-3 flex-1">
-                    <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
-                      {reportDetailPost.authorName}
-                    </Text>
-                    <Text className="text-xs mt-0.5" style={textMuted}>
-                      {formatPostDisplayTime(reportDetailPost.createdAt)}
-                    </Text>
-                  </View>
-                </View>
-                {reportDetailPost.content ? (
-                  <Text className="text-sm leading-6" style={textSecondary}>
-                    {reportDetailPost.content}
-                  </Text>
-                ) : null}
-                {reportDetailPost.imageUrl ? (
-                  <Image
-                    source={{ uri: reportDetailPost.imageUrl }}
-                    style={{
-                      width: "100%",
-                      aspectRatio: 4 / 3,
-                      maxHeight: 220,
-                      borderRadius: 16,
-                      marginTop: 12,
-                    }}
-                    contentFit="cover"
-                  />
-                ) : null}
-                {reportDetailPost.tags.length > 0 ? (
-                  <View className="flex-row flex-wrap gap-2 mt-3">
-                    {reportDetailPost.tags.map((tag) => (
-                      <View
-                        key={tag}
-                        className="rounded-full px-2.5 py-1 border"
-                        style={{ backgroundColor: theme.rowBg, borderColor: theme.accent }}
-                      >
-                        <Text className="text-[10px] font-bold" style={{ color: theme.accentText }}>
-                          #{tag}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                <Text className="text-xs font-bold mt-4" style={{ color: theme.accentText }}>
-                  {reportDetailPost.likeCount} likes • {reportDetailPost.commentCount} comments
-                </Text>
-                {reportDetailReport ? (
+                {renderReportDetailPostSummary()}
+                {reportDetailReport?.targetType === "post" ? (
                   <View
                     className="mt-4 rounded-2xl px-4 py-3 border"
                     style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
@@ -1536,6 +2405,22 @@ export function AdminCommunityHub() {
                     </Text>
                   </View>
                 ) : null}
+                {reportDetailReport?.targetType === "comment"
+                  ? renderReportDetailReportedCommentSection()
+                  : null}
+              </ScrollView>
+            ) : reportDetailReport?.targetType === "comment" ? (
+              <ScrollView
+                style={{ maxHeight: reportDetailScrollMaxHeight }}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+                showsVerticalScrollIndicator
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text className="text-sm text-center py-4" style={textMuted}>
+                  The original post is no longer available.
+                </Text>
+                {renderReportDetailReportedCommentSection()}
               </ScrollView>
             ) : (
               <View className="px-5 pb-8">

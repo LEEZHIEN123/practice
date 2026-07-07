@@ -40,7 +40,10 @@ export default function Login() {
     textAccent,
   } = useLightScreen();
   const { scrollRef, scrollFieldIntoView, scrollBottomPad, onScroll } =
-    useScrollFieldAboveKeyboard();
+    useScrollFieldAboveKeyboard(8, {
+      withKeyboardAvoidingView: true,
+      gapAboveKeyboard: 8,
+    });
   const emailWrapRef = useRef<View>(null);
   const passwordWrapRef = useRef<View>(null);
   const forgotEmailWrapRef = useRef<View>(null);

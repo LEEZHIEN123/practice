@@ -22,6 +22,7 @@ export type CommunityPost = {
   commentCount: number;
   likedBy: string[];
   blocked: boolean;
+  underReview: boolean;
   createdAt: number;
 };
 
@@ -71,7 +72,8 @@ export type CommunityNotificationType =
   | "friend_request"
   | "friend_accepted"
   | "post_like"
-  | "post_comment";
+  | "post_comment"
+  | "post_reported";
 
 export type FriendRequestNotificationStatus = "pending" | "accepted" | "rejected";
 
@@ -103,7 +105,7 @@ export type ChatConversation = {
   isSupportChat?: boolean;
 };
 
-export type ChatMessageType = "text" | "image" | "voice" | "sticker";
+export type ChatMessageType = "text" | "image" | "voice" | "sticker" | "post";
 
 export type ChatMessageQuote = {
   messageId: string;
@@ -123,6 +125,14 @@ export type ChatMessage = {
   imageUrl: string | null;
   audioUrl: string | null;
   audioDurationMs: number | null;
+  sharedPostId: string | null;
+  sharedPostAuthorName: string | null;
+  sharedPostAuthorImage: string | null;
+  sharedPostContent: string | null;
+  sharedPostTags: string[];
+  sharedPostLikeCount: number;
+  sharedPostCommentCount: number;
+  sharedPostCreatedAt: number | null;
   quote: ChatMessageQuote | null;
   editedAt: number | null;
   recalled: boolean;

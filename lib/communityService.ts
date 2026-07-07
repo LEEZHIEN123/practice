@@ -44,6 +44,9 @@ import type {
 import { ADMIN_AUTO_REPLY, SUPPORT_CHAT_WELCOME_MESSAGE } from "./communityTypes";
 import { calcBmi } from "./workoutPlan";
 
+const PENDING_POSTS_COLLECTION = "communityPendingPosts";
+const PENDING_COMMENTS_COLLECTION = "communityPendingComments";
+
 async function localUriToBlob(uri: string): Promise<Blob> {
   if (uri.startsWith("file://") || uri.startsWith("content://")) {
     return new Promise((resolve, reject) => {
@@ -141,8 +144,74 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
     commentCount: Number(data.commentCount ?? 0),
     likedBy: Array.isArray(data.likedBy) ? data.likedBy.map(String) : [],
     blocked: data.blocked === true,
+    underReview: data.underReview === true,
     createdAt: Number(data.createdAt ?? 0),
   };
+}
+
+async function mergePendingPosts(
+  posts: CommunityPost[],
+  pendingIds: string[]
+): Promise<CommunityPost[]> {
+  const merged = new Map(posts.map((post) => [post.id, post]));
+  const missing = pendingIds.filter((id) => !merged.has(id));
+  if (missing.length === 0) {
+    return posts;
+  }
+
+  const extras = await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const snap = await getDoc(doc(db, "communityPosts", id));
+        if (!snap.exists()) return null;
+        const post = mapPost(snap.id, snap.data() as Record<string, unknown>);
+        return post.blocked ? null : post;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  for (const post of extras) {
+    if (post) merged.set(post.id, post);
+  }
+
+  return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+async function markPostPendingReview(postId: string): Promise<void> {
+  await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
+    postId,
+    updatedAt: Date.now(),
+  });
+  await updateDoc(doc(db, "communityPosts", postId), {
+    underReview: true,
+    blocked: false,
+  });
+}
+
+async function clearPostPendingReview(postId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, PENDING_POSTS_COLLECTION, postId));
+  } catch {
+    // Ignore missing flag docs.
+  }
+}
+
+async function markCommentPendingReview(commentId: string, postId: string): Promise<void> {
+  await setDoc(doc(db, PENDING_COMMENTS_COLLECTION, commentId), {
+    commentId,
+    postId,
+    updatedAt: Date.now(),
+  });
+}
+
+async function clearCommentPendingReview(commentId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, PENDING_COMMENTS_COLLECTION, commentId));
+  } catch {
+    // Ignore missing flag docs.
+  }
 }
 
 function mapComment(id: string, postId: string, data: Record<string, unknown>): CommunityComment {
@@ -228,6 +297,7 @@ function mapNotificationType(value: unknown): CommunityNotification["type"] {
   if (value === "friend_accepted") return "friend_accepted";
   if (value === "post_like") return "post_like";
   if (value === "post_comment") return "post_comment";
+  if (value === "post_reported") return "post_reported";
   return "friend_request";
 }
 
@@ -352,7 +422,8 @@ function mapMessage(id: string, data: Record<string, unknown>): ChatMessage {
   const messageType =
     data.messageType === "image" ||
     data.messageType === "voice" ||
-    data.messageType === "sticker"
+    data.messageType === "sticker" ||
+    data.messageType === "post"
       ? data.messageType
       : "text";
 
@@ -363,7 +434,8 @@ function mapMessage(id: string, data: Record<string, unknown>): ChatMessage {
     const quoteType =
       q.messageType === "image" ||
       q.messageType === "voice" ||
-      q.messageType === "sticker"
+      q.messageType === "sticker" ||
+      q.messageType === "post"
         ? q.messageType
         : "text";
     quote = {
@@ -386,6 +458,21 @@ function mapMessage(id: string, data: Record<string, unknown>): ChatMessage {
     audioUrl: typeof data.audioUrl === "string" ? data.audioUrl : null,
     audioDurationMs:
       typeof data.audioDurationMs === "number" ? data.audioDurationMs : null,
+    sharedPostId: typeof data.sharedPostId === "string" ? data.sharedPostId : null,
+    sharedPostAuthorName:
+      typeof data.sharedPostAuthorName === "string" ? data.sharedPostAuthorName : null,
+    sharedPostAuthorImage:
+      typeof data.sharedPostAuthorImage === "string" ? data.sharedPostAuthorImage : null,
+    sharedPostContent: typeof data.sharedPostContent === "string" ? data.sharedPostContent : null,
+    sharedPostTags: Array.isArray(data.sharedPostTags)
+      ? data.sharedPostTags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+    sharedPostLikeCount:
+      typeof data.sharedPostLikeCount === "number" ? data.sharedPostLikeCount : 0,
+    sharedPostCommentCount:
+      typeof data.sharedPostCommentCount === "number" ? data.sharedPostCommentCount : 0,
+    sharedPostCreatedAt:
+      typeof data.sharedPostCreatedAt === "number" ? data.sharedPostCreatedAt : null,
     quote,
     editedAt: typeof data.editedAt === "number" ? data.editedAt : null,
     recalled: data.recalled === true,
@@ -414,15 +501,69 @@ export function subscribePosts(
   onData: (posts: CommunityPost[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  // No query filters — avoids composite indexes and includes legacy posts missing `blocked`.
-  return onSnapshot(
+  let currentPosts: CommunityPost[] = [];
+  let pendingIds: string[] = [];
+
+  const publish = () => {
+    void mergePendingPosts(currentPosts, pendingIds)
+      .then(onData)
+      .catch((error: unknown) => {
+        onError?.(error instanceof Error ? error : new Error(String(error)));
+      });
+  };
+
+  const unsubPosts = onSnapshot(
     collection(db, "communityPosts"),
     (snap) => {
-      const posts = snap.docs
+      currentPosts = snap.docs
         .map((d) => mapPost(d.id, d.data() as Record<string, unknown>))
         .filter((post) => !post.blocked)
         .sort((a, b) => b.createdAt - a.createdAt);
-      onData(posts);
+      publish();
+    },
+    (error) => onError?.(error)
+  );
+
+  const unsubPending = onSnapshot(
+    collection(db, PENDING_POSTS_COLLECTION),
+    (snap) => {
+      pendingIds = snap.docs.map((d) => d.id);
+      publish();
+    },
+    (error) => onError?.(error)
+  );
+
+  return () => {
+    unsubPosts();
+    unsubPending();
+  };
+}
+
+export function subscribePendingCommunityPostIds(
+  onData: (postIds: string[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, PENDING_POSTS_COLLECTION),
+    (snap) => {
+      onData(snap.docs.map((d) => d.id));
+    },
+    (error) => onError?.(error)
+  );
+}
+
+export function subscribePendingCommunityCommentIds(
+  postId: string,
+  onData: (commentIds: string[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, PENDING_COMMENTS_COLLECTION),
+    (snap) => {
+      const commentIds = snap.docs
+        .filter((d) => String(d.data().postId ?? "") === postId)
+        .map((d) => d.id);
+      onData(commentIds);
     },
     (error) => onError?.(error)
   );
@@ -476,6 +617,7 @@ export async function createPost(params: {
     commentCount: 0,
     likedBy: [] as string[],
     blocked: false,
+    underReview: false,
     createdAt: now,
     createdAtServer: serverTimestamp(),
   };
@@ -497,6 +639,7 @@ export async function createPost(params: {
       commentCount: 0,
       likedBy: [],
       blocked: false,
+      underReview: false,
       createdAt: now,
     };
   } catch (e) {
@@ -537,6 +680,32 @@ export async function fetchPostById(postId: string): Promise<CommunityPost | nul
   const snap = await getDoc(doc(db, "communityPosts", postId));
   if (!snap.exists()) return null;
   return mapPost(snap.id, snap.data() as Record<string, unknown>);
+}
+
+export function subscribePostById(
+  postId: string,
+  onData: (post: CommunityPost | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  if (!postId) {
+    onData(null);
+    return () => {};
+  }
+
+  return onSnapshot(
+    doc(db, "communityPosts", postId),
+    (snap) => {
+      if (!snap.exists()) {
+        onData(null);
+        return;
+      }
+      onData(mapPost(snap.id, snap.data() as Record<string, unknown>));
+    },
+    (error) => {
+      onData(null);
+      onError?.(error);
+    }
+  );
 }
 
 export async function deletePost(postId: string): Promise<void> {
@@ -925,7 +1094,22 @@ export async function submitReport(params: {
     read: false,
   });
 
+  await markPostPendingReview(params.postId);
+  if (params.targetType === "comment") {
+    await markCommentPendingReview(params.targetId, params.postId);
+  }
+
   if (params.targetType === "post") {
+    await createCommunityNotification({
+      userId: params.targetAuthorId,
+      type: "post_reported",
+      fromUserId: uid,
+      fromUserName: profile.name,
+      fromUserProfileImage: profile.profileImage,
+      postId: params.postId,
+      postPreview: params.targetContent.slice(0, 80),
+    });
+
     await sendAdminDirectMessage(
       uid,
       buildReportReceivedReporterMessage(params.targetAuthorName, params.targetContent)
@@ -1236,6 +1420,34 @@ export async function deleteNotification(notificationId: string): Promise<void> 
   await deleteDoc(doc(db, "communityNotifications", notificationId));
 }
 
+export async function markNotificationsRead(notificationIds: string[]): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  if (notificationIds.length === 0) return;
+
+  for (let i = 0; i < notificationIds.length; i += 500) {
+    const batch = writeBatch(db);
+    notificationIds.slice(i, i + 500).forEach((notificationId) => {
+      batch.update(doc(db, "communityNotifications", notificationId), { read: true });
+    });
+    await batch.commit();
+  }
+}
+
+export async function deleteNotifications(notificationIds: string[]): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  if (notificationIds.length === 0) return;
+
+  for (let i = 0; i < notificationIds.length; i += 500) {
+    const batch = writeBatch(db);
+    notificationIds.slice(i, i + 500).forEach((notificationId) => {
+      batch.delete(doc(db, "communityNotifications", notificationId));
+    });
+    await batch.commit();
+  }
+}
+
 export async function resolveFriendRequestNotification(
   notificationId: string,
   status: "accepted" | "rejected"
@@ -1344,12 +1556,21 @@ export type SendChatMessageInput =
       imageUrl?: string;
       audioUrl?: string;
       audioDurationMs?: number;
+      sharedPostId?: string;
+      sharedPostAuthorName?: string;
+      sharedPostAuthorImage?: string | null;
+      sharedPostContent?: string;
+      sharedPostTags?: string[];
+      sharedPostLikeCount?: number;
+      sharedPostCommentCount?: number;
+      sharedPostCreatedAt?: number;
       quote?: ChatMessageQuote;
     };
 
 function chatMessagePreview(input: {
   text: string;
-  messageType: "text" | "image" | "voice" | "sticker";
+  messageType: "text" | "image" | "voice" | "sticker" | "post";
+  sharedPostAuthorName?: string | null;
   quote?: ChatMessageQuote | null;
   recalled?: boolean;
   recalledByName?: string | null;
@@ -1365,7 +1586,9 @@ function chatMessagePreview(input: {
         ? "Voice message"
         : input.messageType === "sticker"
           ? "Sticker"
-          : input.text;
+          : input.messageType === "post"
+            ? `Shared ${input.sharedPostAuthorName?.trim() || "a"} post`
+            : input.text;
   if (input.quote?.text) {
     const quoted = input.quote.text.slice(0, 40);
     return `↩ ${quoted}${input.quote.text.length > 40 ? "…" : ""}: ${body}`;
@@ -1389,9 +1612,36 @@ export async function sendChatMessage(
           imageUrl: null as string | null,
           audioUrl: null as string | null,
           audioDurationMs: null as number | null,
+          sharedPostId: null as string | null,
+          sharedPostAuthorName: null as string | null,
+          sharedPostAuthorImage: null as string | null,
+          sharedPostContent: null as string | null,
+          sharedPostTags: [] as string[],
+          sharedPostLikeCount: 0,
+          sharedPostCommentCount: 0,
+          sharedPostCreatedAt: null as number | null,
           quote: null as ChatMessageQuote | null,
         }
       : (() => {
+          if (input.sharedPostId) {
+            return {
+              text: input.text?.trim() || "Community post",
+              messageType: "post" as const,
+              stickerId: null as string | null,
+              imageUrl: input.imageUrl ?? null,
+              audioUrl: null as string | null,
+              audioDurationMs: null as number | null,
+              sharedPostId: input.sharedPostId,
+              sharedPostAuthorName: input.sharedPostAuthorName?.trim() || "User",
+              sharedPostAuthorImage: input.sharedPostAuthorImage ?? null,
+              sharedPostContent: input.sharedPostContent?.trim() || input.text?.trim() || "",
+              sharedPostTags: input.sharedPostTags ?? [],
+              sharedPostLikeCount: input.sharedPostLikeCount ?? 0,
+              sharedPostCommentCount: input.sharedPostCommentCount ?? 0,
+              sharedPostCreatedAt: input.sharedPostCreatedAt ?? null,
+              quote: input.quote ?? null,
+            };
+          }
           const sticker = input.stickerId ? getChatSticker(input.stickerId) : undefined;
           return {
             text: sticker?.label ?? input.text?.trim() ?? "",
@@ -1406,6 +1656,14 @@ export async function sendChatMessage(
             imageUrl: input.imageUrl ?? null,
             audioUrl: input.audioUrl ?? null,
             audioDurationMs: input.audioDurationMs ?? null,
+            sharedPostId: null as string | null,
+            sharedPostAuthorName: null as string | null,
+            sharedPostAuthorImage: null as string | null,
+            sharedPostContent: null as string | null,
+            sharedPostTags: [] as string[],
+            sharedPostLikeCount: 0,
+            sharedPostCommentCount: 0,
+            sharedPostCreatedAt: null as number | null,
             quote: input.quote ?? null,
           };
         })();
@@ -1422,6 +1680,9 @@ export async function sendChatMessage(
   if (normalized.messageType === "voice" && !normalized.audioUrl) {
     throw new Error("Voice message is required");
   }
+  if (normalized.messageType === "post" && !normalized.sharedPostId) {
+    throw new Error("Post is required");
+  }
 
   const chatRef = doc(db, "communityChats", chatId);
   const chatSnap = await getDoc(chatRef);
@@ -1437,7 +1698,12 @@ export async function sendChatMessage(
     (await checkIsAdmin(user));
   await assertCanMessageInChat(chat, user.uid, senderIsAdmin);
 
-  const preview = chatMessagePreview(normalized);
+  const preview = chatMessagePreview({
+    text: normalized.text,
+    messageType: normalized.messageType,
+    sharedPostAuthorName: normalized.sharedPostAuthorName,
+    quote: normalized.quote,
+  });
   const batch = writeBatch(db);
   const msgRef = doc(collection(db, "communityChats", chatId, "messages"));
   batch.set(msgRef, {
@@ -1448,6 +1714,14 @@ export async function sendChatMessage(
     imageUrl: normalized.imageUrl,
     audioUrl: normalized.audioUrl,
     audioDurationMs: normalized.audioDurationMs,
+    sharedPostId: normalized.sharedPostId,
+    sharedPostAuthorName: normalized.sharedPostAuthorName,
+    sharedPostAuthorImage: normalized.sharedPostAuthorImage,
+    sharedPostContent: normalized.sharedPostContent,
+    sharedPostTags: normalized.sharedPostTags,
+    sharedPostLikeCount: normalized.sharedPostLikeCount,
+    sharedPostCommentCount: normalized.sharedPostCommentCount,
+    sharedPostCreatedAt: normalized.sharedPostCreatedAt,
     quote: normalized.quote,
     editedAt: null,
     recalled: false,
@@ -1471,6 +1745,24 @@ export async function sendChatMessage(
       console.warn("Admin auto-reply failed:", e);
     }
   }
+}
+
+export async function sharePostToChat(chatId: string, post: CommunityPost): Promise<void> {
+  const snippet = formatPostContentSnippet(
+    post.content.trim() || (post.imageUrl ? "Photo post" : "Community post")
+  );
+  await sendChatMessage(chatId, {
+    text: snippet,
+    sharedPostId: post.id,
+    sharedPostAuthorName: post.authorName,
+    sharedPostAuthorImage: post.authorProfileImage,
+    sharedPostContent: post.content,
+    sharedPostTags: post.tags,
+    sharedPostLikeCount: post.likeCount,
+    sharedPostCommentCount: post.commentCount,
+    sharedPostCreatedAt: post.createdAt,
+    imageUrl: post.imageUrl ?? undefined,
+  });
 }
 
 export async function editChatMessage(
@@ -1532,6 +1824,7 @@ function messagePreviewFromChatMessage(message: ChatMessage): string {
   return chatMessagePreview({
     text: message.text,
     messageType: message.messageType,
+    sharedPostAuthorName: message.sharedPostAuthorName,
     quote: message.quote,
     recalled: message.recalled,
     recalledByName: message.recalledByName,
@@ -1662,6 +1955,22 @@ export function subscribePendingReports(
   );
 }
 
+export function subscribeReports(
+  onData: (reports: CommunityReport[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, "communityReports"),
+    (snap) => {
+      const reports = snap.docs
+        .map((d) => mapReport(d.id, d.data() as Record<string, unknown>))
+        .sort((a, b) => b.createdAt - a.createdAt);
+      onData(reports);
+    },
+    (error) => onError?.(error)
+  );
+}
+
 export async function markReportRead(reportId: string): Promise<void> {
   await updateDoc(doc(db, "communityReports", reportId), { read: true });
 }
@@ -1732,6 +2041,49 @@ export function buildAdminBlockPostAuthorMessage(reason: string, content: string
   return `Your post has been removed from the community after a review.\n\n**Your post:**\n"${snippet}"\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
 }
 
+export function buildReportBlockedCommentReporterMessage(
+  authorName: string,
+  content: string
+): string {
+  const snippet = formatPostContentSnippet(content);
+  return `Your report has been reviewed for the following comment:\n\n**Comment by ${authorName}:**\n"${snippet}"\n\nThe reported comment has been **removed from the community**. Thank you for helping keep our community safe.`;
+}
+
+export function buildAdminBlockCommentAuthorMessage(reason: string, content: string): string {
+  const trimmedReason = reason.trim();
+  const snippet = formatPostContentSnippet(content);
+  return `Your comment has been removed from the community after a review.\n\n**Your comment:**\n"${snippet}"\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
+}
+
+export async function blockReportedComment(
+  report: CommunityReport,
+  reason: string
+): Promise<void> {
+  if (report.targetType !== "comment") throw new Error("Not a comment report");
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Reason is required");
+
+  await deleteComment(report.postId, report.targetId);
+  await clearCommentPendingReview(report.targetId);
+  await updateDoc(doc(db, "communityReports", report.id), { status: "resolved" });
+
+  const authorMessage = buildAdminBlockCommentAuthorMessage(trimmedReason, report.targetContent);
+  const reporterMessage = buildReportBlockedCommentReporterMessage(
+    report.targetAuthorName,
+    report.targetContent
+  );
+
+  if (report.targetAuthorId === report.reporterId) {
+    await sendAdminDirectMessage(report.reporterId, authorMessage);
+    return;
+  }
+
+  await Promise.all([
+    sendAdminDirectMessage(report.reporterId, reporterMessage),
+    sendAdminDirectMessage(report.targetAuthorId, authorMessage),
+  ]);
+}
+
 export async function blockReportedPost(
   report: CommunityReport,
   reason: string
@@ -1740,8 +2092,12 @@ export async function blockReportedPost(
   if (!trimmedReason) throw new Error("Reason is required");
 
   const batch = writeBatch(db);
-  batch.update(doc(db, "communityPosts", report.postId), { blocked: true });
+  batch.update(doc(db, "communityPosts", report.postId), { blocked: true, underReview: false });
   batch.update(doc(db, "communityReports", report.id), { status: "resolved" });
+  batch.delete(doc(db, PENDING_POSTS_COLLECTION, report.postId));
+  if (report.targetType === "comment") {
+    batch.delete(doc(db, PENDING_COMMENTS_COLLECTION, report.targetId));
+  }
   await batch.commit();
 
   const authorMessage = buildAdminBlockPostAuthorMessage(
@@ -1766,10 +2122,136 @@ export async function blockReportedPost(
 
 export async function dismissReport(report: CommunityReport): Promise<void> {
   await updateDoc(doc(db, "communityReports", report.id), { status: "dismissed" });
+  await clearPostPendingReview(report.postId);
+  await updateDoc(doc(db, "communityPosts", report.postId), { underReview: false });
+  if (report.targetType === "comment") {
+    await clearCommentPendingReview(report.targetId);
+  }
   await sendAdminDirectMessage(
     report.reporterId,
     buildReportDismissedReporterMessage(report.targetAuthorName, report.targetContent)
   );
+}
+
+export async function reopenReport(report: CommunityReport): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "communityReports", report.id), { status: "pending", read: false });
+  batch.update(doc(db, "communityPosts", report.postId), {
+    blocked: false,
+    underReview: true,
+  });
+  batch.set(doc(db, PENDING_POSTS_COLLECTION, report.postId), {
+    postId: report.postId,
+    updatedAt: Date.now(),
+  });
+  if (report.targetType === "comment") {
+    batch.set(doc(db, PENDING_COMMENTS_COLLECTION, report.targetId), {
+      commentId: report.targetId,
+      postId: report.postId,
+      updatedAt: Date.now(),
+    });
+  }
+  await batch.commit();
+}
+
+export async function syncPendingReviewFlags(reports: CommunityReport[]): Promise<void> {
+  const isAdmin = await checkIsAdmin();
+  if (!isAdmin) return;
+
+  const pendingPostIds = [
+    ...new Set(reports.filter((report) => report.status === "pending").map((report) => report.postId)),
+  ];
+  const pendingCommentReports = reports.filter(
+    (report) => report.status === "pending" && report.targetType === "comment"
+  );
+
+  await Promise.all(
+    pendingPostIds.map(async (postId) => {
+      await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
+        postId,
+        updatedAt: Date.now(),
+      });
+      await updateDoc(doc(db, "communityPosts", postId), {
+        blocked: false,
+        underReview: true,
+      });
+    })
+  );
+
+  await Promise.all(
+    pendingCommentReports.map(async (report) => {
+      await setDoc(doc(db, PENDING_COMMENTS_COLLECTION, report.targetId), {
+        commentId: report.targetId,
+        postId: report.postId,
+        updatedAt: Date.now(),
+      });
+    })
+  );
+}
+
+export async function restoreReportedPost(report: CommunityReport): Promise<void> {
+  if (report.targetType !== "post") throw new Error("Only post reports can be restored");
+  await clearPostPendingReview(report.postId);
+  await updateDoc(doc(db, "communityPosts", report.postId), {
+    blocked: false,
+    underReview: false,
+  });
+  await sendAdminDirectMessage(
+    report.targetAuthorId,
+    `Your post has been restored after an additional review.\n\nIf you need help, please message Support Admin here.`
+  );
+}
+
+async function deleteAllPostComments(postId: string): Promise<void> {
+  const commentsSnap = await getDocs(collection(db, "communityPosts", postId, "comments"));
+  let batch = writeBatch(db);
+  let count = 0;
+  for (const commentDoc of commentsSnap.docs) {
+    batch.delete(commentDoc.ref);
+    count++;
+    if (count >= 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+export async function adminPermanentlyDeletePost(postId: string): Promise<void> {
+  if (!(await checkIsAdmin())) throw new Error("Admin only");
+
+  const postSnap = await getDoc(doc(db, "communityPosts", postId));
+  if (postSnap.exists()) {
+    await deleteAllPostComments(postId);
+    await deleteDoc(doc(db, "communityPosts", postId));
+  }
+  await clearPostPendingReview(postId);
+}
+
+export async function adminPermanentlyDeleteReportTarget(
+  report: CommunityReport
+): Promise<void> {
+  if (!(await checkIsAdmin())) throw new Error("Admin only");
+
+  if (report.targetType === "comment") {
+    try {
+      await deleteComment(report.postId, report.targetId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!message.toLowerCase().includes("not found")) throw error;
+    }
+    await clearCommentPendingReview(report.targetId);
+    await clearPostPendingReview(report.postId);
+    const postSnap = await getDoc(doc(db, "communityPosts", report.postId));
+    if (postSnap.exists()) {
+      await updateDoc(doc(db, "communityPosts", report.postId), { underReview: false });
+    }
+  } else {
+    await adminPermanentlyDeletePost(report.postId);
+  }
+
+  await updateDoc(doc(db, "communityReports", report.id), { status: "resolved" });
 }
 
 export async function adminBlockPost(post: CommunityPost, reason: string): Promise<void> {
@@ -1799,6 +2281,7 @@ export async function adminBlockComment(
   if (!trimmedReason) throw new Error("Reason is required");
 
   await deleteComment(postId, comment.id);
+  await clearCommentPendingReview(comment.id);
 
   const message = `Your comment has been removed from the community after a review.\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
   await sendAdminDirectMessage(comment.authorId, message);
@@ -1996,25 +2479,6 @@ export function subscribeRegisteredUsers(
       onData([]);
     }
   );
-}
-
-export async function inviteUserByEmail(email: string): Promise<void> {
-  const { uid, profile } = await getCurrentUserProfile();
-  if (!(await checkIsAdmin())) throw new Error("Admin only");
-
-  const cleanEmail = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-    throw new Error("Please enter a valid email address.");
-  }
-
-  await addDoc(collection(db, "communityInvites"), {
-    email: cleanEmail,
-    invitedBy: uid,
-    invitedByName: profile.name,
-    status: "pending",
-    createdAt: Date.now(),
-    createdAtServer: serverTimestamp(),
-  });
 }
 
 export function sortChatsForUser(

@@ -1,5 +1,4 @@
 import { AddFriendModal } from "@/components/community/AddFriendModal";
-import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { FriendsSection } from "@/components/community/FriendsSection";
 import { PostCommentsPreview } from "@/components/community/PostCommentsPreview";
@@ -7,10 +6,11 @@ import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostLikesModal } from "@/components/community/PostLikesModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
+import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { Pressable } from "@/components/Pressable";
 import { ProfileScreenHeader, ThemedBackButton } from "@/components/themed/ThemedUi";
-import { formatChatMessageTime, formatPostDisplayTime } from "@/lib/chatMessageUtils";
+import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
     getCommunityBootstrapSnapshot,
     prefetchCommunityScreen,
@@ -23,7 +23,7 @@ import {
     REPORT_REASONS,
     SUPPORT_CHAT_WELCOME_MESSAGE,
     type ChatConversation,
-    type CommunityComment,
+    type CommunityNotification,
     type CommunityPost,
     type FriendRelation,
     type PublicUserProfile,
@@ -50,14 +50,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 import {
-    addComment,
     buildChatListWithSupportAdmin,
     acceptFriendRequest,
     chatDisplayName,
     chatIdForUsers,
     chatPreviewForUser,
     createPost,
-    deleteComment,
     deletePost,
     displayCommunityUserName,
     ensureChatsForFriends,
@@ -76,10 +74,9 @@ import {
     sendFriendRequest,
     submitReport,
     subscribeChats,
-    subscribeComments,
     subscribeNotifications,
+    subscribePendingCommunityPostIds,
     SUPPORT_ADMIN_NAME,
-    threadedComments,
     togglePostLike,
     updatePost,
     type LikerProfile,
@@ -231,273 +228,6 @@ function ReportModal({ visible, title, onClose, onSubmit }: ReportModalProps) {
   );
 }
 
-type CommentsModalProps = {
-  visible: boolean;
-  post: CommunityPost | null;
-  currentUserId: string | null;
-  adminUid: string | null;
-  onClose: () => void;
-  onReportComment: (comment: CommunityComment) => void;
-  onOpenProfile: (userId: string) => void;
-};
-
-function CommentsModal({
-  visible,
-  post,
-  currentUserId,
-  adminUid,
-  onClose,
-  onReportComment,
-  onOpenProfile,
-}: CommentsModalProps) {
-  const insets = useSafeAreaInsets();
-  const { cardStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } = useThemedScreen();
-  const [comments, setComments] = useState<CommunityComment[]>([]);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [menuComment, setMenuComment] = useState<CommunityComment | null>(null);
-  const [replyingTo, setReplyingTo] = useState<CommunityComment | null>(null);
-  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
-
-  const displayComments = useMemo(() => threadedComments(comments), [comments]);
-
-  useEffect(() => {
-    if (!visible || !post) return;
-    const unsub = subscribeComments(post.id, setComments);
-    return unsub;
-  }, [visible, post]);
-
-  useEffect(() => {
-    if (!visible) {
-      setReplyingTo(null);
-      setMenuComment(null);
-      setText("");
-    }
-  }, [visible]);
-
-  const handleSend = async () => {
-    if (!post || !text.trim()) return;
-    try {
-      setSending(true);
-      await addComment(post.id, text, {
-        parentCommentId: replyingTo?.id,
-        replyToAuthorName: replyingTo?.authorName,
-      });
-      setText("");
-      setReplyingTo(null);
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not add comment.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleDeleteComment = (comment: CommunityComment) => {
-    if (!post) return;
-    Alert.alert("Delete comment", "Delete your comment?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            try {
-              setDeletingCommentId(comment.id);
-              setMenuComment(null);
-              await deleteComment(post.id, comment.id);
-              if (replyingTo?.id === comment.id) {
-                setReplyingTo(null);
-                setText("");
-              }
-            } catch (e: unknown) {
-              Alert.alert("Error", e instanceof Error ? e.message : "Could not delete comment.");
-            } finally {
-              setDeletingCommentId(null);
-            }
-          })();
-        },
-      },
-    ]);
-  };
-
-  const startReply = (comment: CommunityComment) => {
-    setReplyingTo(comment);
-    setMenuComment(null);
-  };
-
-  const menuCommentBusy = menuComment != null && deletingCommentId === menuComment.id;
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 bg-black/40 justify-end"
-      >
-        <Pressable className="flex-1" onPress={onClose} />
-        <View
-          className="rounded-t-[28px] overflow-hidden flex-col"
-          style={{ height: "50%", backgroundColor: theme.screenBg, borderTopColor: theme.cardBorder, borderTopWidth: 1 }}
-        >
-          <View
-            className="flex-row items-center justify-between px-4 py-3 border-b"
-            style={{ borderBottomColor: theme.cardBorder }}
-          >
-            <Text className="text-xl font-extrabold" style={textPrimary}>Comments</Text>
-            <Pressable
-              onPress={onClose}
-              className="w-10 h-10 rounded-full items-center justify-center active:opacity-70"
-            >
-              <Ionicons name="close" size={22} color={theme.iconMuted} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            className="flex-1 px-4"
-            contentContainerStyle={{ paddingVertical: 12 }}
-            keyboardShouldPersistTaps="handled"
-          >
-          {displayComments.length === 0 ? (
-            <Text className="text-sm text-center py-8" style={textMuted}>No comments yet.</Text>
-          ) : null}
-
-          {displayComments.map((comment) => {
-            const isReply = Boolean(comment.parentCommentId);
-            const isReplyingToThis = replyingTo?.id === comment.id;
-
-            return (
-            <View
-              key={comment.id}
-              className={`rounded-2xl p-4 border mb-2 ${
-                isReply ? "ml-6 border-l-4 border-l-[#52B69A]" : ""
-              }`}
-              style={[
-                cardStyle,
-                isReplyingToThis ? { borderColor: theme.accent, borderWidth: 2 } : undefined,
-              ]}
-            >
-              <View className="flex-row items-center">
-                <Pressable onPress={() => onOpenProfile(comment.authorId)}>
-                  <ProfileAvatar uri={comment.authorProfileImage} size={36} />
-                </Pressable>
-                <View className="flex-1 ml-3">
-                  <View className="flex-row items-start justify-between gap-2">
-                    <Pressable onPress={() => onOpenProfile(comment.authorId)} className="flex-1">
-                      <Text className="text-sm font-extrabold" style={textPrimary}>
-                        {comment.authorName}
-                      </Text>
-                    </Pressable>
-                    <Text className="text-[10px]" style={textMuted}>
-                      {formatChatMessageTime(comment.createdAt)}
-                    </Text>
-                  </View>
-                </View>
-                {currentUserId &&
-                (comment.authorId === currentUserId ||
-                  (comment.authorId !== currentUserId && comment.authorId !== adminUid)) ? (
-                  <Pressable
-                    onPress={() => setMenuComment(comment)}
-                    className="w-8 h-8 rounded-full items-center justify-center"
-                  >
-                    <Ionicons name="ellipsis-vertical" size={18} color={theme.iconMuted} />
-                  </Pressable>
-                ) : null}
-              </View>
-              {comment.replyToAuthorName ? (
-                <Text className="text-xs font-bold text-[#52B69A] mt-2">
-                  Replying to {comment.replyToAuthorName}
-                </Text>
-              ) : null}
-              <Pressable onPress={() => startReply(comment)}>
-                <Text className="text-sm mt-2 leading-6" style={textSecondary}>{comment.text}</Text>
-                <Text className="text-xs font-bold text-[#2563eb] mt-2">Reply</Text>
-              </Pressable>
-            </View>
-            );
-          })}
-        </ScrollView>
-
-        <CommentMenuModal
-          visible={menuComment !== null}
-          comment={menuComment}
-          canDelete={menuComment != null && menuComment.authorId === currentUserId}
-          canReport={
-            menuComment != null &&
-            menuComment.authorId !== currentUserId &&
-            menuComment.authorId !== adminUid
-          }
-          deleting={menuCommentBusy}
-          onClose={() => setMenuComment(null)}
-          onDelete={() => {
-            if (menuComment) handleDeleteComment(menuComment);
-          }}
-          onReport={() => {
-            if (menuComment) {
-              const target = menuComment;
-              setMenuComment(null);
-              onReportComment(target);
-            }
-          }}
-        />
-
-        <View
-          className="px-4 border-t"
-          style={{ paddingBottom: insets.bottom + 8, paddingTop: 12, borderTopColor: theme.cardBorder, backgroundColor: theme.cardBg }}
-        >
-          {replyingTo ? (
-            <View
-              className="flex-row items-center justify-between rounded-xl px-3 py-2 mb-2 border"
-              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
-            >
-              <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
-                Replying to {replyingTo.authorName}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  setReplyingTo(null);
-                }}
-              >
-                <Text className="text-xs font-bold" style={textMuted}>Cancel</Text>
-              </Pressable>
-            </View>
-          ) : null}
-          <View className="flex-row items-end gap-2">
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder={
-                replyingTo ? `Reply to ${replyingTo.authorName}...` : "Write a comment..."
-              }
-              multiline
-              className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
-              style={{
-                backgroundColor: theme.rowBg,
-                borderColor: theme.cardBorder,
-                borderWidth: 1,
-                color: theme.textPrimary,
-              }}
-              placeholderTextColor={theme.textMuted}
-            />
-            <Pressable
-              onPress={() => void handleSend()}
-              disabled={sending || !text.trim()}
-              className={`w-11 h-11 rounded-full items-center justify-center ${
-                text.trim() ? "bg-[#52B69A]" : "bg-gray-200"
-              }`}
-            >
-              {sending ? (
-                <ActivityIndicator color="white" size="small" />
-              ) : (
-                <Ionicons name="send" size={18} color="white" />
-              )}
-            </Pressable>
-          </View>
-        </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 export default function CommunityScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ openPostId?: string; openComments?: string }>();
@@ -522,6 +252,8 @@ export default function CommunityScreen() {
   const [friendRelations, setFriendRelations] = useState<Record<string, FriendRelation>>({});
   const [chats, setChats] = useState<ChatConversation[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [reportedPostIds, setReportedPostIds] = useState<string[]>([]);
+  const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
   const [composerVisible, setComposerVisible] = useState(false);
   const [addFriendVisible, setAddFriendVisible] = useState(false);
@@ -538,8 +270,8 @@ export default function CommunityScreen() {
 
   const [historyPost, setHistoryPost] = useState<CommunityPost | null>(null);
 
-  const [commentsPost, setCommentsPost] = useState<CommunityPost | null>(null);
   const [menuPost, setMenuPost] = useState<CommunityPost | null>(null);
+  const [sharePost, setSharePost] = useState<CommunityPost | null>(null);
   const [likesPost, setLikesPost] = useState<CommunityPost | null>(null);
   const [likers, setLikers] = useState<LikerProfile[]>([]);
   const [likersLoading, setLikersLoading] = useState(false);
@@ -648,17 +380,14 @@ export default function CommunityScreen() {
 
   useEffect(() => {
     const openPostId = params.openPostId ? String(params.openPostId) : "";
-    if (!openPostId || posts.length === 0) return;
+    if (!openPostId) return;
 
-    const post = posts.find((item) => item.id === openPostId);
-    if (!post) return;
-
-    setActiveTab("feed");
-    if (params.openComments === "1") {
-      setCommentsPost(post);
-    }
     router.setParams({ openPostId: undefined, openComments: undefined });
-  }, [params.openPostId, params.openComments, posts, router]);
+    router.push({
+      pathname: "/community-post" as any,
+      params: { postId: openPostId },
+    });
+  }, [params.openPostId, params.openComments, router]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -674,9 +403,22 @@ export default function CommunityScreen() {
 
   useEffect(() => {
     if (!currentUserId) return;
+    const unsub = subscribePendingCommunityPostIds(setPendingReviewPostIds, handleFirestoreError);
+    return unsub;
+  }, [currentUserId, handleFirestoreError]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
     const unsub = subscribeNotifications(
       (items) => {
         setUnreadNotifications(items.filter((n) => !n.read).length);
+        const reported = items
+          .filter(
+            (n: CommunityNotification) =>
+              n.type === "post_reported" && typeof n.postId === "string" && n.postId.length > 0
+          )
+          .map((n) => n.postId as string);
+        setReportedPostIds([...new Set(reported)]);
       },
       handleFirestoreError
     );
@@ -692,6 +434,13 @@ export default function CommunityScreen() {
     if (!currentUserId || (activeTab !== "chat" && activeTab !== "friends")) return;
     void ensureChatsForFriends().catch(() => {});
   }, [currentUserId, activeTab]);
+
+  const openPostDetail = (postId: string) => {
+    router.push({
+      pathname: "/community-post" as any,
+      params: { postId },
+    });
+  };
 
   const openChat = (chat: ChatConversation) => {
     if (!currentUserId) return;
@@ -988,19 +737,6 @@ export default function CommunityScreen() {
     });
   };
 
-  const openReportComment = (comment: CommunityComment) => {
-    setCommentsPost(null);
-    setReportTarget({
-      type: "comment",
-      postId: comment.postId,
-      targetId: comment.id,
-      targetContent: comment.text,
-      targetAuthorId: comment.authorId,
-      targetAuthorName: comment.authorName,
-      title: "Report comment",
-    });
-  };
-
   if (!currentUserId) {
     return (
       <View className="flex-1 items-center justify-center px-8" style={screenStyle}>
@@ -1172,10 +908,15 @@ export default function CommunityScreen() {
                   const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
                   const relation = friendRelations[post.authorId] ?? "none";
                   const isOwnPost = post.authorId === currentUserId;
+                  const hasAuthorReportReminder =
+                    isOwnPost && reportedPostIds.includes(post.id) && !post.underReview;
+                  const hasPublicReviewTip =
+                    post.underReview || pendingReviewPostIds.includes(post.id);
 
                   return (
-                    <View
+                    <Pressable
                       key={post.id}
+                      onPress={() => openPostDetail(post.id)}
                       className="px-4 py-4 rounded-2xl"
                       style={cardStyle}
                     >
@@ -1204,6 +945,30 @@ export default function CommunityScreen() {
                           <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
                         </Pressable>
                       </View>
+
+                      {hasPublicReviewTip ? (
+                        <View
+                          className="mt-3 rounded-xl px-3 py-2 border"
+                          style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
+                        >
+                          <Text className="text-xs font-semibold text-[#c2410c]">
+                            Notice: This post is under review by Support Admin. Please be respectful
+                            and follow community guidelines.
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {hasAuthorReportReminder ? (
+                        <View
+                          className="mt-3 rounded-xl px-3 py-2 border"
+                          style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
+                        >
+                          <Text className="text-xs font-semibold text-[#c2410c]">
+                            Reminder: Your post has been reported by another user. Please pay attention to
+                            community guidelines while Support Admin reviews it.
+                          </Text>
+                        </View>
+                      ) : null}
 
                       {post.content ? (
                         <Text className="text-base mt-3 leading-7" style={textSecondary}>{post.content}</Text>
@@ -1253,7 +1018,7 @@ export default function CommunityScreen() {
                         </View>
 
                         <Pressable
-                          onPress={() => setCommentsPost(post)}
+                          onPress={() => openPostDetail(post.id)}
                           className="flex-row items-center mr-4"
                         >
                           <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
@@ -1295,9 +1060,9 @@ export default function CommunityScreen() {
                       <PostCommentsPreview
                         postId={post.id}
                         commentCount={post.commentCount}
-                        onSeeMore={() => setCommentsPost(post)}
+                        onSeeMore={() => openPostDetail(post.id)}
                       />
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -1473,6 +1238,20 @@ export default function CommunityScreen() {
         onReport={() => {
           if (menuPost) openReportPost(menuPost);
         }}
+        onShare={() => {
+          if (!menuPost) return;
+          setSharePost(menuPost);
+          setMenuPost(null);
+        }}
+      />
+
+      <SharePostToChatModal
+        visible={sharePost !== null}
+        post={sharePost}
+        chats={displayChats}
+        currentUserId={currentUserId}
+        adminUid={adminUid}
+        onClose={() => setSharePost(null)}
       />
 
       <PostLikesModal
@@ -1495,16 +1274,6 @@ export default function CommunityScreen() {
         authorName={historyPost?.authorName ?? ""}
         history={historyPost?.editHistory ?? []}
         onClose={() => setHistoryPost(null)}
-      />
-
-      <CommentsModal
-        visible={commentsPost !== null}
-        post={commentsPost}
-        currentUserId={currentUserId}
-        adminUid={adminUid}
-        onClose={() => setCommentsPost(null)}
-        onReportComment={openReportComment}
-        onOpenProfile={(userId) => void openUserProfile(userId)}
       />
 
       <ReportModal

@@ -1,7 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { useProfileCardStyles } from "@/components/themed/ThemedUi";
-import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityPost } from "@/lib/communityTypes";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Modal, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,7 @@ type PostMenuModalProps = {
   onDelete: () => void;
   onEditHistory: () => void;
   onReport: () => void;
+  onShare?: () => void;
   onBlock?: () => void;
 };
 
@@ -38,6 +39,7 @@ export function PostMenuModal({
   onDelete,
   onEditHistory,
   onReport,
+  onShare,
   onBlock,
 }: PostMenuModalProps) {
   const insets = useSafeAreaInsets();
@@ -48,17 +50,20 @@ export function PostMenuModal({
   const options: MenuOption[] = isOwnPost
     ? [
         { label: "Edit Post", icon: "create-outline", onPress: onEdit },
+        ...(onShare ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }] : []),
         { label: "Delete Post", icon: "trash-outline", onPress: onDelete, danger: true },
       ]
     : isAdmin
       ? [
           { label: "View Edit History", icon: "time-outline", onPress: onEditHistory },
+          ...(onShare ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }] : []),
           ...(onBlock
             ? [{ label: "Block Post", icon: "ban-outline" as const, onPress: onBlock, danger: true as const }]
             : []),
         ]
       : [
           { label: "View Edit History", icon: "time-outline", onPress: onEditHistory },
+          ...(onShare ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }] : []),
           ...(canReport
             ? [{ label: "Report Post", icon: "flag-outline" as const, onPress: onReport, danger: true as const }]
             : []),

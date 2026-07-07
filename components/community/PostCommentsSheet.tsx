@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { AdminPendingReportTip } from "@/components/community/AdminPendingReportTip";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
@@ -48,6 +49,7 @@ type PostCommentsSheetProps = {
   onOpenProfile?: (userId: string) => void;
   onReportComment?: (comment: CommunityComment) => void;
   isAdmin?: boolean;
+  adminPendingCommentIds?: string[];
   onBlockComment?: (comment: CommunityComment) => void;
 };
 
@@ -59,6 +61,7 @@ export function PostCommentsSheet({
   onOpenProfile,
   onReportComment,
   isAdmin = false,
+  adminPendingCommentIds = [],
   onBlockComment,
 }: PostCommentsSheetProps) {
   const insets = useSafeAreaInsets();
@@ -179,6 +182,8 @@ export function PostCommentsSheet({
             {displayComments.map((comment) => {
               const isReply = Boolean(comment.parentCommentId);
               const isReplyingToThis = replyingTo?.id === comment.id;
+              const hasAdminPendingReportTip =
+                isAdmin && adminPendingCommentIds.includes(comment.id);
 
               return (
                 <View
@@ -231,6 +236,11 @@ export function PostCommentsSheet({
                     <ThemedText variant="accent" className="text-xs font-bold mt-2">
                       Replying to {comment.replyToAuthorName}
                     </ThemedText>
+                  ) : null}
+                  {hasAdminPendingReportTip ? (
+                    <View className="mt-2">
+                      <AdminPendingReportTip target="comment" />
+                    </View>
                   ) : null}
                   <Pressable onPress={() => startReply(comment)}>
                     <ThemedText variant="secondary" className="text-sm mt-2 leading-6">

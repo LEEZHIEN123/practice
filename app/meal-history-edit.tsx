@@ -1,8 +1,9 @@
 import { Pressable } from "@/components/Pressable";
 import { MealDescriptionSections } from "@/components/nutrition/MealDescriptionSections";
-import { MealTypePicker } from "@/components/nutrition/MealTypePicker";
 import { MealPhotoSection } from "@/components/nutrition/MealPhotoSection";
+import { MealTypePicker } from "@/components/nutrition/MealTypePicker";
 import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import { MANUAL_MEAL_TYPE_LABELS, type ManualMealType } from "@/lib/manualMealTypes";
 import {
   formatHistoryMacros,
   getMealHistoryEntry,
@@ -12,7 +13,6 @@ import {
   type MealHistoryEntry,
 } from "@/lib/mealLogHistory";
 import { logMealFood } from "@/lib/mealLogService";
-import { MANUAL_MEAL_TYPE_LABELS, type ManualMealType } from "@/lib/manualMealTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { useLocalSearchParams, useRouter } from "expo-router";

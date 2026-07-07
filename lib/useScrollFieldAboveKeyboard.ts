@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Dimensions,
-  Keyboard,
-  Platform,
-  type ScrollView,
-  type View,
+    Dimensions,
+    Keyboard,
+    Platform,
+    type ScrollView,
+    type View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export function useScrollFieldAboveKeyboard(extraBottomPad = 32) {
+type ScrollFieldAboveKeyboardOptions = {
+  gapAboveKeyboard?: number;
+  /** Use when the screen already wraps content in KeyboardAvoidingView. */
+  withKeyboardAvoidingView?: boolean;
+};
+
+export function useScrollFieldAboveKeyboard(
+  extraBottomPad = 32,
+  options: ScrollFieldAboveKeyboardOptions = {}
+) {
+  const { gapAboveKeyboard = 16, withKeyboardAvoidingView = false } = options;
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
@@ -25,7 +35,7 @@ export function useScrollFieldAboveKeyboard(extraBottomPad = 32) {
           const kb = keyboardHeight > 0 ? keyboardHeight : 280;
           const screenHeight = Dimensions.get("window").height;
           const fieldBottom = y + h;
-          const visibleBottom = screenHeight - kb - 16;
+          const visibleBottom = screenHeight - kb - gapAboveKeyboard;
           if (fieldBottom > visibleBottom) {
             scrollRef.current?.scrollTo({
               y: scrollYRef.current + (fieldBottom - visibleBottom),
@@ -36,7 +46,7 @@ export function useScrollFieldAboveKeyboard(extraBottomPad = 32) {
       };
       setTimeout(run, Platform.OS === "ios" ? 80 : 180);
     },
-    [keyboardHeight]
+    [keyboardHeight, gapAboveKeyboard]
   );
 
   useEffect(() => {
@@ -61,12 +71,15 @@ export function useScrollFieldAboveKeyboard(extraBottomPad = 32) {
     }
   }, [keyboardHeight, scrollFieldIntoView]);
 
-  const scrollBottomPad = Math.max(keyboardHeight, insets.bottom) + extraBottomPad;
+  const scrollBottomPad = withKeyboardAvoidingView
+    ? insets.bottom + extraBottomPad
+    : Math.max(keyboardHeight, insets.bottom) + extraBottomPad;
 
   return {
     scrollRef,
     scrollFieldIntoView,
     scrollBottomPad,
+    keyboardHeight,
     onScroll: (y: number) => {
       scrollYRef.current = y;
     },

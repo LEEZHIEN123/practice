@@ -9,6 +9,7 @@ import {
   ThemedText,
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
+import { SharedPostMessageCard, getSharedPostCardData } from "@/components/community/SharedPostMessageCard";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import type { ChatMessage, CommunityPost } from "@/lib/communityTypes";
 import { getChatSticker, CHAT_STICKER_MESSAGE_SIZE, CHAT_STICKER_QUOTE_SIZE, type ChatSticker } from "@/lib/chatStickers";
@@ -591,6 +592,16 @@ export default function CommunityChatScreen() {
             const avatar = senderImage(message.senderId);
             const displayText = messageSummary(message);
             const isSticker = message.messageType === "sticker" && !message.recalled;
+            const isSharedPost =
+              message.messageType === "post" && Boolean(message.sharedPostId) && !message.recalled;
+            const sharedPostData = isSharedPost
+              ? getSharedPostCardData(
+                  message,
+                  message.sharedPostId
+                    ? allPosts.find((post) => post.id === message.sharedPostId) ?? null
+                    : null
+                )
+              : null;
             const sticker =
               isSticker && message.stickerId ? getChatSticker(message.stickerId) : undefined;
 
@@ -628,6 +639,19 @@ export default function CommunityChatScreen() {
                             height: CHAT_STICKER_MESSAGE_SIZE,
                           }}
                           contentFit="contain"
+                        />
+                      </View>
+                    ) : isSharedPost && sharedPostData ? (
+                      <View>
+                        {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
+                        <SharedPostMessageCard
+                          data={sharedPostData}
+                          onPress={() => {
+                            router.push({
+                              pathname: "/community-post" as any,
+                              params: { postId: sharedPostData.postId },
+                            });
+                          }}
                         />
                       </View>
                     ) : (

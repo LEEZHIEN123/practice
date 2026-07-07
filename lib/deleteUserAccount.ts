@@ -4,6 +4,7 @@ import {
   doc,
   getDocs,
   writeBatch,
+  type CollectionReference,
 } from "firebase/firestore";
 import {
   EmailAuthProvider,
@@ -13,9 +14,18 @@ import {
 } from "firebase/auth";
 import { auth, db } from "../firebaseConfig";
 
-async function deleteUserSubcollections(uid: string): Promise<void> {
-  const logsRef = collection(db, "users", uid, "weightLogs");
-  const snap = await getDocs(logsRef);
+const USER_SUBCOLLECTIONS = [
+  "weightLogs",
+  "workoutLogs",
+  "workoutSessions",
+  "waterLogs",
+  "mealLogs",
+  "dailyStats",
+  "friends",
+] as const;
+
+async function deleteCollectionDocs(colRef: CollectionReference): Promise<void> {
+  const snap = await getDocs(colRef);
   let batch = writeBatch(db);
   let n = 0;
   for (const d of snap.docs) {
@@ -28,6 +38,12 @@ async function deleteUserSubcollections(uid: string): Promise<void> {
     }
   }
   if (n > 0) await batch.commit();
+}
+
+async function deleteUserSubcollections(uid: string): Promise<void> {
+  for (const subcollection of USER_SUBCOLLECTIONS) {
+    await deleteCollectionDocs(collection(db, "users", uid, subcollection));
+  }
 }
 
 export async function deleteUserFirestoreProfile(uid: string): Promise<void> {

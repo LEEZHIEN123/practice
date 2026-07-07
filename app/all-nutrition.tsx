@@ -174,7 +174,7 @@ export default function AllNutritionScreen() {
           bottomInset={insets.bottom + 24}
         />
       ) : (
-        <ScrollView
+      <ScrollView
           contentContainerStyle={{
             paddingBottom: insets.bottom + 24,
             paddingHorizontal: 12,
@@ -800,7 +800,7 @@ function MealLogSection({
               style={{ color: subTab === "history" ? theme.accentText : theme.textMuted }}
             >
               History
-            </Text>
+          </Text>
           </Pressable>
         </View>
       </View>

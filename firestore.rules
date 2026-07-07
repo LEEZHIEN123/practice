@@ -111,6 +111,12 @@ service cloud.firestore {
         && request.resource.data.likedBy == resource.data.likedBy
         && request.resource.data.createdAt == resource.data.createdAt;
     }
+    function flagPostUnderReviewOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["underReview"])
+        && request.resource.data.underReview == true
+        && resource.data.get("underReview", false) == false
+        && resource.data.get("blocked", false) == false;
+    }
 
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -120,30 +126,38 @@ service cloud.firestore {
           || request.resource.data.get("role", "") != "admin"
           || isAdminEmail()
         );
-      allow update, delete: if isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe();
+      allow update: if isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe();
+      allow delete: if (isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe())
+        || (isAdmin()
+          && userId != request.auth.uid
+          && resource.data.get("role", "") != "admin"
+          && resource.data.get("email", "") != "leezhien12345@gmail.com");
 
       match /friends/{friendId} {
         allow read: if isOwner(userId);
         allow create, delete: if isSignedIn()
-          && (request.auth.uid == userId || request.auth.uid == friendId);
+          && (request.auth.uid == userId || request.auth.uid == friendId)
+          || isAdmin();
       }
 
       match /{document=**} {
-        allow read, create, update, delete: if isOwner(userId);
+        allow read, create, update: if isOwner(userId);
+        allow delete: if isOwner(userId) || isAdmin();
       }
     }
 
     match /communityPosts/{postId} {
-      allow read: if isSignedIn() && postNotBlocked();
+      allow read: if isSignedIn() && (postNotBlocked() || isAdmin());
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.get("blocked", false) == false;
       allow update: if isSignedIn() && (
         isAdmin()
         || isAuthorPostEdit()
+        || flagPostUnderReviewOnly()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likedBy", "likeCount"])
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["commentCount"])
-        || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["blocked"]))
+        || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["blocked", "underReview"]))
       );
       allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
 
@@ -161,6 +175,18 @@ service cloud.firestore {
     match /communityReports/{reportId} {
       allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
       allow read, update: if isAdmin();
+    }
+
+    match /communityPendingPosts/{postId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /communityPendingComments/{commentId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
     match /friendRequests/{requestId} {
