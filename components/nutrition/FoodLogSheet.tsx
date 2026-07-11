@@ -134,8 +134,8 @@ export function FoodLogSheet({
             {ingredients?.length ? (
               <View className="mb-4">
                 <ThemedText className="text-base font-extrabold mb-2">Ingredients</ThemedText>
-                {ingredients.map((item) => (
-                  <ThemedText key={item} variant="secondary" className="text-sm leading-5 mb-1">
+                {ingredients.map((item, index) => (
+                  <ThemedText key={`ingredient-${index}`} variant="secondary" className="text-sm leading-5 mb-1">
                     {"\u2022 "} {item}
                   </ThemedText>
                 ))}

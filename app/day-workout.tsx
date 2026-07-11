@@ -1,23 +1,23 @@
 import { FavouriteButton } from "@/components/FavouriteButton";
 import { WorkoutRecordPanel } from "@/components/day-workout-unstyled";
 import {
-  ProfileScreenHeader,
-  ThemedBackButton,
-  ThemedCard,
-  ThemedScreen,
-  ThemedText,
-  useProfileCardStyles,
+    ProfileScreenHeader,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
+import { useWorkoutSession } from "@/context/WorkoutSessionContext";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { buildWorkoutFavouriteItem } from "@/lib/favourites";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
-  calcExerciseKcal,
-  getWorkoutDetail,
-  getWorkoutMet,
-  plansEqual,
-  sanitizeActiveWorkoutPlan,
+    calcExerciseKcal,
+    getWorkoutDetail,
+    getWorkoutMet,
+    plansEqual,
+    sanitizeActiveWorkoutPlan,
 } from "@/lib/workoutCatalog";
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
 import { durationDays } from "@/lib/workoutPlan";
@@ -27,28 +27,28 @@ import { router, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import {
-  Timestamp,
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  increment,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
+    Timestamp,
+    addDoc,
+    collection,
+    doc,
+    getDoc,
+    increment,
+    limit,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
+    Alert,
+    Modal,
+    Pressable,
+    ScrollView,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -258,6 +258,8 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     return "#ffffff";
   };
   const { modalCardStyle, inputStyle, rowBorderStyle, placeholderColor } = useProfileCardStyles();
+  const { minimizeFromSnapshot, claimForScreen, dismiss, session: floatingSession, minimized } =
+    useWorkoutSession();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
   const canStartThisDay = dayNum <= unlockedMaxDay;
@@ -269,7 +271,6 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const [countdown, setCountdown] = useState<number | null>(null);
   const [pauseMenuVisible, setPauseMenuVisible] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"restart" | "complete" | null>(null);
-  const [backConfirmVisible, setBackConfirmVisible] = useState(false);
   const [startChoiceVisible, setStartChoiceVisible] = useState(false);
   const [timerPickerVisible, setTimerPickerVisible] = useState(false);
   const [timerMinText, setTimerMinText] = useState("10");
@@ -287,7 +288,9 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const sessionStartedAtMsRef = useRef<number | null>(null);
   const baseElapsedRef = useRef(0);
   const tickIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hydratedFromFloatingRef = useRef(false);
   const countdownIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Ignore Firestore snapshots that arrive after we switched day/workout (listener not yet torn down). */
   const recordsSubGenRef = useRef(0);
   const row = useMemo(() => {
@@ -451,12 +454,60 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
       clearInterval(countdownIdRef.current);
       countdownIdRef.current = null;
     }
+    if (countdownFinishTimeoutRef.current) {
+      clearTimeout(countdownFinishTimeoutRef.current);
+      countdownFinishTimeoutRef.current = null;
+    }
     setCountdown(null);
   };
 
   useEffect(() => {
     return () => clearCountdown();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      hydratedFromFloatingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hydratedFromFloatingRef.current) return;
+    if (minimized) return;
+    if (!floatingSession || floatingSession.kind !== "day" || floatingSession.day !== dayNum) return;
+    hydratedFromFloatingRef.current = true;
+    const snap = claimForScreen();
+    if (!snap) return;
+
+    setSessionId(snap.sessionId);
+    baseElapsedRef.current = snap.baseElapsedSeconds;
+    startedAtRef.current = snap.startedAtMs;
+    sessionStartedAtMsRef.current = snap.sessionStartedAtMs;
+    modeRef.current = snap.mode;
+    targetSecondsRef.current = snap.targetSeconds;
+    setMode(snap.mode);
+    setTargetSeconds(snap.targetSeconds);
+    setRunning(snap.running);
+    setCanResume(!snap.running && snap.baseElapsedSeconds > 0);
+
+    const now = Date.now();
+    let nextElapsed = snap.baseElapsedSeconds;
+    if (snap.running && snap.startedAtMs != null) {
+      nextElapsed += Math.max(0, Math.floor((now - snap.startedAtMs) / 1000));
+    }
+    if (snap.mode === "countdown" && snap.targetSeconds != null) {
+      setElapsed(Math.max(0, snap.targetSeconds - nextElapsed));
+    } else {
+      setElapsed(Math.max(0, nextElapsed));
+    }
+    if (snap.running) startTicker();
+  }, [floatingSession, minimized, dayNum, claimForScreen]);
+
+  const skipCountdownAndStart = () => {
+    if (countdown == null && countdownIdRef.current == null) return;
+    clearCountdown();
+    void startWorkoutInternal();
+  };
 
   const startWorkoutInternal = async () => {
     const user = auth.currentUser;
@@ -553,6 +604,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     // 3..2..1 overlay, then start timer.
     setCountdown(3);
     if (countdownIdRef.current) clearInterval(countdownIdRef.current);
+    if (countdownFinishTimeoutRef.current) {
+      clearTimeout(countdownFinishTimeoutRef.current);
+      countdownFinishTimeoutRef.current = null;
+    }
     countdownIdRef.current = setInterval(() => {
       setCountdown((cur) => {
         if (cur == null) return null;
@@ -563,7 +618,8 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
             countdownIdRef.current = null;
           }
           // kick off workout start after countdown disappears
-          setTimeout(() => {
+          countdownFinishTimeoutRef.current = setTimeout(() => {
+            countdownFinishTimeoutRef.current = null;
             void startWorkoutInternal();
           }, 50);
           return null;
@@ -814,17 +870,37 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     modeRef.current = "countup";
     targetSecondsRef.current = null;
     setCanResume(false);
+    dismiss();
     return false;
   };
 
   const accent = row ? typeColor(row.type) : "#1e3a8a";
 
   const requestBack = () => {
-    // If any timing has started, require confirmation and finish workout on exit.
-    if (running || elapsed > 0 || baseElapsedRef.current > 0 || countdown != null) {
-      setBackConfirmVisible(true);
+    // Block leaving during the 3–2–1 countdown.
+    if (countdown != null) return;
+    if (running || elapsed > 0 || baseElapsedRef.current > 0) {
+      stopTicker();
+      minimizeFromSnapshot({
+        kind: "day",
+        href: `/day-workout?day=${dayNum}&unlockedMaxDay=${unlockedMaxDay}`,
+        title: `Day ${dayNum} Workout`,
+        workoutName: row?.workout ?? "Workout",
+        workoutType: row?.type ?? "",
+        sessionId,
+        mode: modeRef.current,
+        targetSeconds: targetSecondsRef.current,
+        baseElapsedSeconds: baseElapsedRef.current,
+        startedAtMs: running ? startedAtRef.current : null,
+        running,
+        sessionStartedAtMs: sessionStartedAtMsRef.current,
+        day: dayNum,
+        unlockedMaxDay,
+      });
+      router.back();
       return;
     }
+    dismiss();
     router.back();
   };
 
@@ -835,7 +911,7 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
           title={`Day ${dayNum} Workout`}
           onBack={requestBack}
           titleClassName="text-2xl"
-          rightSlot={<FavouriteButton item={favouriteItem} />}
+          rightSlot={<FavouriteButton item={favouriteItem} disabled={countdown != null} />}
         />
       </View>
 
@@ -927,7 +1003,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                           source={instructionImage}
                           style={{ width: "100%", height: 220 }}
                           contentFit="contain"
-                          transition={200}
+                          transition={0}
+                          cachePolicy="memory-disk"
+                          recyclingKey={`instruction-gif:${row?.workout ?? ""}`}
+                          autoplay
                         />
                       );
                     })()}
@@ -984,24 +1063,38 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               void pauseWorkout().then(() => setPauseMenuVisible(true));
             }}
           className={`flex-1 py-3.5 rounded-full ${
-            !canStartThisDay && !running && !canResume
-              ? "bg-gray-300"
-              : running
-                ? "bg-red-600"
-                : "bg-[#76C893]"
-          } ${!canStartThisDay && !running && !canResume ? "" : "active:opacity-90"}`}
+            !canStartThisDay && !running && !canResume ? "" : "active:opacity-90"
+          }`}
+          style={{
+            backgroundColor:
+              !canStartThisDay && !running && !canResume
+                ? "#d1d5db"
+                : running
+                  ? "#dc2626"
+                  : "#76C893",
+          }}
           >
-            <ThemedText
-              className="font-extrabold text-lg text-center"
-              style={{
-                color: workoutControlLabelColor(
+            <View className="flex-row items-center justify-center gap-2">
+              <Ionicons
+                name={running ? "pause" : "play"}
+                size={20}
+                color={workoutControlLabelColor(
                   running,
                   !canStartThisDay && !running && !canResume
-                ),
-              }}
-            >
-              {running ? "Pause" : canResume ? "Resume" : "Start Workout"}
-            </ThemedText>
+                )}
+              />
+              <ThemedText
+                className="font-extrabold text-lg text-center"
+                style={{
+                  color: workoutControlLabelColor(
+                    running,
+                    !canStartThisDay && !running && !canResume
+                  ),
+                }}
+              >
+                {running ? "Pause" : canResume ? "Resume" : "Start Workout"}
+              </ThemedText>
+            </View>
           </Pressable>
 
           <View className="items-start ml-5">
@@ -1183,9 +1276,12 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               </Pressable>
               <Pressable
                 onPress={startCountdownWithPicker}
-                className="flex-1 py-3.5 rounded-2xl bg-[#76C893] items-center active:opacity-90"
+                className="flex-1 py-3.5 rounded-2xl items-center active:opacity-90"
+                style={{ backgroundColor: "#76C893" }}
               >
-                <ThemedText className="font-extrabold text-white">Start</ThemedText>
+                <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                  Start
+                </ThemedText>
               </Pressable>
             </View>
           </View>
@@ -1193,7 +1289,11 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
       </Modal>
 
       {countdown != null ? (
-        <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: theme.modalOverlay }}>
+        <View
+          pointerEvents="auto"
+          className="absolute inset-0 items-center justify-center"
+          style={{ backgroundColor: theme.modalOverlay, zIndex: 10050, elevation: 20 }}
+        >
           <View className="w-full px-10 items-center">
             <ThemedText className="text-white text-lg font-extrabold mb-6 text-center">
               Your workout will begin in
@@ -1206,6 +1306,18 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 {countdown}
               </ThemedText>
             </View>
+            <Pressable
+              onPress={skipCountdownAndStart}
+              className="mt-14 px-8 py-3.5 rounded-full active:opacity-90"
+              style={{ backgroundColor: "#76C893" }}
+            >
+              <View className="flex-row items-center justify-center gap-2">
+                <Ionicons name="play" size={20} color="#ffffff" />
+                <ThemedText className="font-extrabold text-lg" style={{ color: "#ffffff" }}>
+                  Start now
+                </ThemedText>
+              </View>
+            </Pressable>
           </View>
         </View>
       ) : null}
@@ -1236,7 +1348,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 className="rounded-3xl p-5 active:opacity-90"
                 style={rowBorderStyle}
               >
-                <ThemedText className="text-xl font-extrabold">Resume</ThemedText>
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="play" size={22} color={theme.textPrimary} />
+                  <ThemedText className="text-xl font-extrabold">Resume</ThemedText>
+                </View>
               </Pressable>
 
               <Pressable
@@ -1247,7 +1362,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 className="rounded-3xl p-5 active:opacity-90"
                 style={rowBorderStyle}
               >
-                <ThemedText className="text-xl font-extrabold">Stop</ThemedText>
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="stop" size={22} color={theme.textPrimary} />
+                  <ThemedText className="text-xl font-extrabold">Stop</ThemedText>
+                </View>
               </Pressable>
 
               <Pressable
@@ -1255,7 +1373,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 className="rounded-3xl p-5 active:opacity-90"
                 style={rowBorderStyle}
               >
-                <ThemedText className="text-xl font-extrabold">Restart</ThemedText>
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="refresh" size={22} color={theme.textPrimary} />
+                  <ThemedText className="text-xl font-extrabold">Restart</ThemedText>
+                </View>
               </Pressable>
 
               <Pressable
@@ -1263,7 +1384,10 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                 className="rounded-3xl p-5 active:opacity-90"
                 style={rowBorderStyle}
               >
-                <ThemedText className="text-xl font-extrabold">Complete</ThemedText>
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="checkmark-circle" size={22} color={theme.textPrimary} />
+                  <ThemedText className="text-xl font-extrabold">Complete</ThemedText>
+                </View>
               </Pressable>
             </View>
 
@@ -1297,48 +1421,21 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
                     clearCountdown();
                     setCanResume(false);
                     setSessionId(null);
+                    dismiss();
                   } else {
                     void completeWorkout();
                   }
                 }}
-                className="py-4 rounded-full items-center active:opacity-90 bg-red-600"
+                className="py-4 rounded-full items-center active:opacity-90"
+                style={{ backgroundColor: "#dc2626" }}
               >
-                <ThemedText className="text-white text-lg font-extrabold">Confirm</ThemedText>
+                <ThemedText className="text-lg font-extrabold" style={{ color: "#ffffff" }}>
+                  Confirm
+                </ThemedText>
               </Pressable>
 
               <Pressable
                 onPress={() => setConfirmAction(null)}
-                className="py-3 rounded-full items-center border active:opacity-90"
-                style={cardStyle}
-              >
-                <ThemedText className="font-extrabold">Cancel</ThemedText>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={backConfirmVisible} transparent animationType="fade" onRequestClose={() => setBackConfirmVisible(false)}>
-        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
-          <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
-            <ThemedText className="text-2xl font-extrabold">Finish workout?</ThemedText>
-            <ThemedText variant="muted" className="mt-2 leading-6">
-              If you go back now, we will finish the workout and save your time.
-            </ThemedText>
-
-            <View className="mt-5 gap-3">
-              <Pressable
-                onPress={() => {
-                  setBackConfirmVisible(false);
-                  void completeWorkout().finally(() => router.back());
-                }}
-                className="py-4 rounded-full items-center active:opacity-90 bg-red-600"
-              >
-                <ThemedText className="text-white text-lg font-extrabold">Confirm</ThemedText>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setBackConfirmVisible(false)}
                 className="py-3 rounded-full items-center border active:opacity-90"
                 style={cardStyle}
               >

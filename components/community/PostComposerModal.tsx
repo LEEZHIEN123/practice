@@ -1,5 +1,9 @@
 import { Pressable } from "@/components/Pressable";
 import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
+import {
+  listCompletedAchievementsForShare,
+  type ShareableAchievement,
+} from "@/lib/achievements";
 import { DEFAULT_POST_TAGS } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,12 +25,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export type PostComposerValues = {
   content: string;
   tags: string[];
+  achievementIds: string[];
 };
 
 type PostComposerModalProps = {
   visible: boolean;
   title: string;
-  initial?: PostComposerValues;
+  initial?: Partial<PostComposerValues>;
   submitting: boolean;
   onClose: () => void;
   onSubmit: (values: PostComposerValues) => Promise<void>;
@@ -45,8 +50,12 @@ export function PostComposerModal({
   const { inputStyle, placeholderColor } = useProfileCardStyles();
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [achievementIds, setAchievementIds] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
   const [busy, setBusy] = useState(false);
+  const [completedAchievements, setCompletedAchievements] = useState<ShareableAchievement[]>([]);
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
+  const [achievementsExpanded, setAchievementsExpanded] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -55,7 +64,26 @@ export function PostComposerModal({
     }
     setContent(initial?.content ?? "");
     setTags(initial?.tags ?? []);
+    setAchievementIds(initial?.achievementIds ?? []);
     setCustomTag("");
+    setAchievementsExpanded(false);
+
+    let cancelled = false;
+    setLoadingAchievements(true);
+    void listCompletedAchievementsForShare()
+      .then((rows) => {
+        if (!cancelled) setCompletedAchievements(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setCompletedAchievements([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAchievements(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [visible, initial]);
 
   const toggleTag = (tag: string) => {
@@ -64,6 +92,21 @@ export function PostComposerModal({
         ? prev.filter((t) => t.toLowerCase() !== tag.toLowerCase())
         : [...prev, tag]
     );
+  };
+
+  const toggleAchievement = (id: string) => {
+    setAchievementIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      setTags((tagsPrev) => {
+        const hasAchievementTag = tagsPrev.some((t) => t.toLowerCase() === "achievement");
+        if (next.length > 0 && !hasAchievementTag) return [...tagsPrev, "Achievement"];
+        if (next.length === 0 && hasAchievementTag) {
+          return tagsPrev.filter((t) => t.toLowerCase() !== "achievement");
+        }
+        return tagsPrev;
+      });
+      return next;
+    });
   };
 
   const addCustomTag = () => {
@@ -84,7 +127,7 @@ export function PostComposerModal({
     setBusy(true);
     Keyboard.dismiss();
     try {
-      await onSubmit({ content, tags });
+      await onSubmit({ content, tags, achievementIds });
     } finally {
       setBusy(false);
     }
@@ -138,6 +181,88 @@ export function PostComposerModal({
               style={inputStyle}
               placeholderTextColor={placeholderColor}
             />
+
+            <Text className="text-base font-extrabold mt-5 mb-1" style={{ color: theme.textPrimary }}>
+              Share achievements
+            </Text>
+            <ThemedText variant="muted" className="text-xs mb-2">
+              Choose unlocked achievements to show on your post.
+            </ThemedText>
+            {loadingAchievements ? (
+              <View className="py-3">
+                <ActivityIndicator color={theme.accent} />
+              </View>
+            ) : completedAchievements.length === 0 ? (
+              <ThemedText variant="muted" className="text-sm mb-2">
+                No completed achievements yet. Keep going!
+              </ThemedText>
+            ) : (
+              <View className="gap-2 mb-1">
+                {(achievementsExpanded
+                  ? completedAchievements
+                  : completedAchievements.slice(0, 3)
+                ).map((item) => {
+                  const selected = achievementIds.includes(item.id);
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => toggleAchievement(item.id)}
+                      className="flex-row items-center rounded-2xl px-3 py-3 border"
+                      style={
+                        selected
+                          ? { backgroundColor: "#fff7ed", borderColor: "#fdba74" }
+                          : cardStyle
+                      }
+                    >
+                      <Ionicons
+                        name={selected ? "checkbox" : "square-outline"}
+                        size={20}
+                        color={selected ? "#ea580c" : theme.iconMuted}
+                      />
+                      <View className="flex-1 ml-3">
+                        <Text
+                          className="text-sm font-extrabold"
+                          style={{ color: selected ? "#c2410c" : theme.textPrimary }}
+                        >
+                          {item.title}
+                        </Text>
+                        <Text
+                          className="text-xs mt-0.5"
+                          style={{ color: selected ? "#9a3412" : theme.textMuted }}
+                          numberOfLines={2}
+                        >
+                          {item.description}
+                        </Text>
+                      </View>
+                      <Ionicons name="trophy" size={16} color={selected ? "#ea580c" : theme.iconMuted} />
+                    </Pressable>
+                  );
+                })}
+                {completedAchievements.length > 3 ? (
+                  <Pressable
+                    onPress={() => setAchievementsExpanded((v) => !v)}
+                    className="flex-row items-center justify-center py-2 active:opacity-70"
+                  >
+                    <ThemedText variant="accent" className="text-sm font-extrabold">
+                      {achievementsExpanded
+                        ? "Show less"
+                        : `Show ${completedAchievements.length - 3} more`}
+                    </ThemedText>
+                    <Ionicons
+                      name={achievementsExpanded ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={theme.accentText}
+                      style={{ marginLeft: 4 }}
+                    />
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
+            {achievementIds.length > 0 ? (
+              <ThemedText variant="muted" className="text-xs mt-1 mb-2">
+                {achievementIds.length} selected
+              </ThemedText>
+            ) : null}
 
             <ThemedText className="text-sm font-extrabold mt-5 mb-2">Tags</ThemedText>
             <View className="flex-row flex-wrap gap-2">

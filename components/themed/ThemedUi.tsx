@@ -50,7 +50,7 @@ export function ProfileScreenHeader({
   backButtonClassName = "w-12 h-12",
   backIcon = "arrow-back",
   backIconSize = 24,
-  headerHeightClassName = "h-12",
+  headerHeightClassName = "min-h-12",
 }: {
   title: string;
   onBack: () => void;
@@ -72,8 +72,11 @@ export function ProfileScreenHeader({
         : String(titleBadgeCount)
       : null;
   return (
-    <View className={`relative justify-center ${headerHeightClassName} ${className}`} pointerEvents="box-none">
-      <View className="absolute left-0 top-0 h-full w-20 justify-center pl-2 z-10">
+    <View
+      className={`flex-row items-center ${headerHeightClassName} ${className}`}
+      pointerEvents="box-none"
+    >
+      <View className="shrink-0 z-10 justify-center">
         <ThemedBackButton
           onPress={onBack}
           className={backButtonClassName}
@@ -81,46 +84,43 @@ export function ProfileScreenHeader({
           size={backIconSize}
         />
       </View>
-      {rightSlot ? (
-        <View className="absolute right-0 top-0 h-full justify-center pr-2 z-10">{rightSlot}</View>
-      ) : null}
-      {centerSlot ? (
-        <View
-          pointerEvents="box-none"
-          className="absolute left-0 right-0 flex-row items-center pl-[5.5rem] pr-16"
-        >
-          {centerSlot}
-        </View>
-      ) : (
-        <View
-          pointerEvents="none"
-          className="absolute left-0 right-0 flex-row items-center justify-center px-16"
-        >
-          <Text
-            numberOfLines={2}
-            className={`text-center font-extrabold ${titleClassName}`}
-            style={textPrimary}
-          >
-            {title}
-          </Text>
-          {badgeLabel ? (
-            <View
-              style={{
-                marginLeft: 8,
-                minWidth: 20,
-                height: 20,
-                paddingHorizontal: 5,
-                borderRadius: 10,
-                backgroundColor: "#ef4444",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+      <View className="flex-1 min-w-0 px-2 items-center justify-center self-stretch">
+        {centerSlot ? (
+          <View pointerEvents="box-none" className="w-full flex-row items-center">
+            {centerSlot}
+          </View>
+        ) : (
+          <View pointerEvents="none" className="w-full flex-row items-center justify-center">
+            <Text
+              numberOfLines={3}
+              className={`text-center font-extrabold ${titleClassName}`}
+              style={[textPrimary, { flexShrink: 1, maxWidth: "100%" }]}
             >
-              <Text style={{ fontSize: 11, fontWeight: "800", color: "#ffffff" }}>{badgeLabel}</Text>
-            </View>
-          ) : null}
-        </View>
-      )}
+              {title}
+            </Text>
+            {badgeLabel ? (
+              <View
+                style={{
+                  marginLeft: 8,
+                  minWidth: 20,
+                  height: 20,
+                  paddingHorizontal: 5,
+                  borderRadius: 10,
+                  backgroundColor: "#ef4444",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: "800", color: "#ffffff" }}>{badgeLabel}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+      </View>
+      <View className="shrink-0 z-10 justify-center items-end" style={{ minWidth: 48 }}>
+        {rightSlot ?? null}
+      </View>
     </View>
   );
 }

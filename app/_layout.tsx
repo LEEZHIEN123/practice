@@ -1,6 +1,8 @@
 import { MusicMiniPlayer } from "@/components/MusicMiniPlayer";
+import { WorkoutMiniPlayer } from "@/components/WorkoutMiniPlayer";
 import { AppearanceProvider, useAppearance } from "@/context/AppearanceContext";
 import { MusicPlayerProvider } from "@/context/MusicPlayerContext";
+import { WorkoutSessionProvider } from "@/context/WorkoutSessionContext";
 import { RegistrationProvider } from "@/context/registrationContext";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -30,10 +32,13 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AppearanceProvider>
         <MusicPlayerProvider>
-          <RegistrationProvider>
-            <RootStack />
-          </RegistrationProvider>
-          <MusicMiniPlayer />
+          <WorkoutSessionProvider>
+            <RegistrationProvider>
+              <RootStack />
+            </RegistrationProvider>
+            <MusicMiniPlayer />
+            <WorkoutMiniPlayer />
+          </WorkoutSessionProvider>
         </MusicPlayerProvider>
       </AppearanceProvider>
     </SafeAreaProvider>

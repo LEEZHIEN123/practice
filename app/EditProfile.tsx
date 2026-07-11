@@ -31,8 +31,7 @@ type ActivityKey =
   | "sedentary"
   | "light"
   | "moderate"
-  | "very_active"
-  | "extra_active";
+  | "very_active";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -98,13 +97,6 @@ export default function EditProfile() {
         multiplier: 1.725,
         icon: "fitness-outline" as IoniconName,
       },
-      {
-        key: "extra_active" as const,
-        title: "Extra Active",
-        subtitle: "Exercise 2 times a day",
-        multiplier: 1.9,
-        icon: "flash-outline" as IoniconName,
-      },
     ],
     []
   );
@@ -168,7 +160,9 @@ export default function EditProfile() {
         }
 
         if (data.activityLevel) {
-          setActivityLevel(data.activityLevel as ActivityKey);
+          const level =
+            data.activityLevel === "extra_active" ? "very_active" : data.activityLevel;
+          setActivityLevel(level as ActivityKey);
         }
       } catch (error) {
         console.log("Error loading user profile:", error);

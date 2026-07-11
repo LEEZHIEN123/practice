@@ -1,6 +1,7 @@
 import { AddFriendModal } from "@/components/community/AddFriendModal";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { FriendsSection } from "@/components/community/FriendsSection";
+import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostCommentsPreview } from "@/components/community/PostCommentsPreview";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
@@ -9,7 +10,7 @@ import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { Pressable } from "@/components/Pressable";
-import { ProfileScreenHeader, ThemedBackButton } from "@/components/themed/ThemedUi";
+import { ProfileScreenHeader, ThemedBackButton, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
     getCommunityBootstrapSnapshot,
@@ -61,6 +62,7 @@ import {
     ensureChatsForFriends,
     ensureDirectChat,
     ensureSupportChatWithAdmin,
+    fetchPostIdsCommentedByUser,
     filterPostsByKeyword,
     filterPostsByTag,
     getPendingIncomingFriendRequest,
@@ -74,6 +76,7 @@ import {
     sendFriendRequest,
     submitReport,
     subscribeChats,
+    subscribeFriendsList,
     subscribeNotifications,
     subscribePendingCommunityPostIds,
     SUPPORT_ADMIN_NAME,
@@ -235,6 +238,7 @@ export default function CommunityScreen() {
   useAdminRedirect();
   const { cardStyle, screenStyle, surfaceStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
     useThemedScreen();
+  const { modalCardStyle } = useProfileCardStyles();
   const bootstrap = getCommunityBootstrapSnapshot();
 
   const [activeTab, setActiveTab] = useState<"feed" | "friends" | "chat">("feed");
@@ -262,6 +266,10 @@ export default function CommunityScreen() {
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [tagFilterView, setTagFilterView] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [manageMenuVisible, setManageMenuVisible] = useState(false);
+  const [manageFilter, setManageFilter] = useState<"liked" | "commented" | "friends" | null>(null);
+  const [commentedPostIds, setCommentedPostIds] = useState<string[]>([]);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<PublicUserProfile | null>(null);
@@ -313,9 +321,31 @@ export default function CommunityScreen() {
 
   const filteredPosts = useMemo(() => {
     let list = filterPostsByTag(posts, tagFilterView ? activeTagFilter : null);
+
+    if (manageFilter && currentUserId) {
+      if (manageFilter === "liked") {
+        list = list.filter((p) => p.likedBy.includes(currentUserId));
+      } else if (manageFilter === "commented") {
+        const idSet = new Set(commentedPostIds);
+        list = list.filter((p) => idSet.has(p.id));
+      } else {
+        const friends = new Set(friendIds);
+        list = list.filter((p) => friends.has(p.authorId));
+      }
+    }
+
     list = filterPostsByKeyword(list, searchQuery);
     return list;
-  }, [posts, activeTagFilter, tagFilterView, searchQuery]);
+  }, [
+    posts,
+    activeTagFilter,
+    tagFilterView,
+    searchQuery,
+    manageFilter,
+    currentUserId,
+    commentedPostIds,
+    friendIds,
+  ]);
 
   const profilePosts = useMemo(
     () => (profileUserId ? getPostsByAuthor(posts, profileUserId) : []),
@@ -388,6 +418,25 @@ export default function CommunityScreen() {
       params: { postId: openPostId },
     });
   }, [params.openPostId, params.openComments, router]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setCommentedPostIds([]);
+      setFriendIds([]);
+      return;
+    }
+    void fetchPostIdsCommentedByUser(currentUserId)
+      .then(setCommentedPostIds)
+      .catch(() => setCommentedPostIds([]));
+    return subscribeFriendsList(
+      (friends) => setFriendIds(friends.map((f) => f.id)),
+      () => setFriendIds([])
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (activeTab !== "feed") setManageFilter(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -474,6 +523,7 @@ export default function CommunityScreen() {
   const handleCreateOrUpdatePost = async (values: {
     content: string;
     tags: string[];
+    achievementIds: string[];
   }) => {
     if (!auth.currentUser?.uid) {
       Alert.alert("Sign in required", "Please sign in to post in the community.");
@@ -486,12 +536,14 @@ export default function CommunityScreen() {
           content: values.content,
           imageUrl: editingPost.imageUrl,
           tags: values.tags,
+          achievementIds: values.achievementIds,
         });
         setEditingPost(null);
       } else {
         const created = await createPost({
           content: values.content,
           tags: values.tags,
+          achievementIds: values.achievementIds,
         });
         prependCommunityPost(created);
         setPosts((prev) => {
@@ -756,46 +808,51 @@ export default function CommunityScreen() {
 
   return (
     <View style={screenStyle}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + 100,
-          paddingTop: insets.top + 12,
-        }}
-      >
+      <View style={{ paddingTop: insets.top + 12 }}>
         <View className="px-4">
           <ProfileScreenHeader
             title="Community"
             onBack={() => router.back()}
             rightSlot={
-              <Pressable
-                onPress={() => {
-                  router.push("/community-notifications" as any);
-                }}
-                className="w-12 h-12 rounded-full items-center justify-center relative"
-                style={iconButtonStyle}
-              >
-                <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
-                {unreadNotifications > 0 ? (
-                  <View
-                    style={{
-                      position: "absolute",
-                      top: -2,
-                      right: -2,
-                      minWidth: 18,
-                      height: 18,
-                      paddingHorizontal: 4,
-                      borderRadius: 9,
-                      backgroundColor: "#ef4444",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text className="text-[10px] font-extrabold text-white">
-                      {unreadNotifications > 9 ? "9+" : unreadNotifications}
-                    </Text>
-                  </View>
-                ) : null}
-              </Pressable>
+              <View className="flex-row items-center gap-1">
+                <Pressable
+                  onPress={() => {
+                    router.push("/community-notifications" as any);
+                  }}
+                  className="w-12 h-12 rounded-full items-center justify-center relative"
+                  style={iconButtonStyle}
+                >
+                  <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
+                  {unreadNotifications > 0 ? (
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: -2,
+                        right: -2,
+                        minWidth: 18,
+                        height: 18,
+                        paddingHorizontal: 4,
+                        borderRadius: 9,
+                        backgroundColor: "#ef4444",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text className="text-[10px] font-extrabold text-white">
+                        {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    router.push("/community-my-posts" as any);
+                  }}
+                  className="w-12 h-12 rounded-full items-center justify-center"
+                >
+                  <ProfileAvatar uri={myProfileImage} size={36} />
+                </Pressable>
+              </View>
             }
           />
         </View>
@@ -873,20 +930,63 @@ export default function CommunityScreen() {
         </View>
 
         {activeTab === "feed" ? (
+          tagFilterView && activeTagFilter ? (
+            <View className="flex-row items-center mb-4 px-4">
+              <ThemedBackButton onPress={exitTagView} className="mr-3" />
+              <Text className="text-lg font-extrabold" style={textPrimary}>#{activeTagFilter}</Text>
+            </View>
+          ) : (
             <>
-              {tagFilterView && activeTagFilter ? (
-                <View className="flex-row items-center mb-4 px-4">
-                  <ThemedBackButton onPress={exitTagView} className="mr-3" />
-                  <Text className="text-lg font-extrabold" style={textPrimary}>#{activeTagFilter}</Text>
+              <View className="flex-row items-center gap-2 mx-4 mb-4">
+                <View className="flex-1">
+                  <CommunitySearchBar
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search posts, tags, or people..."
+                    className="mb-0"
+                  />
                 </View>
-              ) : (
-                <CommunitySearchBar
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder="Search posts, tags, or people..."
-                />
-              )}
+                <Pressable
+                  onPress={() => setManageMenuVisible(true)}
+                  className="w-12 h-12 rounded-2xl items-center justify-center border"
+                  style={
+                    manageFilter
+                      ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                      : cardStyle
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage posts"
+                >
+                  <Ionicons
+                    name="options-outline"
+                    size={22}
+                    color={manageFilter ? theme.accent : theme.textPrimary}
+                  />
+                </Pressable>
+                {manageFilter ? (
+                  <Pressable
+                    onPress={() => setManageFilter(null)}
+                    className="w-12 h-12 rounded-2xl items-center justify-center border"
+                    style={cardStyle}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear manage filter"
+                  >
+                    <Ionicons name="close" size={20} color={theme.textPrimary} />
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          )
+        ) : null}
+      </View>
 
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + 100,
+        }}
+      >
+        {activeTab === "feed" ? (
               <View className="gap-3 px-4 pb-4">
                 {!postsHydrated && filteredPosts.length === 0 ? (
                   <View className="px-4 py-10 rounded-2xl items-center" style={cardStyle}>
@@ -895,12 +995,18 @@ export default function CommunityScreen() {
                   </View>
                 ) : filteredPosts.length === 0 ? (
                   <View className="px-4 py-8 rounded-2xl items-center" style={cardStyle}>
-                    <Text className="text-sm" style={textMuted}>
-                      {tagFilterView && activeTagFilter
-                        ? `No posts with #${activeTagFilter}`
-                        : searchQuery
-                          ? "No posts match your search."
-                          : "No posts yet. Be the first to share!"}
+                    <Text className="text-sm text-center" style={textMuted}>
+                      {manageFilter === "liked"
+                        ? "No liked posts yet."
+                        : manageFilter === "commented"
+                          ? "No posts you've commented on yet."
+                          : manageFilter === "friends"
+                            ? "No posts from friends yet."
+                            : tagFilterView && activeTagFilter
+                              ? `No posts with #${activeTagFilter}`
+                              : searchQuery
+                                ? "No posts match your search."
+                                : "No posts yet. Be the first to share!"}
                     </Text>
                   </View>
                 ) : null}
@@ -973,6 +1079,8 @@ export default function CommunityScreen() {
                       {post.content ? (
                         <Text className="text-base mt-3 leading-7" style={textSecondary}>{post.content}</Text>
                       ) : null}
+
+                      <PostAchievementChips achievementIds={post.achievementIds ?? []} />
 
                       {post.imageUrl ? (
                         <Image
@@ -1066,7 +1174,6 @@ export default function CommunityScreen() {
                   );
                 })}
               </View>
-            </>
           ) : activeTab === "friends" ? (
             <View className="px-4">
               <FriendsSection
@@ -1174,6 +1281,7 @@ export default function CommunityScreen() {
             ? {
                 content: editingPost.content,
                 tags: editingPost.tags,
+                achievementIds: editingPost.achievementIds ?? [],
               }
             : undefined
         }
@@ -1216,6 +1324,11 @@ export default function CommunityScreen() {
               ? () => void handleChatFromProfile()
               : undefined
         }
+        onOpenPost={(postId) => {
+          setProfileUserId(null);
+          setProfileData(null);
+          openPostDetail(postId);
+        }}
       />
 
       <PostMenuModal
@@ -1293,6 +1406,49 @@ export default function CommunityScreen() {
           });
         }}
       />
+
+      <Modal
+        visible={manageMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setManageMenuVisible(false)}
+      >
+        <View className="flex-1 justify-center px-8" style={{ backgroundColor: theme.modalOverlay }}>
+          <Pressable className="absolute inset-0" onPress={() => setManageMenuVisible(false)} />
+          <View className="rounded-[24px] overflow-hidden" style={modalCardStyle}>
+            <Text className="text-lg font-extrabold px-5 pt-5 pb-2" style={textPrimary}>
+              Manage
+            </Text>
+            {(
+              [
+                { key: "liked", label: "My like", icon: "heart-outline" as const },
+                { key: "commented", label: "My comment", icon: "chatbubble-outline" as const },
+                { key: "friends", label: "My friend's post", icon: "people-outline" as const },
+              ] as const
+            ).map((opt) => (
+              <Pressable
+                key={opt.key}
+                onPress={() => {
+                  setManageFilter(opt.key);
+                  setManageMenuVisible(false);
+                }}
+                className="px-5 py-4 border-b flex-row items-center gap-3"
+                style={{ borderBottomColor: theme.cardBorder }}
+              >
+                <Ionicons name={opt.icon} size={20} color={theme.textPrimary} />
+                <Text className="text-base font-bold flex-1" style={textPrimary}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setManageMenuVisible(false)} className="px-5 py-4">
+              <Text className="text-center text-base font-bold" style={textMuted}>
+                Cancel
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

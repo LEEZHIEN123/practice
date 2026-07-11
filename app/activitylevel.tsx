@@ -8,30 +8,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { doc, setDoc } from "firebase/firestore";
-import { useRegistration } from "../context/registrationContext";
-import { auth, db } from "../firebaseConfig";
-
-type ActivityKey =
-  | "sedentary"
-  | "light"
-  | "moderate"
-  | "very_active"
-  | "extra_active";
+import { useRegistration, type ActivityKey } from "../context/registrationContext";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export default function ActivityLevel() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { account, profile, reset, setActivity } = useRegistration();
+  const { account, profile, setActivity } = useRegistration();
   const { theme, cardStyle } = useThemedScreen();
 
   const [selected, setSelected] = useState<ActivityKey | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const options = useMemo(
     () => [
@@ -63,20 +53,11 @@ export default function ActivityLevel() {
         multiplier: 1.725,
         icon: "fitness-outline" as IoniconName,
       },
-      {
-        key: "extra_active" as const,
-        title: "Extra Active",
-        subtitle: "Exercise 2 times a day",
-        multiplier: 1.9,
-        icon: "flash-outline" as IoniconName,
-      },
     ],
     []
   );
 
-  const select = (key: ActivityKey) => setSelected(key);
-
-  const continueToHome = async () => {
+  const continueNext = () => {
     const picked = options.find((o) => o.key === selected);
     if (!picked) return;
     if (!account || !profile) {
@@ -84,50 +65,8 @@ export default function ActivityLevel() {
       return;
     }
 
-    try {
-      setSaving(true);
-
-      setActivity({ activityLevel: picked.key, activityMultiplier: picked.multiplier });
-
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert("Session expired", "Please register again.");
-        router.replace("/register");
-        return;
-      }
-
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          name: account.name,
-          email: user.email ?? account.email,
-          createdAt: Date.now(),
-          gender: profile.gender,
-          profileImage: null,
-          age: profile.age,
-          height: profile.height,
-          weight: profile.weight,
-          activityLevel: picked.key,
-          activityMultiplier: picked.multiplier,
-        },
-        { merge: true }
-      );
-
-      router.push("/BMIanalysis");
-    } catch (error: any) {
-      if (error?.code === "permission-denied") {
-        Alert.alert(
-          "Firestore: permission denied",
-          "Your Firestore security rules are blocking saving the new profile. In Firebase Console → Firestore Database → Rules, publish the rules from the firestore.rules file in this project (or run: firebase deploy --only firestore:rules after firebase login)."
-        );
-      } else {
-        Alert.alert("Error", error?.message ?? "Failed to complete registration.");
-      }
-      console.log("Error saving activity level:", error);
-    } finally {
-      setSaving(false);
-      reset();
-    }
+    setActivity({ activityLevel: picked.key, activityMultiplier: picked.multiplier });
+    router.push("/dietary-preference" as any);
   };
 
   return (
@@ -152,7 +91,7 @@ export default function ActivityLevel() {
           return (
             <Pressable
               key={o.key}
-              onPress={() => select(o.key)}
+              onPress={() => setSelected(o.key)}
               className="rounded-3xl p-5 flex-row items-center justify-between"
               style={
                 isActive
@@ -188,12 +127,12 @@ export default function ActivityLevel() {
                 className="w-7 h-7 rounded-full border-2 items-center justify-center"
                 style={{ borderColor: isActive ? theme.accent : theme.iconMuted }}
               >
-                {isActive && (
+                {isActive ? (
                   <View
                     className="w-3.5 h-3.5 rounded-full"
                     style={{ backgroundColor: theme.accent }}
                   />
-                )}
+                ) : null}
               </View>
             </Pressable>
           );
@@ -202,18 +141,16 @@ export default function ActivityLevel() {
 
       <View className="flex-1 justify-end pb-10 mt-3">
         <Pressable
-          onPress={continueToHome}
-          disabled={saving}
-          className={`rounded-full overflow-hidden ${saving ? "opacity-60" : "opacity-100"}`}
+          onPress={continueNext}
+          disabled={!selected}
+          className={`rounded-full overflow-hidden ${!selected ? "opacity-60" : "opacity-100"}`}
         >
           <LinearGradient
             colors={[theme.accent, theme.accentText]}
             className="py-4 items-center rounded-2xl"
           >
             <View className="flex-row items-center">
-              <Text className="text-white text-lg font-semibold mr-2">
-                {saving ? "Analysis.." : "Continue"}
-              </Text>
+              <Text className="text-white text-lg font-semibold mr-2">Continue</Text>
               <Ionicons name="arrow-forward" size={20} color="white" />
             </View>
           </LinearGradient>

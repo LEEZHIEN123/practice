@@ -4,6 +4,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -35,6 +36,7 @@ import type {
   FriendListEntry,
   FriendRelation,
   FriendRequest,
+  PendingReReviewRequest,
   PostCategory,
   PostEditSnapshot,
   PublicUserProfile,
@@ -138,6 +140,7 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
     category: (data.category as PostCategory) ?? "general",
     imageUrl: typeof data.imageUrl === "string" ? data.imageUrl : null,
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
+    achievementIds: Array.isArray(data.achievementIds) ? data.achievementIds.map(String) : [],
     editHistory,
     updatedAt: Number(data.updatedAt ?? data.createdAt ?? 0),
     likeCount: Number(data.likeCount ?? 0),
@@ -230,6 +233,7 @@ function mapComment(id: string, postId: string, data: Record<string, unknown>): 
     replyToAuthorName:
       typeof data.replyToAuthorName === "string" ? data.replyToAuthorName : null,
     createdAt: Number(data.createdAt ?? 0),
+    blocked: data.blocked === true,
   };
 }
 
@@ -273,6 +277,16 @@ function mapReport(id: string, data: Record<string, unknown>): CommunityReport {
     targetAuthorId: String(data.targetAuthorId ?? ""),
     targetAuthorName: String(data.targetAuthorName ?? "User"),
     read: data.read === true,
+    source:
+      data.source === "re_review"
+        ? "re_review"
+        : data.source === "admin_direct"
+          ? "admin_direct"
+          : "report",
+    requestReason:
+      typeof data.requestReason === "string" && data.requestReason.length > 0
+        ? data.requestReason
+        : undefined,
   };
 }
 
@@ -539,6 +553,224 @@ export function subscribePosts(
   };
 }
 
+/** Author feed including posts hidden by admin (blocked). Public feed still excludes blocked. */
+export function subscribeMyAuthoredPosts(
+  authorId: string,
+  onData: (posts: CommunityPost[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, "communityPosts"), where("authorId", "==", authorId)),
+    (snap) => {
+      const posts = snap.docs
+        .map((d) => mapPost(d.id, d.data() as Record<string, unknown>))
+        .sort((a, b) => b.createdAt - a.createdAt);
+      onData(posts);
+    },
+    (error) => onError?.(error)
+  );
+}
+
+/** Author asks Support Admin to review a hidden (blocked) post again. */
+export async function requestBlockedPostReReview(
+  postId: string,
+  reason: string
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Sign in required");
+
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Please provide a reason");
+
+  const postRef = doc(db, "communityPosts", postId);
+  const snap = await getDoc(postRef);
+  if (!snap.exists()) throw new Error("Post not found");
+  const data = snap.data() as Record<string, unknown>;
+  if (String(data.authorId ?? "") !== user.uid) throw new Error("Not allowed");
+  if (data.blocked !== true) throw new Error("This post is not hidden");
+  if (data.underReview === true) throw new Error("A review request is already pending");
+
+  const profile = await getUserProfile(user.uid);
+  const content = String(data.content ?? "");
+  const authorName = String(data.authorName ?? profile.name ?? "User");
+  const now = Date.now();
+
+  await updateDoc(postRef, { underReview: true });
+  await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
+    postId,
+    reReviewRequested: true,
+    reReviewReason: trimmedReason,
+    reReviewRequestedBy: user.uid,
+    reReviewRequestedByName: profile.name,
+    reReviewAuthorId: user.uid,
+    reReviewAuthorName: authorName,
+    reReviewContent: content,
+    reReviewRequestedAt: now,
+    updatedAt: now,
+  });
+
+  await sendAdminDirectMessage(
+    user.uid,
+    buildReReviewRequestReceivedMessage(content, trimmedReason)
+  );
+}
+
+export function subscribePendingReReviewRequests(
+  onData: (requests: PendingReReviewRequest[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, PENDING_POSTS_COLLECTION),
+    (snap) => {
+      void (async () => {
+        const requests: PendingReReviewRequest[] = [];
+        for (const d of snap.docs) {
+          const data = d.data() as Record<string, unknown>;
+          if (data.reReviewRequested !== true) continue;
+
+          const requestedBy = String(data.reReviewRequestedBy ?? "");
+          let requestedByName =
+            typeof data.reReviewRequestedByName === "string" ? data.reReviewRequestedByName : "";
+          if (!requestedByName && requestedBy) {
+            try {
+              const profile = await getUserProfile(requestedBy);
+              requestedByName = profile.name;
+            } catch {
+              requestedByName = "User";
+            }
+          }
+
+          let content =
+            typeof data.reReviewContent === "string" ? data.reReviewContent : "";
+          let authorId =
+            typeof data.reReviewAuthorId === "string" ? data.reReviewAuthorId : requestedBy;
+          let authorName =
+            typeof data.reReviewAuthorName === "string" ? data.reReviewAuthorName : requestedByName;
+
+          if (!content) {
+            try {
+              const postSnap = await getDoc(doc(db, "communityPosts", d.id));
+              if (postSnap.exists()) {
+                const postData = postSnap.data() as Record<string, unknown>;
+                content = String(postData.content ?? "");
+                authorId = String(postData.authorId ?? authorId);
+                authorName = String(postData.authorName ?? authorName);
+              }
+            } catch {
+              // Keep fallbacks
+            }
+          }
+
+          requests.push({
+            postId: d.id,
+            reason: String(data.reReviewReason ?? ""),
+            requestedBy,
+            requestedByName: requestedByName || "User",
+            authorId,
+            authorName: authorName || "User",
+            content,
+            requestedAt: Number(data.reReviewRequestedAt ?? data.updatedAt ?? 0),
+          });
+        }
+        requests.sort((a, b) => b.requestedAt - a.requestedAt);
+        onData(requests);
+      })();
+    },
+    (error) => onError?.(error)
+  );
+}
+
+/** Unhide a blocked post after the author requested another check. */
+export async function approveReReviewRequest(postId: string): Promise<void> {
+  if (!(await checkIsAdmin())) throw new Error("Admin only");
+
+  const postRef = doc(db, "communityPosts", postId);
+  const snap = await getDoc(postRef);
+  if (!snap.exists()) throw new Error("Post not found");
+  const data = snap.data() as Record<string, unknown>;
+  const authorId = String(data.authorId ?? "");
+  const content = String(data.content ?? "");
+
+  await updateDoc(postRef, { blocked: false, underReview: false });
+  await clearPostPendingReview(postId);
+
+  if (authorId) {
+    await sendAdminDirectMessage(
+      authorId,
+      `Your request to check this post again has been reviewed.\n\n**Your post:**\n"${formatPostContentSnippet(content)}"\n\nThe post has been **restored to the community**.`
+    );
+  }
+}
+
+/** Keep the post hidden after the author requested another check. */
+export async function dismissReReviewRequest(postId: string, reason: string): Promise<void> {
+  if (!(await checkIsAdmin())) throw new Error("Admin only");
+
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Reason is required");
+
+  const postRef = doc(db, "communityPosts", postId);
+  const snap = await getDoc(postRef);
+  if (!snap.exists()) throw new Error("Post not found");
+  const data = snap.data() as Record<string, unknown>;
+  const authorId = String(data.authorId ?? "");
+  const authorName = String(data.authorName ?? "User");
+  const content = String(data.content ?? "");
+
+  const pendingSnap = await getDoc(doc(db, PENDING_POSTS_COLLECTION, postId));
+  const pending = pendingSnap.exists() ? (pendingSnap.data() as Record<string, unknown>) : {};
+  const requestedBy = String(pending.reReviewRequestedBy ?? authorId);
+  const requestedByName = String(
+    pending.reReviewRequestedByName ?? pending.reReviewAuthorName ?? authorName
+  );
+  const requestReason = String(pending.reReviewReason ?? "");
+
+  await updateDoc(postRef, { blocked: true, underReview: false });
+  await clearPostPendingReview(postId);
+
+  // Move the keep-hidden decision into Reviewed (Blocked).
+  await addDoc(collection(db, "communityReports"), {
+    targetType: "post",
+    targetId: postId,
+    postId,
+    reporterId: requestedBy,
+    reporterName: requestedByName,
+    reason: trimmedReason,
+    requestReason,
+    source: "re_review",
+    status: "resolved",
+    createdAt: Date.now(),
+    createdAtServer: serverTimestamp(),
+    targetContent: content,
+    targetAuthorId: authorId,
+    targetAuthorName: authorName,
+    read: true,
+  });
+
+  if (authorId) {
+    await sendAdminDirectMessage(
+      authorId,
+      `Your request to check this post again has been reviewed.\n\n**Your post:**\n"${formatPostContentSnippet(content)}"\n\nThe post remains **hidden from the community**.\n\nReason: **${trimmedReason}**`
+    );
+  }
+}
+
+/** Post IDs the user has commented on (collection-group query). */
+export async function fetchPostIdsCommentedByUser(uid: string): Promise<string[]> {
+  const snap = await getDocs(
+    query(collectionGroup(db, "comments"), where("authorId", "==", uid))
+  );
+  const ids = new Set<string>();
+  for (const d of snap.docs) {
+    const data = d.data() as Record<string, unknown>;
+    const fromField = typeof data.postId === "string" ? data.postId : "";
+    const fromPath = d.ref.parent.parent?.id ?? "";
+    const postId = fromField || fromPath;
+    if (postId) ids.add(postId);
+  }
+  return [...ids];
+}
+
 export function subscribePendingCommunityPostIds(
   onData: (postIds: string[]) => void,
   onError?: (error: Error) => void
@@ -591,6 +823,7 @@ export async function uploadChatAudio(localUri: string, chatId: string): Promise
 export async function createPost(params: {
   content: string;
   tags?: string[];
+  achievementIds?: string[];
 }): Promise<CommunityPost> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
@@ -601,6 +834,7 @@ export async function createPost(params: {
   if (!trimmed) throw new Error("Add text to post");
 
   const tags = (params.tags ?? []).map((t) => t.trim()).filter(Boolean);
+  const achievementIds = [...new Set((params.achievementIds ?? []).map((id) => id.trim()).filter(Boolean))];
   const now = Date.now();
 
   const payload = {
@@ -611,6 +845,7 @@ export async function createPost(params: {
     category: "general" as PostCategory,
     imageUrl: null,
     tags,
+    achievementIds,
     editHistory: [] as PostEditSnapshot[],
     updatedAt: now,
     likeCount: 0,
@@ -633,6 +868,7 @@ export async function createPost(params: {
       category: "general",
       imageUrl: null,
       tags,
+      achievementIds,
       editHistory: [],
       updatedAt: now,
       likeCount: 0,
@@ -649,7 +885,7 @@ export async function createPost(params: {
 
 export async function updatePost(
   post: CommunityPost,
-  params: { content: string; imageUrl?: string | null; tags?: string[] }
+  params: { content: string; imageUrl?: string | null; tags?: string[]; achievementIds?: string[] }
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || user.uid !== post.authorId) throw new Error("Not allowed");
@@ -660,6 +896,10 @@ export async function updatePost(
   }
 
   const tags = (params.tags ?? post.tags).map((t) => t.trim()).filter(Boolean);
+  const achievementIds =
+    params.achievementIds !== undefined
+      ? [...new Set(params.achievementIds.map((id) => id.trim()).filter(Boolean))]
+      : post.achievementIds ?? [];
   const snapshot: PostEditSnapshot = {
     content: post.content,
     imageUrl: post.imageUrl,
@@ -671,6 +911,7 @@ export async function updatePost(
     content: trimmed,
     imageUrl: params.imageUrl !== undefined ? params.imageUrl : post.imageUrl,
     tags,
+    achievementIds,
     editHistory: [...post.editHistory, snapshot],
     updatedAt: Date.now(),
   });
@@ -805,6 +1046,27 @@ export function subscribeFriendsList(
         friends.sort((a, b) => a.name.localeCompare(b.name));
         onData(friends);
       })();
+    },
+    (error) => onError?.(error)
+  );
+}
+
+/** Incoming friend requests waiting for accept / reject. */
+export function subscribePendingIncomingFriendRequests(
+  onData: (requests: FriendRequest[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const user = auth.currentUser;
+  if (!user) return () => {};
+
+  return onSnapshot(
+    query(collection(db, "friendRequests"), where("toUserId", "==", user.uid)),
+    (snap) => {
+      const requests = snap.docs
+        .map((d) => mapFriendRequest(d.id, d.data() as Record<string, unknown>))
+        .filter((r) => r.status === "pending")
+        .sort((a, b) => b.createdAt - a.createdAt);
+      onData(requests);
     },
     (error) => onError?.(error)
   );
@@ -945,16 +1207,18 @@ export async function togglePostLike(post: CommunityPost): Promise<void> {
 
 export function subscribeComments(
   postId: string,
-  onData: (comments: CommunityComment[]) => void
+  onData: (comments: CommunityComment[]) => void,
+  options?: { includeBlocked?: boolean }
 ): Unsubscribe {
   const q = query(
     collection(db, "communityPosts", postId, "comments"),
     orderBy("createdAt", "asc")
   );
   return onSnapshot(q, (snap) => {
-    onData(
-      snap.docs.map((d) => mapComment(d.id, postId, d.data() as Record<string, unknown>))
+    const comments = snap.docs.map((d) =>
+      mapComment(d.id, postId, d.data() as Record<string, unknown>)
     );
+    onData(options?.includeBlocked ? comments : comments.filter((comment) => !comment.blocked));
   });
 }
 
@@ -994,6 +1258,7 @@ export async function addComment(
     replyToAuthorName,
     createdAt: Date.now(),
     createdAtServer: serverTimestamp(),
+    blocked: false,
   });
   batch.update(doc(db, "communityPosts", postId), { commentCount: increment(1) });
   await batch.commit();
@@ -1056,6 +1321,21 @@ export async function deleteComment(postId: string, commentId: string): Promise<
   });
   batch.update(doc(db, "communityPosts", postId), {
     commentCount: increment(-toDelete.size),
+  });
+  await batch.commit();
+}
+
+/** Soft-hide a comment so admin can restore it later. */
+async function softBlockComment(postId: string, commentId: string): Promise<void> {
+  const commentRef = doc(db, "communityPosts", postId, "comments", commentId);
+  const commentSnap = await getDoc(commentRef);
+  if (!commentSnap.exists()) throw new Error("Comment not found");
+  if (commentSnap.data()?.blocked === true) return;
+
+  const batch = writeBatch(db);
+  batch.update(commentRef, { blocked: true });
+  batch.update(doc(db, "communityPosts", postId), {
+    commentCount: increment(-1),
   });
   await batch.commit();
 }
@@ -2041,6 +2321,12 @@ export function buildAdminBlockPostAuthorMessage(reason: string, content: string
   return `Your post has been removed from the community after a review.\n\n**Your post:**\n"${snippet}"\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
 }
 
+export function buildReReviewRequestReceivedMessage(content: string, reason: string): string {
+  const snippet = formatPostContentSnippet(content);
+  const trimmedReason = reason.trim();
+  return `We received your request to check this post again.\n\n**Your post:**\n"${snippet}"\n\n**Your reason:**\n${trimmedReason}\n\nSupport Admin will **review it as soon as possible**. We will update you here once the review is complete.`;
+}
+
 export function buildReportBlockedCommentReporterMessage(
   authorName: string,
   content: string
@@ -2063,7 +2349,7 @@ export async function blockReportedComment(
   const trimmedReason = reason.trim();
   if (!trimmedReason) throw new Error("Reason is required");
 
-  await deleteComment(report.postId, report.targetId);
+  await softBlockComment(report.postId, report.targetId);
   await clearCommentPendingReview(report.targetId);
   await updateDoc(doc(db, "communityReports", report.id), { status: "resolved" });
 
@@ -2167,10 +2453,19 @@ export async function syncPendingReviewFlags(reports: CommunityReport[]): Promis
 
   await Promise.all(
     pendingPostIds.map(async (postId) => {
-      await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
-        postId,
-        updatedAt: Date.now(),
-      });
+      await setDoc(
+        doc(db, PENDING_POSTS_COLLECTION, postId),
+        {
+          postId,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+      const postSnap = await getDoc(doc(db, "communityPosts", postId));
+      if (postSnap.exists() && postSnap.data()?.blocked === true) {
+        // Keep blocked posts that are awaiting author re-review as-is.
+        return;
+      }
       await updateDoc(doc(db, "communityPosts", postId), {
         blocked: false,
         underReview: true,
@@ -2199,6 +2494,55 @@ export async function restoreReportedPost(report: CommunityReport): Promise<void
   await sendAdminDirectMessage(
     report.targetAuthorId,
     `Your post has been restored after an additional review.\n\nIf you need help, please message Support Admin here.`
+  );
+}
+
+export async function restoreReportedComment(report: CommunityReport): Promise<void> {
+  if (report.targetType !== "comment") throw new Error("Only comment reports can be restored");
+  if (!(await checkIsAdmin())) throw new Error("Admin only");
+
+  const postRef = doc(db, "communityPosts", report.postId);
+  const postSnap = await getDoc(postRef);
+  if (!postSnap.exists()) throw new Error("Post not found. Restore the post first if it was removed.");
+
+  const commentRef = doc(db, "communityPosts", report.postId, "comments", report.targetId);
+  const commentSnap = await getDoc(commentRef);
+
+  if (commentSnap.exists()) {
+    if (commentSnap.data()?.blocked === true) {
+      const batch = writeBatch(db);
+      batch.update(commentRef, { blocked: false });
+      batch.update(postRef, { commentCount: increment(1) });
+      await batch.commit();
+    }
+  } else {
+    // Older blocks hard-deleted the comment — recreate from the report snapshot.
+    let authorProfileImage: string | null = null;
+    try {
+      const profile = await getUserProfile(report.targetAuthorId);
+      authorProfileImage = profile.profileImage;
+    } catch {
+      // Profile may be gone; restore text with report metadata.
+    }
+    const batch = writeBatch(db);
+    batch.set(commentRef, {
+      authorId: report.targetAuthorId,
+      authorName: report.targetAuthorName,
+      authorProfileImage,
+      text: report.targetContent,
+      parentCommentId: null,
+      replyToAuthorName: null,
+      createdAt: report.createdAt || Date.now(),
+      blocked: false,
+    });
+    batch.update(postRef, { commentCount: increment(1) });
+    await batch.commit();
+  }
+
+  await clearCommentPendingReview(report.targetId);
+  await sendAdminDirectMessage(
+    report.targetAuthorId,
+    `Your comment has been restored after an additional review.\n\nIf you need help, please message Support Admin here.`
   );
 }
 
@@ -2261,7 +2605,29 @@ export async function adminBlockPost(post: CommunityPost, reason: string): Promi
   const trimmedReason = reason.trim();
   if (!trimmedReason) throw new Error("Reason is required");
 
-  await updateDoc(doc(db, "communityPosts", post.id), { blocked: true });
+  const adminUid = auth.currentUser?.uid;
+  if (!adminUid) throw new Error("Not signed in");
+
+  await updateDoc(doc(db, "communityPosts", post.id), { blocked: true, underReview: false });
+  await clearPostPendingReview(post.id);
+
+  // Record in Reviewed so direct admin blocks appear in report management history.
+  await addDoc(collection(db, "communityReports"), {
+    targetType: "post",
+    targetId: post.id,
+    postId: post.id,
+    reporterId: adminUid,
+    reporterName: SUPPORT_ADMIN_NAME,
+    reason: trimmedReason,
+    source: "admin_direct",
+    status: "resolved",
+    createdAt: Date.now(),
+    createdAtServer: serverTimestamp(),
+    targetContent: post.content,
+    targetAuthorId: post.authorId,
+    targetAuthorName: post.authorName,
+    read: true,
+  });
 
   await sendAdminDirectMessage(
     post.authorId,
@@ -2280,11 +2646,33 @@ export async function adminBlockComment(
   const trimmedReason = reason.trim();
   if (!trimmedReason) throw new Error("Reason is required");
 
-  await deleteComment(postId, comment.id);
+  const adminUid = auth.currentUser?.uid;
+  if (!adminUid) throw new Error("Not signed in");
+
+  await softBlockComment(postId, comment.id);
   await clearCommentPendingReview(comment.id);
 
-  const message = `Your comment has been removed from the community after a review.\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
-  await sendAdminDirectMessage(comment.authorId, message);
+  await addDoc(collection(db, "communityReports"), {
+    targetType: "comment",
+    targetId: comment.id,
+    postId,
+    reporterId: adminUid,
+    reporterName: SUPPORT_ADMIN_NAME,
+    reason: trimmedReason,
+    source: "admin_direct",
+    status: "resolved",
+    createdAt: Date.now(),
+    createdAtServer: serverTimestamp(),
+    targetContent: comment.text,
+    targetAuthorId: comment.authorId,
+    targetAuthorName: comment.authorName,
+    read: true,
+  });
+
+  await sendAdminDirectMessage(
+    comment.authorId,
+    buildAdminBlockCommentAuthorMessage(trimmedReason, comment.text)
+  );
 }
 
 export const COMMUNITY_ADMIN_EMAIL = "leezhien12345@gmail.com";

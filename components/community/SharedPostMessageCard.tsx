@@ -1,6 +1,7 @@
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import type { ChatMessage, CommunityPost } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
@@ -12,6 +13,7 @@ export type SharedPostCardData = {
   content: string;
   imageUrl: string | null;
   tags: string[];
+  achievementIds: string[];
   likeCount: number;
   commentCount: number;
   createdAt: number | null;
@@ -31,6 +33,7 @@ export function getSharedPostCardData(
       content: livePost.content,
       imageUrl: livePost.imageUrl,
       tags: livePost.tags,
+      achievementIds: livePost.achievementIds ?? [],
       likeCount: livePost.likeCount,
       commentCount: livePost.commentCount,
       createdAt: livePost.createdAt,
@@ -44,6 +47,7 @@ export function getSharedPostCardData(
     content: message.sharedPostContent ?? message.text,
     imageUrl: message.imageUrl,
     tags: message.sharedPostTags,
+    achievementIds: [],
     likeCount: message.sharedPostLikeCount,
     commentCount: message.sharedPostCommentCount,
     createdAt: message.sharedPostCreatedAt,
@@ -95,6 +99,8 @@ export function SharedPostMessageCard({ data, onPress }: SharedPostMessageCardPr
             {data.content}
           </Text>
         ) : null}
+
+        <PostAchievementChips achievementIds={data.achievementIds ?? []} compact />
 
         {data.imageUrl ? (
           <Image

@@ -1,12 +1,12 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ProfileScreenHeader,
-  ThemedCard,
-  ThemedScreen,
-  ThemedText,
+    ProfileScreenHeader,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
 } from "@/components/themed/ThemedUi";
 import { formatReportDayLabel } from "@/lib/reportCalendar";
-import { formatMealMacroSummary, loadUserReport, type ReportPeriod, type UserReport } from "@/lib/userReport";
+import { formatMealMacroSummary, formatWorkoutDuration, loadUserReport, type ReportPeriod, type UserReport } from "@/lib/userReport";
 import { shareUserReportPdf } from "@/lib/userReportPdf";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -115,44 +115,58 @@ function CollapsibleReportList<T>({
 }
 
 function EmptyLine({ text }: { text: string }) {
+  const { theme } = useThemedScreen();
   return (
-    <ThemedText variant="muted" className="text-sm">
+    <ThemedText className="text-sm" style={{ color: theme.iconMuted }}>
       {text}
+    </ThemedText>
+  );
+}
+
+function RecordTitle({ children }: { children: ReactNode }) {
+  return (
+    <ThemedText className="text-sm font-extrabold" style={{ color: "#2563eb" }}>
+      {children}
     </ThemedText>
   );
 }
 
 function ReportContent({ report }: { report: UserReport }) {
   const { theme } = useThemedScreen();
+  const hasWater = report.waterMl > 0;
+  const hasSteps = report.steps > 0;
 
   return (
     <>
       <ThemedCard className="p-4 mb-4" rounded="2xl">
-        <ThemedText variant="muted" className="text-xs tracking-widest font-bold">
-          {report.subtitle.toUpperCase()}
-        </ThemedText>
+        <ThemedText className="text-xl font-extrabold">{report.subtitle}</ThemedText>
         <ThemedText className="text-xl font-extrabold mt-1">{report.title}</ThemedText>
         <View className="flex-row flex-wrap gap-2 mt-4">
           {[
             {
               label: report.period === "weekly" ? "Total Burned" : "Burned",
               value: `${report.totalBurnedKcal.toLocaleString()} kcal`,
+              hasRecords: report.totalBurnedKcal > 0,
             },
             {
               label: report.period === "weekly" ? "Total Consumed" : "Consumed",
               value: `${report.totalConsumedKcal.toLocaleString()} kcal`,
+              hasRecords: report.totalConsumedKcal > 0,
             },
             {
               label: report.period === "weekly" ? "Total Water" : "Water",
               value: `${report.waterMl.toLocaleString()} ml`,
+              hasRecords: report.waterMl > 0,
             },
             {
               label: report.period === "weekly" ? "Total Steps" : "Steps",
               value: report.steps.toLocaleString(),
+              hasRecords: report.steps > 0,
             },
             {
               label: "Weight",
               value: report.weightKg != null ? `${report.weightKg.toFixed(1)} kg` : "—",
+              hasRecords: report.weightKg != null,
             },
           ].map((item) => (
             <View
@@ -163,7 +177,10 @@ function ReportContent({ report }: { report: UserReport }) {
               <ThemedText variant="muted" className="text-[10px] font-bold tracking-widest">
                 {item.label.toUpperCase()}
               </ThemedText>
-              <ThemedText className="text-base font-extrabold mt-1" style={{ color: theme.accentText }}>
+              <ThemedText
+                className="text-base font-extrabold mt-1"
+                style={{ color: item.hasRecords ? theme.accentText : theme.iconMuted }}
+              >
                 {item.value}
               </ThemedText>
             </View>
@@ -178,9 +195,9 @@ function ReportContent({ report }: { report: UserReport }) {
         itemKey={(item, index) => `${item.title}-${index}`}
         renderItem={(item) => (
           <View className="mb-2">
-            <ThemedText className="text-sm font-extrabold">{item.title}</ThemedText>
-            <ThemedText variant="secondary" className="text-sm">
-              {item.burnedKcal.toLocaleString()} kcal burned · {item.durationMin} min
+            <RecordTitle>{item.title}</RecordTitle>
+            <ThemedText className="text-sm font-semibold" style={{ color: theme.accentText }}>
+              {item.burnedKcal.toLocaleString()} kcal burned · {formatWorkoutDuration(item.durationMin)}
             </ThemedText>
           </View>
         )}
@@ -195,8 +212,8 @@ function ReportContent({ report }: { report: UserReport }) {
           const macroLine = formatMealMacroSummary(item);
           return (
             <View className="mb-2">
-              <ThemedText className="text-sm font-extrabold">{item.title}</ThemedText>
-              <ThemedText variant="secondary" className="text-sm">
+              <RecordTitle>{item.title}</RecordTitle>
+              <ThemedText className="text-sm font-semibold" style={{ color: theme.accentText }}>
                 {item.calories.toLocaleString()} kcal
               </ThemedText>
               {macroLine ? (
@@ -210,12 +227,12 @@ function ReportContent({ report }: { report: UserReport }) {
       />
 
       <ReportSection title="Water intake">
-        {report.waterMl <= 0 ? (
-          <EmptyLine text="No water logged in this period." />
-        ) : (
-          <ThemedText className="text-sm font-extrabold">
+        {hasWater ? (
+          <ThemedText className="text-sm font-extrabold" style={{ color: theme.accentText }}>
             {report.waterMl.toLocaleString()} ml total
           </ThemedText>
+        ) : (
+          <EmptyLine text="No water logged in this period." />
         )}
       </ReportSection>
 
@@ -227,16 +244,24 @@ function ReportContent({ report }: { report: UserReport }) {
           itemKey={(item) => item.dayKey}
           renderItem={(row) => (
             <View className="flex-row justify-between mb-2">
-              <ThemedText variant="secondary" className="text-sm">
+              <ThemedText className="text-sm font-extrabold" style={{ color: "#2563eb" }}>
                 {formatReportDayLabel(row.dayKey)}
               </ThemedText>
-              <ThemedText className="text-sm font-extrabold">{row.steps.toLocaleString()}</ThemedText>
+              <ThemedText className="text-sm font-extrabold" style={{ color: theme.accentText }}>
+                {row.steps.toLocaleString()}
+              </ThemedText>
             </View>
           )}
         />
       ) : (
         <ReportSection title="Steps">
-          <ThemedText className="text-sm font-extrabold">{report.steps.toLocaleString()} steps</ThemedText>
+          {hasSteps ? (
+            <ThemedText className="text-sm font-extrabold" style={{ color: theme.accentText }}>
+              {report.steps.toLocaleString()} steps
+            </ThemedText>
+          ) : (
+            <EmptyLine text="No steps recorded in this period." />
+          )}
         </ReportSection>
       )}
 
@@ -251,10 +276,12 @@ function ReportContent({ report }: { report: UserReport }) {
         itemKey={(item) => item.dayKey}
         renderItem={(item) => (
           <View className="flex-row justify-between mb-2">
-            <ThemedText variant="secondary" className="text-sm">
+            <ThemedText className="text-sm font-extrabold" style={{ color: "#2563eb" }}>
               {formatReportDayLabel(item.dayKey)}
             </ThemedText>
-            <ThemedText className="text-sm font-extrabold">{item.weightKg.toFixed(1)} kg</ThemedText>
+            <ThemedText className="text-sm font-extrabold" style={{ color: theme.accentText }}>
+              {item.weightKg.toFixed(1)} kg
+            </ThemedText>
           </View>
         )}
       />
@@ -267,8 +294,10 @@ function ReportContent({ report }: { report: UserReport }) {
         renderItem={(item) => (
           <View className="mb-3">
             <View className="flex-row items-center">
-              <Ionicons name="trophy" size={16} color={theme.accent} />
-              <ThemedText className="text-sm font-extrabold ml-2">{item.title}</ThemedText>
+              <Ionicons name="trophy" size={16} color="#2563eb" />
+              <ThemedText className="text-sm font-extrabold ml-2" style={{ color: "#2563eb" }}>
+                {item.title}
+              </ThemedText>
             </View>
             {item.description ? (
               <ThemedText variant="secondary" className="text-sm mt-1 ml-6">

@@ -51,6 +51,7 @@ type TabKey = "weight" | "workout" | "meal";
 type PeriodKey = "week" | "month" | "year";
 
 type WorkoutLogRowProgress = { burnedKcal: number; createdAt: Date; dayKey: string };
+type MealLogRowProgress = { calories: number; createdAt: Date; dayKey: string };
 
 const localStepDraftKey = (uid: string, dateKey: string) => `daily-steps-draft:${uid}:${dateKey}`;
 
@@ -104,6 +105,7 @@ export default function ProgressScreen() {
   const [dayTick, setDayTick] = useState(0);
   const [weightSeries, setWeightSeries] = useState<number[]>([]);
   const [workoutLogRows, setWorkoutLogRows] = useState<WorkoutLogRowProgress[]>([]);
+  const [mealLogRows, setMealLogRows] = useState<MealLogRowProgress[]>([]);
   const [hasWeightLogs, setHasWeightLogs] = useState(false);
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -814,6 +816,79 @@ export default function ProgressScreen() {
     return sums;
   }, [calendarTz, period, tab, workoutLogRows]);
 
+  useEffect(() => {
+    if (tab !== "meal") return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== authUid) {
+      setMealLogRows([]);
+      return;
+    }
+    const q = query(
+      collection(db, "users", user.uid, "mealLogs"),
+      orderBy("createdAt", "desc"),
+      limit(400)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs
+          .map((d) => {
+            const data = d.data() as any;
+            const createdAt =
+              getCreatedAtDate(data.logDate) ?? getCreatedAtDate(data.createdAt);
+            const calories = typeof data.calories === "number" ? data.calories : 0;
+            if (!createdAt) return null;
+            return {
+              calories,
+              createdAt,
+              dayKey: formatCalendarDayKey(createdAt, calendarTz),
+            };
+          })
+          .filter((r): r is MealLogRowProgress => r != null && r.calories > 0);
+        setMealLogRows(rows);
+      },
+      () => setMealLogRows([])
+    );
+    return () => unsub();
+  }, [authUid, calendarTz, tab]);
+
+  const mealSeries = useMemo((): number[] => {
+    if (tab !== "meal") return [];
+    const rows = mealLogRows;
+    const now = new Date();
+    const zeros = (n: number) => Array.from({ length: n }, () => 0);
+
+    if (period === "week") {
+      const weekStart = startOfWeekMon(now);
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + i);
+        const key = formatCalendarDayKey(d, calendarTz);
+        return rows.filter((r) => r.dayKey === key).reduce((s, r) => s + r.calories, 0);
+      });
+    }
+    if (period === "month") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const buckets = [0, 0, 0, 0];
+      for (const r of rows) {
+        if (r.createdAt < monthStart) continue;
+        if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear())
+          continue;
+        const dom = r.createdAt.getDate();
+        const idx = Math.min(3, Math.floor((dom - 1) / 7));
+        buckets[idx] += r.calories;
+      }
+      return buckets;
+    }
+    const year = now.getFullYear();
+    const sums = zeros(12);
+    for (const r of rows) {
+      if (r.createdAt.getFullYear() !== year) continue;
+      sums[r.createdAt.getMonth()] += r.calories;
+    }
+    return sums;
+  }, [calendarTz, mealLogRows, period, tab]);
+
   /** Headline + delta for workout: all periods use summed burns vs previous matching period. */
   const workoutHeadlineMetric = useMemo(() => {
     if (tab !== "workout") return { main: "", delta: "" };
@@ -867,8 +942,59 @@ export default function ProgressScreen() {
 
   const mealTodayConsumeKcal = useMemo(() => {
     if (tab !== "meal") return null;
-    return Math.round(consumedToday).toLocaleString();
-  }, [consumedToday, tab]);
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const fromLogs = mealLogRows
+      .filter((r) => r.dayKey === todayKey)
+      .reduce((s, r) => s + r.calories, 0);
+    const total = fromLogs > 0 ? fromLogs : consumedToday;
+    return Math.round(total).toLocaleString();
+  }, [calendarTz, consumedToday, mealLogRows, tab]);
+
+  const mealHeadlineMetric = useMemo(() => {
+    if (tab !== "meal") return { main: "", delta: "" };
+    const now = new Date();
+    const rows = mealLogRows;
+
+    if (period === "week") {
+      const weekStart = startOfWeekMon(now);
+      const total = mealSeries.reduce((s, v) => s + (v || 0), 0);
+      const prevStart = new Date(weekStart);
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevEnd = new Date(weekStart);
+      prevEnd.setMilliseconds(-1);
+      const prevTotal = rows
+        .filter((r) => r.createdAt >= prevStart && r.createdAt <= prevEnd)
+        .reduce((s, r) => s + r.calories, 0);
+      const delta = total - prevTotal;
+      return {
+        main: `${Math.round(total).toLocaleString()} kcal`,
+        delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
+      };
+    }
+    if (period === "month") {
+      const total = mealSeries.reduce((s, v) => s + (v || 0), 0);
+      const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const prevTotal = rows
+        .filter((r) => r.createdAt.getFullYear() === prevYear && r.createdAt.getMonth() === prevMonth)
+        .reduce((s, r) => s + r.calories, 0);
+      const delta = total - prevTotal;
+      return {
+        main: `${Math.round(total).toLocaleString()} kcal`,
+        delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
+      };
+    }
+    const y = now.getFullYear();
+    const total = mealSeries.reduce((s, v) => s + (v || 0), 0);
+    const prevTotal = rows
+      .filter((r) => r.createdAt.getFullYear() === y - 1)
+      .reduce((s, r) => s + r.calories, 0);
+    const delta = total - prevTotal;
+    return {
+      main: `${Math.round(total).toLocaleString()} kcal`,
+      delta: `${delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()}`,
+    };
+  }, [mealLogRows, mealSeries, period, tab]);
 
   /** Profile `weight` (Edit Profile, home, etc.) is the live “current weight” and should drive the headline. */
   const effectiveWeightKg = useMemo(() => {
@@ -982,15 +1108,9 @@ export default function ProgressScreen() {
           : "0.0 kg",
       };
     if (tab === "workout") return workoutHeadlineMetric;
-    return {
-      main: `${Math.round(consumedToday).toLocaleString()} kcal`,
-      delta: `${consumedToday - consumedYesterday >= 0 ? "+" : ""}${Math.round(consumedToday - consumedYesterday).toLocaleString()}`,
-    };
+    return mealHeadlineMetric;
   }, [
-    burnedToday,
-    burnedYesterday,
-    consumedToday,
-    consumedYesterday,
+    mealHeadlineMetric,
     period,
     tab,
     effectiveWeightKg,
@@ -1044,6 +1164,22 @@ export default function ProgressScreen() {
     const v = workoutSeries[hoverIdx] ?? 0;
     return `${label}: ${Math.round(v).toLocaleString()} kcal`;
   }, [chartLabels, hoverIdx, period, tab, workoutSeries]);
+
+  const mealBarTooltip = useMemo(() => {
+    if (tab !== "meal") return "";
+    if (hoverIdx == null) return "";
+    const now = new Date();
+    if (period === "week") {
+      const ws = startOfWeekMon(now);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + hoverIdx);
+      const v = mealSeries[hoverIdx] ?? 0;
+      return `${d.toLocaleDateString()}: ${Math.round(v).toLocaleString()} kcal`;
+    }
+    const label = chartLabels[hoverIdx] ?? "";
+    const v = mealSeries[hoverIdx] ?? 0;
+    return `${label}: ${Math.round(v).toLocaleString()} kcal`;
+  }, [chartLabels, hoverIdx, mealSeries, period, tab]);
 
   const openLogWeight = () => {
     const base = effectiveWeightKg;
@@ -1266,12 +1402,18 @@ export default function ProgressScreen() {
           <View className="mt-4">
             <View className="h-32 rounded-2xl overflow-hidden" style={{ backgroundColor: theme.rowBg }}>
               <View className="absolute left-0 right-0 bottom-0 h-14 bg-[#76C893] opacity-10" />
-              {((tab === "weight" && weightBarTooltip) || (tab === "workout" && workoutBarTooltip)) &&
+              {((tab === "weight" && weightBarTooltip) ||
+                (tab === "workout" && workoutBarTooltip) ||
+                (tab === "meal" && mealBarTooltip)) &&
                 hoverIdx != null && (
                   <View className="absolute top-2 left-0 right-0 items-center">
                     <View className="px-3 py-1 rounded-full" style={cardStyle}>
                       <Text className="text-xs font-bold" style={textSecondary}>
-                        {tab === "weight" ? weightBarTooltip : workoutBarTooltip}
+                        {tab === "weight"
+                          ? weightBarTooltip
+                          : tab === "workout"
+                            ? workoutBarTooltip
+                            : mealBarTooltip}
                       </Text>
                     </View>
                   </View>
@@ -1342,12 +1484,38 @@ export default function ProgressScreen() {
                   })()}
                 </View>
               ) : (
-                <View className="flex-1 flex-row items-end px-4 pb-4">
-                  <View className="flex-1 h-10 border-b-2 border-[#76C893] opacity-70" />
-                  <View className="flex-1 h-6 border-b-2 border-[#76C893] opacity-70" />
-                  <View className="flex-1 h-12 border-b-2 border-[#76C893] opacity-70" />
-                  <View className="flex-1 h-7 border-b-2 border-[#76C893] opacity-70" />
-                  <View className="flex-1 h-14 border-b-2 border-[#76C893] opacity-70" />
+                <View className="flex-1 flex-row items-end px-4 pb-2">
+                  {(() => {
+                    const padded = mealSeries.length ? mealSeries : chartLabels.map(() => 0);
+                    const min = Math.min(...padded);
+                    const max = Math.max(...padded);
+                    const span = max - min || 1;
+
+                    return padded.map((v, idx) => {
+                      const h = v === 0 ? 10 : 10 + Math.round(((v - min) / span) * 50);
+                      const active = hoverIdx === idx;
+                      return (
+                        <View key={`mbar-${idx}`} className="flex-1 items-center justify-end">
+                          <Pressable
+                            onPress={() => setHoverIdx((cur) => (cur === idx ? null : idx))}
+                            onHoverIn={() => setHoverIdx(idx)}
+                            onHoverOut={() => setHoverIdx(null)}
+                            className="items-center justify-end w-full"
+                          >
+                            <View
+                              style={{ height: h, width: active ? 12 : 10, borderRadius: 999 }}
+                              className={
+                                v === 0 ? "bg-gray-300" : active ? "bg-[#52B69A]" : "bg-[#76C893]"
+                              }
+                            />
+                          </Pressable>
+                          <Text className="text-[10px] font-bold mt-2" style={textMuted}>
+                            {chartLabels[idx]}
+                          </Text>
+                        </View>
+                      );
+                    });
+                  })()}
                 </View>
               )}
             </View>

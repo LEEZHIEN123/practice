@@ -4,6 +4,7 @@ import { Pressable } from "@/components/Pressable";
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
+import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
@@ -21,13 +22,17 @@ import {
   createPost,
   deletePost,
   dismissReport,
+  dismissReReviewRequest,
+  approveReReviewRequest,
   reopenReport,
   restoreReportedPost,
+  restoreReportedComment,
   ensureDirectChat,
   fetchPostById,
   filterPostsByTag,
   getCurrentUserProfile,
   subscribeChats,
+  subscribePendingReReviewRequests,
   subscribeReports,
   syncPendingReviewFlags,
   subscribePosts,
@@ -43,6 +48,7 @@ import {
   type CommunityComment,
   type CommunityPost,
   type CommunityReport,
+  type PendingReReviewRequest,
   type RegisteredUser,
 } from "@/lib/communityTypes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -79,7 +85,12 @@ import { auth, db } from "../../firebaseConfig";
 
 type AdminTab = "community" | "reports" | "users" | "profile";
 type ReportTypeFilter = "all" | "post" | "comment";
+type PendingSourceFilter = "all" | "reported" | "request_review";
 type ReviewedStatusFilter = "all" | "blocked" | "dismissed";
+
+type PendingQueueItem =
+  | { kind: "report"; id: string; createdAt: number; report: CommunityReport }
+  | { kind: "reReview"; id: string; createdAt: number; request: PendingReReviewRequest };
 
 function matchesReportSearch(report: CommunityReport, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -109,6 +120,7 @@ function commentFromCommunityReport(report: CommunityReport): CommunityComment {
     parentCommentId: null,
     replyToAuthorName: null,
     createdAt: report.createdAt,
+    blocked: true,
   };
 }
 
@@ -268,11 +280,12 @@ export function AdminCommunityHub() {
   const [pendingReportSearch, setPendingReportSearch] = useState("");
   const [reviewedReportSearch, setReviewedReportSearch] = useState("");
   const [pendingReportTypeFilter, setPendingReportTypeFilter] = useState<ReportTypeFilter>("all");
+  const [pendingSourceFilter, setPendingSourceFilter] = useState<PendingSourceFilter>("all");
   const [reviewedReportTypeFilter, setReviewedReportTypeFilter] = useState<ReportTypeFilter>("all");
   const [reviewedReportStatusFilter, setReviewedReportStatusFilter] =
     useState<ReviewedStatusFilter>("all");
   const [openReportFilter, setOpenReportFilter] = useState<
-    "pending-type" | "reviewed-type" | "reviewed-status" | null
+    "pending-type" | "pending-source" | "reviewed-type" | "reviewed-status" | null
   >(null);
   const [reportDeleteMode, setReportDeleteMode] = useState(false);
   const [selectedReportDeleteIds, setSelectedReportDeleteIds] = useState<string[]>([]);
@@ -296,6 +309,7 @@ export function AdminCommunityHub() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [chats, setChats] = useState<ChatConversation[]>([]);
   const [reports, setReports] = useState<CommunityReport[]>([]);
+  const [reReviewRequests, setReReviewRequests] = useState<PendingReReviewRequest[]>([]);
   const [users, setUsers] = useState<RegisteredUser[]>([]);
   const [reportActionId, setReportActionId] = useState<string | null>(null);
   const [reportDetailReport, setReportDetailReport] = useState<CommunityReport | null>(null);
@@ -310,10 +324,11 @@ export function AdminCommunityHub() {
   const [editingPost, setEditingPost] = useState<CommunityPost | null>(null);
   const [composerVisible, setComposerVisible] = useState(false);
   const [blockTarget, setBlockTarget] = useState<{
-    type: "post" | "comment" | "report";
+    type: "post" | "comment" | "report" | "reReview";
     post?: CommunityPost;
     comment?: CommunityComment;
     report?: CommunityReport;
+    reReview?: PendingReReviewRequest;
   } | null>(null);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [tagFilterView, setTagFilterView] = useState(false);
@@ -384,6 +399,11 @@ export function AdminCommunityHub() {
   }, [handleFirestoreErr]);
 
   useEffect(() => {
+    const unsub = subscribePendingReReviewRequests(setReReviewRequests, handleFirestoreErr);
+    return unsub;
+  }, [handleFirestoreErr]);
+
+  useEffect(() => {
     const unsub = subscribeRegisteredUsers(setUsers, handleFirestoreErr);
     return unsub;
   }, [handleFirestoreErr]);
@@ -433,6 +453,58 @@ export function AdminCommunityHub() {
     }
     return list;
   }, [pendingReports, pendingReportTypeFilter, pendingReportSearch]);
+
+  const filteredPendingQueue = useMemo(() => {
+    const items: PendingQueueItem[] = [];
+
+    if (pendingSourceFilter !== "request_review") {
+      for (const report of filterReportsByType(pendingReports, pendingReportTypeFilter)) {
+        items.push({
+          kind: "report",
+          id: `report-${report.id}`,
+          createdAt: report.createdAt,
+          report,
+        });
+      }
+    }
+
+    if (pendingSourceFilter !== "reported" && pendingReportTypeFilter !== "comment") {
+      for (const request of reReviewRequests) {
+        items.push({
+          kind: "reReview",
+          id: `rereview-${request.postId}`,
+          createdAt: request.requestedAt,
+          request,
+        });
+      }
+    }
+
+    const needle = pendingReportSearch.trim().toLowerCase();
+    const filtered = needle
+      ? items.filter((item) => {
+          if (item.kind === "report") return matchesReportSearch(item.report, pendingReportSearch);
+          const hay = [
+            item.request.requestedByName,
+            item.request.authorName,
+            item.request.reason,
+            item.request.content,
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(needle);
+        })
+      : items;
+
+    return filtered.sort((a, b) => b.createdAt - a.createdAt);
+  }, [
+    pendingReports,
+    reReviewRequests,
+    pendingReportTypeFilter,
+    pendingSourceFilter,
+    pendingReportSearch,
+  ]);
+
+  const pendingQueueTotalCount = pendingReports.length + reReviewRequests.length;
 
   const filteredReviewedReports = useMemo(() => {
     let list = filterReportsByType(reviewedReports, reviewedReportTypeFilter);
@@ -607,7 +679,11 @@ export function AdminCommunityHub() {
     ]);
   };
 
-  const handleSavePost = async (values: { content: string; tags: string[] }) => {
+  const handleSavePost = async (values: {
+    content: string;
+    tags: string[];
+    achievementIds: string[];
+  }) => {
     if (!auth.currentUser?.uid) {
       Alert.alert("Sign in required", "Please sign in to post.");
       return;
@@ -619,11 +695,13 @@ export function AdminCommunityHub() {
           content: values.content,
           imageUrl: editingPost.imageUrl,
           tags: values.tags,
+          achievementIds: values.achievementIds,
         });
       } else {
         const created = await createPost({
           content: values.content,
           tags: values.tags,
+          achievementIds: values.achievementIds,
         });
         setPosts((prev) => {
           const merged = [created, ...prev.filter((item) => item.id !== created.id)];
@@ -643,7 +721,7 @@ export function AdminCommunityHub() {
     setMenuPost(null);
     Alert.alert(
       "Block Post",
-      "This post will be removed and the author will be notified via Support Admin chat.",
+      "This post will be removed and the author will be notified via Support Admin chat. It will also appear under Reviewed in report management.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -657,7 +735,11 @@ export function AdminCommunityHub() {
   const handleConfirmBlock = async (reason: string) => {
     if (!blockTarget) return;
     try {
-      if (blockTarget.type === "report" && blockTarget.report) {
+      if (blockTarget.type === "reReview" && blockTarget.reReview) {
+        setReportActionId(`rereview-${blockTarget.reReview.postId}`);
+        await dismissReReviewRequest(blockTarget.reReview.postId, reason);
+        Alert.alert("Request dismissed", "The author has been notified.");
+      } else if (blockTarget.type === "report" && blockTarget.report) {
         setReportActionId(blockTarget.report.id);
         if (blockTarget.report.targetType === "comment") {
           await blockReportedComment(blockTarget.report, reason);
@@ -675,7 +757,10 @@ export function AdminCommunityHub() {
       }
       setBlockTarget(null);
     } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not block content.");
+      Alert.alert(
+        "Error",
+        e instanceof Error ? e.message : "Could not complete this action."
+      );
       throw e;
     } finally {
       setReportActionId(null);
@@ -692,7 +777,7 @@ export function AdminCommunityHub() {
     const unsub = subscribeComments(reportDetailPost.id, (comments) => {
       setReportDetailComments(comments);
       setReportDetailCommentsReady(true);
-    });
+    }, { includeBlocked: true });
     return unsub;
   }, [reportDetailPost?.id, reportDetailReport?.id]);
 
@@ -731,7 +816,7 @@ export function AdminCommunityHub() {
       return { comment: commentFromCommunityReport(reportDetailReport), removed: true };
     }
     const live = reportDetailComments.find((comment) => comment.id === reportDetailReport.targetId);
-    if (live) return { comment: live, removed: false };
+    if (live) return { comment: live, removed: live.blocked };
     if (!reportDetailCommentsReady) return null;
     return { comment: commentFromCommunityReport(reportDetailReport), removed: true };
   }, [
@@ -1063,6 +1148,47 @@ export function AdminCommunityHub() {
     );
   }, []);
 
+  const handleApproveReReview = useCallback((request: PendingReReviewRequest) => {
+    Alert.alert(
+      "Restore post",
+      "Approve this review request and restore the post to the community?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            void (async () => {
+              try {
+                setReportActionId(`rereview-${request.postId}`);
+                await approveReReviewRequest(request.postId);
+                Alert.alert("Post restored", "The author has been notified.");
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not restore post.");
+              } finally {
+                setReportActionId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  }, []);
+
+  const handleDismissReReview = useCallback((request: PendingReReviewRequest) => {
+    Alert.alert(
+      "Keep hidden",
+      "Keep this post hidden? You will need to provide a reason for the author.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          style: "destructive",
+          onPress: () => setBlockTarget({ type: "reReview", reReview: request }),
+        },
+      ]
+    );
+  }, []);
+
   const handleReopenReport = useCallback((report: CommunityReport) => {
     Alert.alert(
       "Move to pending",
@@ -1102,6 +1228,28 @@ export function AdminCommunityHub() {
               Alert.alert("Post restored", "The author has been notified.");
             } catch (e: unknown) {
               Alert.alert("Error", e instanceof Error ? e.message : "Could not restore post.");
+            } finally {
+              setReportActionId(null);
+            }
+          })();
+        },
+      },
+    ]);
+  }, []);
+
+  const handleRestoreComment = useCallback((report: CommunityReport) => {
+    Alert.alert("Restore comment", "Restore this blocked comment to the community?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Restore",
+        onPress: () => {
+          void (async () => {
+            try {
+              setReportActionId(report.id);
+              await restoreReportedComment(report);
+              Alert.alert("Comment restored", "The author has been notified.");
+            } catch (e: unknown) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Could not restore comment.");
             } finally {
               setReportActionId(null);
             }
@@ -1250,6 +1398,7 @@ export function AdminCommunityHub() {
                   <Text className="text-sm mt-3 leading-6" style={textSecondary}>
                     {post.content}
                   </Text>
+                  <PostAchievementChips achievementIds={post.achievementIds ?? []} />
                   {post.imageUrl ? (
                     <Image
                       source={{ uri: post.imageUrl }}
@@ -1361,6 +1510,11 @@ export function AdminCommunityHub() {
       { key: "post" as const, label: "Post" },
       { key: "comment" as const, label: "Comment" },
     ];
+    const pendingSourceOptions = [
+      { key: "all" as const, label: "All" },
+      { key: "reported" as const, label: "Reported" },
+      { key: "request_review" as const, label: "Request review" },
+    ];
     const reportStatusOptions = [
       { key: "all" as const, label: "All" },
       { key: "blocked" as const, label: "Blocked" },
@@ -1371,7 +1525,8 @@ export function AdminCommunityHub() {
       totalLabel: string,
       totalCount: number,
       totalColor: string,
-      reportsForDelete: CommunityReport[]
+      reportsForDelete: CommunityReport[],
+      description: string
     ) => (
       <>
         <View className="flex-row items-center justify-between">
@@ -1410,6 +1565,9 @@ export function AdminCommunityHub() {
             </Text>
           </Pressable>
         </View>
+        <Text className="text-xs leading-5" style={textMuted}>
+          {description}
+        </Text>
         {reportDeleteMode ? (
           <Pressable
             onPress={() => handleConfirmBulkPermanentDelete(reportsForDelete)}
@@ -1457,7 +1615,7 @@ export function AdminCommunityHub() {
       onScroll={(event) => onReportsScroll(event.nativeEvent.contentOffset.y)}
       scrollEventThrottle={16}
       contentContainerStyle={{
-        paddingBottom: reportsScrollBottomPad + (reportsKeyboardHeight > 0 ? 24 : 100),
+        paddingBottom: reportsKeyboardHeight > 0 ? reportsScrollBottomPad + 24 : 20,
         paddingHorizontal: 12,
         paddingTop: 12,
       }}
@@ -1506,9 +1664,10 @@ export function AdminCommunityHub() {
           <>
             {renderReportTotalsHeader(
               "Total pending",
-              pendingReports.length,
+              pendingQueueTotalCount,
               "#ef4444",
-              filteredPendingReports
+              filteredPendingReports,
+              "All posts and comments below are waiting for a decision. You can block or dismiss reports, and restore or keep hidden review requests."
             )}
             <CommunitySearchBar
               value={pendingReportSearch}
@@ -1519,6 +1678,7 @@ export function AdminCommunityHub() {
               onFocus={() => scrollReportSearchIntoView(pendingReportSearchWrapRef)}
             />
             <View
+              className="flex-row gap-2 mt-3"
               style={openReportFilter ? { zIndex: 30, elevation: 30, overflow: "visible" } : undefined}
             >
               <ReportFilterDropdown
@@ -1529,23 +1689,125 @@ export function AdminCommunityHub() {
                 open={openReportFilter === "pending-type"}
                 onOpenChange={(next) => setOpenReportFilter(next ? "pending-type" : null)}
               />
+              <ReportFilterDropdown
+                label="Source"
+                value={pendingSourceFilter}
+                options={pendingSourceOptions}
+                onChange={setPendingSourceFilter}
+                open={openReportFilter === "pending-source"}
+                onOpenChange={(next) => setOpenReportFilter(next ? "pending-source" : null)}
+              />
             </View>
-            {pendingReports.length === 0 ? (
+            {pendingQueueTotalCount === 0 ? (
               <Text className="text-sm text-center py-8" style={textMuted}>
                 No pending reports.
               </Text>
-            ) : filteredPendingReports.length === 0 ? (
+            ) : filteredPendingQueue.length === 0 ? (
               <Text className="text-sm text-center py-8" style={textMuted}>
                 No reports match your search or filters.
               </Text>
             ) : null}
-            {filteredPendingReports.map((report) => {
+            {filteredPendingQueue.map((item) => {
+              if (item.kind === "reReview") {
+                const request = item.request;
+                const busy = reportActionId === `rereview-${request.postId}`;
+                return (
+                  <View key={item.id} className="rounded-2xl px-4 py-4" style={surfaceStyle}>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text
+                        className="text-xs font-extrabold uppercase flex-1"
+                        style={{ color: "#c2410c" }}
+                      >
+                        Request review · Post
+                      </Text>
+                      <Text
+                        className="text-xs font-extrabold text-right shrink max-w-[55%]"
+                        style={textPrimary}
+                        numberOfLines={2}
+                      >
+                        Request review by{" "}
+                        <Text style={{ color: "#2563eb" }}>{request.requestedByName}</Text>
+                      </Text>
+                    </View>
+                    <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
+                      Request reason:{" "}
+                      <Text className="font-extrabold" style={{ color: "#16a34a" }}>
+                        {request.reason || "(No reason provided)"}
+                      </Text>
+                    </Text>
+                    <Text className="text-xs mt-2" style={textMuted}>
+                      Post author: {request.authorName}
+                    </Text>
+                    <Text
+                      className="text-sm mt-3 rounded-xl px-3 py-3 border"
+                      style={[
+                        { backgroundColor: theme.rowBg, borderColor: theme.cardBorder },
+                        textSecondary,
+                      ]}
+                    >
+                      {request.content || "(No text)"}
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        void openReportPostDetail({
+                          id: `rereview-${request.postId}`,
+                          targetType: "post",
+                          targetId: request.postId,
+                          postId: request.postId,
+                          reporterId: request.requestedBy,
+                          reporterName: request.requestedByName,
+                          reason: request.reason,
+                          status: "pending",
+                          createdAt: request.requestedAt,
+                          targetContent: request.content,
+                          targetAuthorId: request.authorId,
+                          targetAuthorName: request.authorName,
+                          read: true,
+                        })
+                      }
+                      disabled={busy || reportDeleteMode}
+                      className="mt-3 rounded-full py-2.5 items-center border"
+                      style={{
+                        backgroundColor: "#eaf7f0",
+                        borderColor: "#b7e4c7",
+                        opacity: busy || reportDeleteMode ? 0.5 : 1,
+                      }}
+                    >
+                      <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
+                    </Pressable>
+                    <View className="flex-row gap-2 mt-3">
+                      <Pressable
+                        onPress={() => handleApproveReReview(request)}
+                        disabled={busy || reportDeleteMode}
+                        className="flex-1 rounded-full py-2.5 items-center"
+                        style={{ backgroundColor: "#52B69A", opacity: busy || reportDeleteMode ? 0.5 : 1 }}
+                      >
+                        <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                          Restore Post
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDismissReReview(request)}
+                        disabled={busy || reportDeleteMode}
+                        className="flex-1 rounded-full py-2.5 items-center border"
+                        style={[cardStyle, busy || reportDeleteMode ? { opacity: 0.5 } : undefined]}
+                      >
+                        <Text className="text-xs font-extrabold" style={textSecondary}>
+                          Keep Hidden
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              }
+
+              const report = item.report;
               const busy = reportActionId === report.id;
               const cardDisabled = reportDeleteMode || busy;
               const selected = selectedReportDeleteIds.includes(report.id);
               return (
                 <View
-                  key={report.id}
+                  key={item.id}
                   className="rounded-2xl px-4 py-4"
                   style={[
                     surfaceStyle,
@@ -1557,23 +1819,49 @@ export function AdminCommunityHub() {
                   {reportDeleteMode ? (
                     <Pressable
                       onPress={() => toggleReportDeleteSelection(report.id)}
-                      className="flex-row items-center"
+                      className="flex-row items-start justify-between gap-2"
                     >
-                      {renderReportSelectionCheckbox(report.id)}
-                      <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
-                        {report.targetType}
+                      <View className="flex-row items-center flex-1 min-w-0">
+                        {renderReportSelectionCheckbox(report.id)}
+                        <Text
+                          className="text-xs font-extrabold uppercase flex-1"
+                          style={{ color: theme.accentText }}
+                        >
+                          Reported · {report.targetType}
+                        </Text>
+                      </View>
+                      <Text
+                        className="text-xs font-extrabold text-right shrink max-w-[50%]"
+                        style={textPrimary}
+                        numberOfLines={2}
+                      >
+                        Reported by{" "}
+                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
                       </Text>
                     </Pressable>
                   ) : (
-                    <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
-                      {report.targetType}
-                    </Text>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text
+                        className="text-xs font-extrabold uppercase flex-1"
+                        style={{ color: theme.accentText }}
+                      >
+                        Reported · {report.targetType}
+                      </Text>
+                      <Text
+                        className="text-xs font-extrabold text-right shrink max-w-[55%]"
+                        style={textPrimary}
+                        numberOfLines={2}
+                      >
+                        Reported by{" "}
+                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                      </Text>
+                    </View>
                   )}
-                  <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
-                    By {report.reporterName}
-                  </Text>
-                  <Text className="text-sm mt-1" style={textSecondary}>
-                    Reason: {report.reason}
+                  <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
+                    Report reason:{" "}
+                    <Text className="font-extrabold" style={{ color: "#16a34a" }}>
+                      {report.reason}
+                    </Text>
                   </Text>
                   <Text
                     className="text-sm mt-3 rounded-xl px-3 py-3 border"
@@ -1590,7 +1878,7 @@ export function AdminCommunityHub() {
                     className="mt-3 rounded-full py-2.5 items-center border"
                     style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
                   >
-                    <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
+                    <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
                   </Pressable>
                   <View className="flex-row gap-2 mt-3">
                     <Pressable
@@ -1624,7 +1912,8 @@ export function AdminCommunityHub() {
               "Total reviewed",
               reviewedReports.length,
               "#3b82f6",
-              filteredReviewedReports
+              filteredReviewedReports,
+              "All posts and comments below have already been reviewed. You can restore a blocked post or comment, block a dismissed item, move items back to pending, or permanently delete records."
             )}
             <CommunitySearchBar
               value={reviewedReportSearch}
@@ -1684,23 +1973,88 @@ export function AdminCommunityHub() {
                   {reportDeleteMode ? (
                     <Pressable
                       onPress={() => toggleReportDeleteSelection(report.id)}
-                      className="flex-row items-center"
+                      className="flex-row items-start justify-between gap-2"
                     >
-                      {renderReportSelectionCheckbox(report.id)}
-                      <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
-                        {report.targetType}
+                      <View className="flex-row items-center flex-1 min-w-0">
+                        {renderReportSelectionCheckbox(report.id)}
+                        <Text
+                          className="text-xs font-extrabold uppercase flex-1"
+                          style={{ color: theme.accentText }}
+                        >
+                          {report.source === "re_review"
+                            ? `Request review · ${report.targetType}`
+                            : report.source === "admin_direct"
+                              ? `Admin block · ${report.targetType}`
+                              : `Reported · ${report.targetType}`}
+                        </Text>
+                      </View>
+                      <Text
+                        className="text-xs font-extrabold text-right shrink max-w-[50%]"
+                        style={textPrimary}
+                        numberOfLines={2}
+                      >
+                        {report.source === "re_review"
+                          ? "Request review by "
+                          : report.source === "admin_direct"
+                            ? "Blocked by "
+                            : "Reported by "}
+                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
                       </Text>
                     </Pressable>
                   ) : (
-                    <Text className="text-xs font-extrabold uppercase" style={{ color: theme.accentText }}>
-                      {report.targetType}
-                    </Text>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text
+                        className="text-xs font-extrabold uppercase flex-1"
+                        style={{ color: theme.accentText }}
+                      >
+                        {report.source === "re_review"
+                          ? `Request review · ${report.targetType}`
+                          : report.source === "admin_direct"
+                            ? `Admin block · ${report.targetType}`
+                            : `Reported · ${report.targetType}`}
+                      </Text>
+                      <Text
+                        className="text-xs font-extrabold text-right shrink max-w-[55%]"
+                        style={textPrimary}
+                        numberOfLines={2}
+                      >
+                        {report.source === "re_review"
+                          ? "Request review by "
+                          : report.source === "admin_direct"
+                            ? "Blocked by "
+                            : "Reported by "}
+                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                      </Text>
+                    </View>
                   )}
-                  <Text className="text-sm font-extrabold mt-2" style={textPrimary}>
-                    By {report.reporterName}
+                  {report.source === "re_review" && report.requestReason ? (
+                    <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
+                      Request reason:{" "}
+                      <Text className="font-extrabold" style={{ color: "#16a34a" }}>
+                        {report.requestReason}
+                      </Text>
+                    </Text>
+                  ) : null}
+                  <Text
+                    className={`text-sm font-extrabold ${
+                      report.source === "re_review" && report.requestReason ? "mt-1" : "mt-2"
+                    }`}
+                    style={textPrimary}
+                  >
+                    {report.source === "re_review"
+                      ? "Keep hidden reason: "
+                      : report.source === "admin_direct"
+                        ? "Block reason: "
+                        : "Report reason: "}
+                    <Text className="font-extrabold" style={{ color: "#16a34a" }}>
+                      {report.reason}
+                    </Text>
                   </Text>
-                  <Text className="text-sm mt-1" style={textSecondary}>
-                    Status: {report.status === "resolved" ? "Blocked" : "Dismissed"}
+                  <Text className="text-sm mt-1 font-extrabold" style={textPrimary}>
+                    Status:{" "}
+                    <Text className="font-extrabold" style={{ color: "#ef4444" }}>
+                      {report.status === "resolved" ? "Blocked" : "Dismissed"}
+                    </Text>
                   </Text>
                   <Text
                     className="text-sm mt-3 rounded-xl px-3 py-3 border"
@@ -1717,18 +2071,22 @@ export function AdminCommunityHub() {
                     className="mt-3 rounded-full py-2.5 items-center border"
                     style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
                   >
-                    <Text className="text-xs font-semibold text-[#52B69A]">View post details</Text>
+                    <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
                   </Pressable>
                   <View className="flex-row gap-2 mt-3">
-                    {report.targetType === "post" && isResolved ? (
+                    {isResolved ? (
                       <Pressable
-                        onPress={() => handleRestorePost(report)}
+                        onPress={() =>
+                          report.targetType === "comment"
+                            ? handleRestoreComment(report)
+                            : handleRestorePost(report)
+                        }
                         disabled={cardDisabled}
                         className="flex-1 rounded-full py-2.5 items-center"
                         style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
                       >
                         <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
-                          Restore Post
+                          {report.targetType === "comment" ? "Restore Comment" : "Restore Post"}
                         </Text>
                       </Pressable>
                     ) : null}
@@ -2301,7 +2659,11 @@ export function AdminCommunityHub() {
         title={editingPost ? "Edit Post" : "New Post"}
         initial={
           editingPost
-            ? { content: editingPost.content, tags: editingPost.tags }
+            ? {
+                content: editingPost.content,
+                tags: editingPost.tags,
+                achievementIds: editingPost.achievementIds ?? [],
+              }
             : undefined
         }
         submitting={posting}
@@ -2315,20 +2677,28 @@ export function AdminCommunityHub() {
       <BlockReasonModal
         visible={blockTarget !== null}
         title={
-          blockTarget?.type === "comment" ||
-          (blockTarget?.type === "report" && blockTarget.report?.targetType === "comment")
-            ? "Block Comment"
-            : "Block Post"
+          blockTarget?.type === "reReview"
+            ? "Keep Post Hidden"
+            : blockTarget?.type === "comment" ||
+                (blockTarget?.type === "report" && blockTarget.report?.targetType === "comment")
+              ? "Block Comment"
+              : "Block Post"
         }
         description={
-          blockTarget?.type === "report" && blockTarget.report?.targetType === "comment"
-            ? "Choose a reason for blocking this reported comment. The reporter and author will be notified via Support Admin chat."
-            : blockTarget?.type === "report"
-              ? "Choose a reason for blocking this reported post. The reporter and author will be notified via Support Admin chat."
-              : "Provide a reason. The content author will receive this via Support Admin chat."
+          blockTarget?.type === "reReview"
+            ? "Choose a reason for keeping this post hidden. The author will be notified via Support Admin chat."
+            : blockTarget?.type === "report" && blockTarget.report?.targetType === "comment"
+              ? "Choose a reason for blocking this reported comment. The reporter and author will be notified via Support Admin chat."
+              : blockTarget?.type === "report"
+                ? "Choose a reason for blocking this reported post. The reporter and author will be notified via Support Admin chat."
+                : blockTarget?.type === "comment"
+                  ? "Provide a reason. The comment author will be notified via Support Admin chat, and this action will appear under Reviewed."
+                  : "Provide a reason. The content author will receive this via Support Admin chat, and this action will appear under Reviewed."
         }
         presetReasons={
-          blockTarget?.type === "report" ? ADMIN_BLOCK_POST_REASONS : undefined
+          blockTarget?.type === "report" || blockTarget?.type === "reReview"
+            ? ADMIN_BLOCK_POST_REASONS
+            : undefined
         }
         onClose={() => setBlockTarget(null)}
         onConfirm={handleConfirmBlock}

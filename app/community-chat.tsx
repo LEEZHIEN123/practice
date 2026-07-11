@@ -518,10 +518,7 @@ export default function CommunityChatScreen() {
     ]);
   };
 
-  const inputBottomPadding =
-    keyboardHeight > 0
-      ? Math.max(8, keyboardHeight - insets.bottom)
-      : insets.bottom + 8;
+  const inputBottomPadding = keyboardHeight > 0 ? keyboardHeight + 8 : insets.bottom + 8;
 
   if (!chatId) {
     return (
@@ -545,21 +542,21 @@ export default function CommunityChatScreen() {
               onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
               className="w-12 h-12 shrink-0"
             />
-            <Pressable
+          <Pressable
               onPress={() => void openOtherProfile()}
               disabled={!otherUserId || otherUserId === currentUserId}
               className="flex-1 flex-row items-center ml-2 mr-2 min-w-0"
-            >
+          >
               <ProfileAvatar uri={chatImage} size={40} />
               <ThemedText className="text-xl font-extrabold flex-1 ml-3" numberOfLines={1}>
                 {displayChatName}
               </ThemedText>
-            </Pressable>
+          </Pressable>
             <View className="flex-row items-center shrink-0">
               {isSupport ? (
                 <View className="w-8 h-8 rounded-full bg-[#dbeafe] items-center justify-center mr-1">
                   <Ionicons name="shield-checkmark" size={18} color="#2563eb" />
-                </View>
+        </View>
               ) : null}
               <Pressable
                 onPress={() => setMenuVisible(true)}

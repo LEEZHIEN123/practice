@@ -198,12 +198,13 @@ def serving_size(row: dict) -> str | None:
 
 
 def resolve_csv_path() -> Path:
-    if DEFAULT_CSV.exists():
-        return DEFAULT_CSV
+    # Prefer the OneDrive source of truth when present, else project data copy.
     if FALLBACK_CSV.exists():
         return FALLBACK_CSV
+    if DEFAULT_CSV.exists():
+        return DEFAULT_CSV
     raise FileNotFoundError(
-        f"RECEPI.csv not found at {DEFAULT_CSV} or {FALLBACK_CSV}"
+        f"RECEPI.csv not found at {FALLBACK_CSV} or {DEFAULT_CSV}"
     )
 
 

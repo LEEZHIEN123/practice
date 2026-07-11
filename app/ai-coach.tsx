@@ -1,7 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import {
   ProfileScreenHeader,
-  ThemedCard,
   ThemedText,
   useProfileCardStyles
 } from "@/components/themed/ThemedUi";
@@ -19,6 +18,7 @@ import {
   type StoredChatMessage,
 } from "@/lib/aiCoachStorage";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
+import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import { isGeminiConfigured, sendCoachMessage, type CoachChatTurn } from "@/lib/geminiCoach";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -30,7 +30,6 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -64,29 +63,12 @@ function formatSessionDate(ms: number) {
   }).format(new Date(ms));
 }
 
-async function copyMessageText(text: string) {
-  if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
-    await navigator.clipboard.writeText(text);
-    Alert.alert("Copied", "Message copied to clipboard.");
-    return;
-  }
-  try {
-    const Clipboard = await import("expo-clipboard");
-    await Clipboard.setStringAsync(text);
-    Alert.alert("Copied", "Message copied to clipboard.");
-  } catch {
-    Alert.alert("Copy", "Select the message text, then use your device copy action.");
-  }
-}
-
-function MessageBubble({
-  message,
-  onCopy,
-}: {
-  message: ChatMessage;
-  onCopy: (text: string) => void;
-}) {
-  const { cardStyle, textSecondary, theme } = useThemedScreen();
+function MessageBubble({ message }: { message: ChatMessage }) {
+  const { cardStyle, textSecondary } = useThemedScreen();
+  const timeLabel =
+    typeof message.createdAt === "number" && message.createdAt > 0
+      ? formatChatMessageTime(message.createdAt)
+      : "";
 
   if (message.role === "assistant") {
     return (
@@ -94,35 +76,28 @@ function MessageBubble({
         <View className="w-9 h-9 rounded-full bg-[#76C893] items-center justify-center mr-2 mt-0.5 shrink-0">
           <MaterialCommunityIcons name="robot-happy-outline" size={18} color="white" />
         </View>
-        <View
-          className="flex-1 shrink rounded-2xl px-4 py-3"
-          style={[{ maxWidth: "88%" }, cardStyle]}
-        >
-          <ChatFormattedText
-            text={message.text}
-            className="text-base leading-6 text-left"
-            style={textSecondary}
-            boldClassName="font-extrabold"
-            selectable
-          />
-          <Pressable
-            onPress={() => onCopy(message.text)}
-            onLongPress={() => onCopy(message.text)}
-            hitSlop={8}
-            className="flex-row items-center self-end mt-2 active:opacity-70"
-          >
-            <Ionicons name="copy-outline" size={15} color={theme.iconMuted} />
-            <ThemedText variant="muted" className="text-xs ml-1 font-semibold text-left">
-              Copy
+        <View className="flex-1 shrink" style={{ maxWidth: "88%" }}>
+          <View className="rounded-2xl px-4 py-3" style={cardStyle}>
+            <ChatFormattedText
+              text={message.text}
+              className="text-base leading-6 text-left"
+              style={textSecondary}
+              boldClassName="font-extrabold"
+              selectable
+            />
+          </View>
+          {timeLabel ? (
+            <ThemedText variant="muted" className="text-[10px] mt-1 ml-1">
+              {timeLabel}
             </ThemedText>
-          </Pressable>
+          ) : null}
         </View>
       </View>
     );
   }
 
   return (
-    <View className="w-full flex-row justify-end">
+    <View className="w-full items-end">
       <View className="max-w-[88%] bg-[#76C893] rounded-2xl px-4 py-3">
         <ChatFormattedText
           text={message.text}
@@ -130,16 +105,12 @@ function MessageBubble({
           boldClassName="font-extrabold text-white"
           selectable
         />
-        <Pressable
-          onPress={() => onCopy(message.text)}
-          onLongPress={() => onCopy(message.text)}
-          hitSlop={8}
-          className="flex-row items-center self-end mt-2 active:opacity-70"
-        >
-          <Ionicons name="copy-outline" size={15} color="white" />
-          <Text className="text-xs text-white/90 ml-1 font-semibold text-left">Copy</Text>
-        </Pressable>
       </View>
+      {timeLabel ? (
+        <ThemedText variant="muted" className="text-[10px] mt-1 mr-1">
+          {timeLabel}
+        </ThemedText>
+      ) : null}
     </View>
   );
 }
@@ -239,10 +210,6 @@ export default function AICoachScreen() {
       .map((m) => ({ role: m.role, text: m.text }));
   }, [messages]);
 
-  const handleCopy = useCallback((text: string) => {
-    void copyMessageText(text);
-  }, []);
-
   const openHistory = useCallback(async () => {
     if (!uid) return;
     const archives = await loadArchivedChats(uid);
@@ -320,7 +287,12 @@ export default function AICoachScreen() {
         return;
       }
 
-      const userMsg: ChatMessage = { id: makeId(), role: "user", text: trimmed };
+      const userMsg: ChatMessage = {
+        id: makeId(),
+        role: "user",
+        text: trimmed,
+        createdAt: Date.now(),
+      };
 
       if (!sessionIdRef.current) {
         sessionIdRef.current = makeChatSessionId();
@@ -344,7 +316,12 @@ export default function AICoachScreen() {
           coachContextRef.current = context;
         }
         const reply = await sendCoachMessage(historyForApi(), trimmed, context);
-        const assistantMsg: ChatMessage = { id: makeId(), role: "assistant", text: reply };
+        const assistantMsg: ChatMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: reply,
+          createdAt: Date.now(),
+        };
         const fullMessages = [...messages, userMsg, assistantMsg];
         setMessages(fullMessages);
         if (uid && sessionIdRef.current) {
@@ -369,15 +346,11 @@ export default function AICoachScreen() {
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const onShow = (e: KeyboardEvent) => {
-      if (Platform.OS === "android") {
-        setKeyboardHeight(e.endCoordinates.height);
-      }
+      setKeyboardHeight(e.endCoordinates.height);
       scrollToBottom();
     };
     const onHide = () => {
-      if (Platform.OS === "android") {
-        setKeyboardHeight(0);
-      }
+      setKeyboardHeight(0);
     };
 
     const showSub = Keyboard.addListener(showEvent, onShow);
@@ -388,17 +361,10 @@ export default function AICoachScreen() {
     };
   }, [scrollToBottom]);
 
-  const inputBarBottomPad =
-    Platform.OS === "android" && keyboardHeight > 0 ? keyboardHeight : insets.bottom + 12;
-  const showSuggestedPrompts = messages.length <= 1 && !sending;
-  const headerOffset = insets.top + 12 + 56;
+  const inputBarBottomPad = keyboardHeight > 0 ? keyboardHeight + 8 : insets.bottom + 12;
 
   return (
-    <KeyboardAvoidingView
-      style={screenStyle}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? headerOffset : 0}
-    >
+    <View style={screenStyle}>
       <View className="flex-1" style={{ paddingTop: insets.top + 12 }}>
         <View className="px-3">
           <ProfileScreenHeader
@@ -436,7 +402,7 @@ export default function AICoachScreen() {
         >
           {messages.map((message) => (
             <View key={message.id} className="mb-3 w-full">
-              <MessageBubble message={message} onCopy={handleCopy} />
+              <MessageBubble message={message} />
             </View>
           ))}
 
@@ -456,23 +422,6 @@ export default function AICoachScreen() {
               </View>
             </View>
           ) : null}
-
-          {showSuggestedPrompts ? (
-            <View className="mt-2">
-              <ThemedText className="text-sm font-extrabold mb-3 text-left">Suggested prompts</ThemedText>
-              <View className="gap-2">
-                {PROMPTS.map((prompt) => (
-                  <Pressable key={prompt} onPress={() => void sendText(prompt)} className="active:opacity-90">
-                    <ThemedCard rounded="2xl" className="px-4 py-3">
-                      <ThemedText variant="secondary" className="text-sm font-semibold text-left">
-                        {prompt}
-                      </ThemedText>
-                    </ThemedCard>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
         </ScrollView>
 
         <View
@@ -481,6 +430,32 @@ export default function AICoachScreen() {
             { paddingBottom: inputBarBottomPad, backgroundColor: theme.navBg, borderTopColor: theme.navBorder },
           ]}
         >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            className="mb-2"
+            contentContainerStyle={{ gap: 8, paddingRight: 4 }}
+          >
+            {PROMPTS.map((prompt) => (
+              <Pressable
+                key={prompt}
+                onPress={() => void sendText(prompt)}
+                disabled={sending}
+                className="rounded-full px-3 py-2 active:opacity-80"
+                style={{
+                  backgroundColor: theme.cardBg,
+                  borderWidth: 1,
+                  borderColor: theme.navBorder,
+                  opacity: sending ? 0.5 : 1,
+                }}
+              >
+                <ThemedText variant="secondary" className="text-xs font-semibold" numberOfLines={1}>
+                  {prompt}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </ScrollView>
           <View className="flex-row items-end gap-2">
             <TextInput
               value={input}
@@ -572,6 +547,6 @@ export default function AICoachScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

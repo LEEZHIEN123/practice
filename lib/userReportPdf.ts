@@ -1,5 +1,5 @@
 import { formatReportDayLabel } from "@/lib/reportCalendar";
-import { formatMealReportLine, reportFileName, reportShareTitle, type UserReport } from "@/lib/userReport";
+import { formatMealReportLine, formatWorkoutDuration, reportFileName, reportShareTitle, type UserReport } from "@/lib/userReport";
 import { File } from "expo-file-system";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -22,7 +22,8 @@ function listSection(title: string, rows: string[], emptyText: string): string {
 
 export function buildUserReportHtml(report: UserReport): string {
   const workoutRows = report.workouts.map(
-    (item) => `${item.title} — ${item.burnedKcal} kcal burned (${item.durationMin} min)`
+    (item) =>
+      `${item.title} — ${item.burnedKcal} kcal burned (${formatWorkoutDuration(item.durationMin)})`
   );
   const mealRows = report.meals.map((item) => formatMealReportLine(item));
   const waterRows =

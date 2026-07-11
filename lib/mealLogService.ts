@@ -6,10 +6,12 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   increment,
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 
 export type MealLogSource = "dataset" | "barcode" | "search" | "manual";
@@ -31,6 +33,10 @@ export type LogMealInput = {
   logDate?: Date;
   calendarTz?: string | null;
   saveToHistory?: boolean;
+  /** Personalized nutrition guidance: plan day + plan identity for progress / Done state. */
+  planDay?: number;
+  planCreatedAt?: string | null;
+  origin?: "nutritionPlan";
 };
 
 export async function logMealFood(input: LogMealInput): Promise<void> {
@@ -54,6 +60,16 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
   });
   const description = descriptionsToLegacyString(descriptionSections);
 
+  const planDay =
+    typeof input.planDay === "number" && Number.isFinite(input.planDay) && input.planDay >= 1
+      ? Math.floor(input.planDay)
+      : null;
+  const planCreatedAt =
+    typeof input.planCreatedAt === "string" && input.planCreatedAt.trim().length > 0
+      ? input.planCreatedAt.trim()
+      : null;
+  const fromNutritionPlan = input.origin === "nutritionPlan" && planDay != null;
+
   await addDoc(collection(db, "users", user.uid, "mealLogs"), {
     title,
     calories,
@@ -68,6 +84,8 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
     ...(input.carbsG != null ? { carbsG: input.carbsG } : {}),
     ...(input.fatG != null ? { fatG: input.fatG } : {}),
     ...(input.servings != null ? { servings: input.servings } : {}),
+    ...(fromNutritionPlan ? { origin: "nutritionPlan", planDay } : {}),
+    ...(fromNutritionPlan && planCreatedAt ? { planCreatedAt } : {}),
     createdAt: serverTimestamp(),
     logDate: Timestamp.fromDate(day),
   });
@@ -80,6 +98,24 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
     },
     { merge: true }
   );
+
+  if (fromNutritionPlan) {
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const uSnap = await getDoc(userRef);
+      const prevLcd = Number((uSnap.data() as any)?.activeNutritionPlanLastCompletedDay);
+      const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
+      const repeatDay1AfterProgress = planDay === 1 && prevOk;
+      if (!repeatDay1AfterProgress) {
+        await updateDoc(userRef, {
+          activeNutritionPlanLastCompletedDay: planDay,
+          activeNutritionPlanLastCompletedAt: serverTimestamp(),
+        } as any);
+      }
+    } catch (e) {
+      console.log("Failed to advance nutrition plan day:", e);
+    }
+  }
 
   if (input.saveToHistory !== false) {
     await upsertMealHistory(user.uid, {

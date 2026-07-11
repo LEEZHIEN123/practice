@@ -1,12 +1,14 @@
+import { FavouriteButton } from "@/components/FavouriteButton";
 import { Pressable } from "@/components/Pressable";
 import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
-import { useThemedScreen } from "@/lib/useThemedScreen";
 import { imageCardOverlayOpacity } from "@/lib/appearance";
+import { buildWorkoutFavouriteItem } from "@/lib/favourites";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { WORKOUT_DETAILS, type WorkoutType } from "@/lib/workoutCatalog";
 import {
-  WORKOUT_TYPE_CARD_IMAGE_POSITION,
-  WORKOUT_TYPE_CARD_IMAGES,
-  WORKOUT_TYPE_CARD_IMAGE_STYLE,
+    WORKOUT_TYPE_CARD_IMAGE_POSITION,
+    WORKOUT_TYPE_CARD_IMAGE_STYLE,
+    WORKOUT_TYPE_CARD_IMAGES,
 } from "@/lib/workoutTypeCardImages";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -95,7 +97,7 @@ export default function AllWorkoutsScreen() {
           <ProfileScreenHeader
             title={workoutTypeHeaderLabel(selected)}
             onBack={() => setSelected(null)}
-            titleClassName="text-xl"
+            titleClassName="text-lg"
           />
         </View>
 
@@ -103,26 +105,41 @@ export default function AllWorkoutsScreen() {
           data={names}
           keyExtractor={(item) => item}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 32, paddingTop: 4 }}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() =>
-                router.push(
-                  `/free-workout?type=${encodeURIComponent(selected)}&name=${encodeURIComponent(item)}` as any
-                )
-              }
-              className="bg-[#bdeccf] rounded-[28px] p-6 mb-3 flex-row items-center justify-between active:opacity-90"
-            >
-              <View className="flex-1 pr-3">
-                <Text className="text-xl font-extrabold text-gray-900" numberOfLines={3}>
-                  {item}
-                </Text>
-                <Text className="text-base font-semibold text-gray-600 mt-1">
-                  MET: {WORKOUT_DETAILS[selected][item].met}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={28} color="#76C893" />
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const favouriteItem = buildWorkoutFavouriteItem(
+              selected,
+              item,
+              WORKOUT_DETAILS[selected][item].met
+            );
+            return (
+              <Pressable
+                onPress={() =>
+                  router.push(
+                    `/free-workout?type=${encodeURIComponent(selected)}&name=${encodeURIComponent(item)}` as any
+                  )
+                }
+                className="bg-[#bdeccf] rounded-[28px] p-6 mb-3 flex-row items-center justify-between active:opacity-90"
+              >
+                <View className="flex-1 pr-3 min-w-0">
+                  <View className="flex-row items-start gap-1">
+                    <Text
+                      className="text-xl font-extrabold text-gray-900 flex-1 min-w-0"
+                      numberOfLines={4}
+                    >
+                      {item}
+                    </Text>
+                    <View className="shrink-0 pt-0.5">
+                      <FavouriteButton compact item={favouriteItem} />
+                    </View>
+                  </View>
+                  <Text className="text-base font-semibold text-gray-600 mt-1">
+                    MET: {WORKOUT_DETAILS[selected][item].met}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={28} color="#76C893" />
+              </Pressable>
+            );
+          }}
         />
       </View>
     );

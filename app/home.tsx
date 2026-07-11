@@ -6,6 +6,7 @@ import { imageCardTintOverlay } from "@/lib/appearance";
 import { CaloriesDonut } from "@/components/CaloriesDonut";
 import { bumpWorkoutPlanDay, syncDailyLoginStreak } from "@/lib/achievements";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { migrateExtraActiveActivityLevel } from "@/lib/migrateActivityLevel";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { plansEqual, sanitizeActiveWorkoutPlan } from "@/lib/workoutCatalog";
@@ -18,6 +19,12 @@ import {
   type ActiveWorkoutPlan,
   type PlanDuration,
 } from "@/lib/workoutPlan";
+import {
+  expandNutritionPlanText,
+  generateActiveNutritionPlan,
+  normalizeNutritionActivity,
+  normalizeNutritionDietary,
+} from "@/lib/nutritionPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -84,8 +91,10 @@ export default function HomeScreen() {
   const [activityMultiplier, setActivityMultiplier] = useState<number>(1.2);
   const [recommendedPlan, setRecommendedPlan] = useState<"gain" | "maintain" | "lose" | null>(null);
   const [planDuration, setPlanDuration] = useState<PlanDuration | null>(null);
+  const [nutritionPlanDuration, setNutritionPlanDuration] = useState<PlanDuration | null>(null);
   const [pendingDuration, setPendingDuration] = useState<PlanDuration>("week");
   const [planPickerVisible, setPlanPickerVisible] = useState(false);
+  const [planPickerTarget, setPlanPickerTarget] = useState<"workout" | "nutrition">("workout");
   const [savingPlan, setSavingPlan] = useState(false);
   const [consumedToday, setConsumedToday] = useState(0);
   const [burnedToday, setBurnedToday] = useState(0);
@@ -145,7 +154,7 @@ export default function HomeScreen() {
   }, [bmi, bmiCategoryIdx]);
 
   const chooseDurationAndSave = useCallback(
-    async (duration: PlanDuration) => {
+    async (duration: PlanDuration, target: "workout" | "nutrition" = planPickerTarget) => {
       const user = auth.currentUser;
       if (!user) return;
 
@@ -160,15 +169,46 @@ export default function HomeScreen() {
         const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
         const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, recommendedPlan, duration);
         const band = bmiBandKey(bmi);
+
+        const mult =
+          typeof data.activityMultiplier === "number" && data.activityMultiplier > 0
+            ? data.activityMultiplier
+            : activityMultiplier;
+        const activityKey = normalizeNutritionActivity(
+          typeof data.activityLevel === "string" ? data.activityLevel : null,
+          mult
+        );
+        const dietaryKey = normalizeNutritionDietary(
+          typeof data.dietaryPreference === "string" ? data.dietaryPreference : null
+        );
+        const nutritionPlan = expandNutritionPlanText(
+          generateActiveNutritionPlan({
+            duration,
+            bmi,
+            goal: recommendedPlan,
+            dietaryPreference: dietaryKey ?? "omnivore",
+            activityLevel: activityKey ?? "moderate",
+          })
+        );
+
+        // First choice applies to both workout and nutrition schedules.
         await updateDoc(doc(db, "users", user.uid), {
           planDuration: duration,
           planDurationChosenAt: serverTimestamp(),
+          nutritionPlanDuration: duration,
+          nutritionPlanDurationChosenAt: serverTimestamp(),
           activeWorkoutPlan: plan,
+          activeNutritionPlan: nutritionPlan,
+          activePlanLastCompletedDay: null,
+          activePlanLastCompletedAt: null,
+          activeNutritionPlanLastCompletedDay: null,
+          activeNutritionPlanLastCompletedAt: null,
           [workoutPlansByBmiGoalField(band, recommendedPlan, duration)]: plan,
         } as any);
         setPlanDuration(duration);
+        setNutritionPlanDuration(duration);
         setPlanPickerVisible(false);
-        router.push("/workout-plan" as any);
+        router.push((target === "nutrition" ? "/meal-plan" : "/workout-plan") as any);
       } catch (e) {
         console.log("Failed to save plan:", e);
         Alert.alert("Error", "Failed to generate your plan. Please try again.");
@@ -176,7 +216,7 @@ export default function HomeScreen() {
         setSavingPlan(false);
       }
     },
-    [bmi, recommendedPlan, router]
+    [activityMultiplier, bmi, planPickerTarget, recommendedPlan, router]
   );
 
   useEffect(() => {
@@ -200,6 +240,20 @@ export default function HomeScreen() {
         if (data?.planDuration === "week" || data?.planDuration === "biweekly" || data?.planDuration === "monthly") {
           setPlanDuration(data.planDuration);
           setPendingDuration(data.planDuration);
+        }
+        if (
+          data?.nutritionPlanDuration === "week" ||
+          data?.nutritionPlanDuration === "biweekly" ||
+          data?.nutritionPlanDuration === "monthly"
+        ) {
+          setNutritionPlanDuration(data.nutritionPlanDuration);
+        } else if (
+          data?.planDuration === "week" ||
+          data?.planDuration === "biweekly" ||
+          data?.planDuration === "monthly"
+        ) {
+          // Older accounts: inherit workout schedule until nutrition is changed separately.
+          setNutritionPlanDuration(data.planDuration);
         }
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
@@ -245,6 +299,7 @@ export default function HomeScreen() {
     const unsub = onAuthStateChanged(auth, (user: User | null) => {
       if (user) {
         void runRemoveZeroKcalWorkoutLogsOnce();
+        void migrateExtraActiveActivityLevel(user.uid).catch(() => {});
         void syncDailyLoginStreak(user.uid);
       }
     });
@@ -491,20 +546,25 @@ export default function HomeScreen() {
                       : "—"}
                   </Text>
 
-                  {intakeTarget ? (
-                    caloriesOverBudget ? (
-                      <Text className="text-xs text-red-600 font-semibold mt-2 leading-5">
-                        You exceeded your daily calorie allowance.
-                      </Text>
-                    ) : (
-                      <Text className="text-xs text-emerald-700 font-semibold mt-2 ml-4 leading-5">
-                        You have {formatKcal(remainingCalories)} kcal remaining. You need to eat enough calories to achieve your goal.
-                      </Text>
-                    )
+                  {intakeTarget && !caloriesOverBudget ? (
+                    <Text className="text-xs text-emerald-700 font-semibold mt-2 ml-4 leading-5">
+                      You have {formatKcal(remainingCalories)} kcal remaining. You need to eat enough calories to achieve your goal.
+                    </Text>
                   ) : null}
                 </View>
               </View>
             </View>
+
+            {intakeTarget && caloriesOverBudget ? (
+              <View className="mt-3 pt-3 border-t" style={{ borderTopColor: theme.cardBorder }}>
+                <Text className="text-xs text-red-600 font-semibold leading-5 text-left">
+                  You exceeded your daily calorie allowance.
+                </Text>
+                <Text className="text-xs mt-1.5 leading-5 text-left" style={textMuted}>
+                  Tip: Choose a lighter next meal, drink water, or do a short walk/workout to burn some calories and get back on track.
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Recommended Plan */}
@@ -531,6 +591,7 @@ export default function HomeScreen() {
                   if (u) void bumpWorkoutPlanDay(u.uid);
 
                   if (!planDuration) {
+                    setPlanPickerTarget("workout");
                     setPlanPickerVisible(true);
                     return;
                   }
@@ -557,41 +618,38 @@ export default function HomeScreen() {
             iconColor="#c2410c"
             labelTextClassName="text-base"
           />
-          <View className="mt-2 rounded-3xl overflow-hidden shadow-sm shadow-black/5" style={cardStyle}>
-            <View className="p-5">
-              <View className="flex-row items-center">
-                <View
-                  className="w-14 h-14 rounded-2xl items-center justify-center"
-                  style={{ backgroundColor: theme.rowBg }}
+          <ImageBackground
+            source={require("../assets/images/Nutrition Guidance.png")}
+            resizeMode="cover"
+            imageStyle={{ borderRadius: 24 }}
+            className="mt-2 rounded-3xl overflow-hidden shadow-sm shadow-black/5"
+            style={{ borderWidth: 1, borderColor: theme.cardBorder }}
+          >
+            <View className="p-4" style={{ backgroundColor: imageCardTintOverlay(isDark) }}>
+              <Pressable
+                className="mt-28 rounded-full overflow-hidden"
+                style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
+                onPress={() => {
+                  // First schedule choice (from either button) sets both plans.
+                  if (!planDuration && !nutritionPlanDuration) {
+                    setPlanPickerTarget("nutrition");
+                    setPlanPickerVisible(true);
+                    return;
+                  }
+                  router.push("/meal-plan" as any);
+                }}
+              >
+                <LinearGradient
+                  colors={["#f59e0b", "#f97316"]}
+                  className="py-3.5 rounded-full items-center"
                 >
-                  <Ionicons name="restaurant" size={26} color="#c2410c" />
-                </View>
-                <View className="ml-4 flex-1">
-                  <ThemedText className="text-lg font-extrabold">Personalised Nutrition Guidance</ThemedText>
-                  <ThemedText variant="secondary" className="text-sm mt-1">
-                    Explore your personalised meal ideas and daily recipe suggestions.
-                  </ThemedText>
-                </View>
-              </View>
-
-              <View className="mt-5">
-                <Pressable
-                  className="rounded-full overflow-hidden"
-                  style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
-                  onPress={() => router.push("/meal-plan" as any)}
-                >
-                  <LinearGradient
-                    colors={["#f59e0b", "#f97316"]}
-                    className="py-3.5 rounded-full items-center"
-                  >
-                    <Text className="text-white font-bold text-base">
-                      View Nutrition Guidance
-                    </Text>
-                  </LinearGradient>
-                </Pressable>
-              </View>
+                  <Text className="text-white font-bold text-base">
+                    View Nutrition Guidance
+                  </Text>
+                </LinearGradient>
+              </Pressable>
             </View>
-          </View>
+          </ImageBackground>
 
         </View>
       </ScrollView>
@@ -602,7 +660,8 @@ export default function HomeScreen() {
           <View className="w-full rounded-3xl p-6" style={cardStyle}>
             <ThemedText className="text-2xl font-extrabold">Choose your plan</ThemedText>
             <ThemedText variant="muted" className="mt-2 leading-6">
-              Select a duration and we will generate a personalised workout plan for you.
+              Select a schedule length. This first choice applies to both your workout plan and
+              nutrition guidance.
             </ThemedText>
 
             <View className="mt-5 gap-3">
@@ -651,7 +710,7 @@ export default function HomeScreen() {
 
             <Pressable
               disabled={savingPlan}
-              onPress={() => void chooseDurationAndSave(pendingDuration)}
+              onPress={() => void chooseDurationAndSave(pendingDuration, planPickerTarget)}
               className={`mt-5 rounded-full overflow-hidden ${savingPlan ? "opacity-60" : "opacity-100"}`}
             >
               <LinearGradient

@@ -13,14 +13,17 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { isOnboardingGate } from "@/lib/onboardingGate";
 import { useRegistration } from "../context/registrationContext";
+import { auth, db } from "../firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
 
 type Gender = "male" | "female";
 
 export default function ProfileDetails() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { account, setProfile } = useRegistration();
+  const { account, setAccount, setProfile, setOnboardingInProgress } = useRegistration();
   const { theme } = useThemedScreen();
   const { inputStyle } = useProfileCardStyles();
 
@@ -56,6 +59,26 @@ export default function ProfileDetails() {
     }),
     []
   );
+
+  useEffect(() => {
+    setOnboardingInProgress(true);
+    if (account) return;
+    const user = auth.currentUser;
+    if (!user) {
+      // Account may still be creating — do not bounce while the gate is on.
+      if (isOnboardingGate()) return;
+      router.replace("/register");
+      return;
+    }
+    void getDoc(doc(db, "users", user.uid)).then((snap) => {
+      const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+      setAccount({
+        name: String(data.name ?? ""),
+        email: String(data.email ?? user.email ?? ""),
+        password: "",
+      });
+    });
+  }, [account, router, setAccount, setOnboardingInProgress]);
 
   useEffect(() => {
     setAge((v) => {

@@ -19,12 +19,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRegistration } from "../context/registrationContext";
+import { setOnboardingGate } from "@/lib/onboardingGate";
 import { auth, db } from "../firebaseConfig";
 
 export default function Register() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setAccount, reset } = useRegistration();
+  const { setAccount, setOnboardingInProgress } = useRegistration();
   const {
     theme,
     screenStyle,
@@ -120,8 +121,21 @@ export default function Register() {
     try {
       setLoading(true);
 
+      // Sync gate first so auth listeners cannot send the user to Home
+      // (React state alone is too late — createUser fires listeners before re-render).
+      setOnboardingGate(true);
+      setOnboardingInProgress(true);
+      setAccount({
+        name: name.trim(),
+        email: cleanEmail,
+        password,
+      });
+
       const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      await cred.user.getIdToken(true);
+
+      // Go to Profile Details immediately — do not wait on Firestore (that delay
+      // let the welcome auth listener briefly show Home).
+      router.replace("/profiledetails");
 
       try {
         await setDoc(
@@ -130,25 +144,21 @@ export default function Register() {
             name: name.trim(),
             email: cred.user.email ?? cleanEmail,
             createdAt: Date.now(),
+            onboardingComplete: false,
           },
           { merge: true }
         );
       } catch (e) {
+        setOnboardingGate(false);
+        setOnboardingInProgress(false);
         try {
           await deleteUser(cred.user);
         } catch {}
         throw e;
       }
-
-      reset();
-      setAccount({
-        name: name.trim(),
-        email: cleanEmail,
-        password,
-      });
-
-      router.push("/profiledetails");
     } catch (e: unknown) {
+      setOnboardingGate(false);
+      setOnboardingInProgress(false);
       if ((e as { code?: string })?.code === "permission-denied") {
         Alert.alert(
           "Firestore: permission denied",
@@ -159,6 +169,7 @@ export default function Register() {
       } else {
         Alert.alert("Error", firebaseAuthErrorMessage(e));
       }
+      router.replace("/register");
     } finally {
       setLoading(false);
     }

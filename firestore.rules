@@ -101,6 +101,11 @@ service cloud.firestore {
     function postNotBlocked() {
       return resource.data.get("blocked", false) == false;
     }
+    function canReadCommunityPost() {
+      return postNotBlocked()
+        || isAdmin()
+        || resource.data.authorId == request.auth.uid;
+    }
     function isAuthorPostEdit() {
       return resource.data.authorId == request.auth.uid
         && request.resource.data.authorId == resource.data.authorId
@@ -116,6 +121,13 @@ service cloud.firestore {
         && request.resource.data.underReview == true
         && resource.data.get("underReview", false) == false
         && resource.data.get("blocked", false) == false;
+    }
+    function authorRequestBlockedReReview() {
+      return resource.data.authorId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["underReview"])
+        && request.resource.data.underReview == true
+        && resource.data.get("underReview", false) == false
+        && resource.data.get("blocked", false) == true;
     }
 
     match /users/{userId} {
@@ -147,7 +159,7 @@ service cloud.firestore {
     }
 
     match /communityPosts/{postId} {
-      allow read: if isSignedIn() && (postNotBlocked() || isAdmin());
+      allow read: if isSignedIn() && canReadCommunityPost();
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.get("blocked", false) == false;
@@ -155,6 +167,7 @@ service cloud.firestore {
         isAdmin()
         || isAuthorPostEdit()
         || flagPostUnderReviewOnly()
+        || authorRequestBlockedReReview()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likedBy", "likeCount"])
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["commentCount"])
         || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["blocked", "underReview"]))
@@ -164,6 +177,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+        allow update: if isAdmin();
         allow delete: if isSignedIn() && (
           resource.data.authorId == request.auth.uid
           || get(/databases/$(database)/documents/communityPosts/$(postId)).data.authorId == request.auth.uid
@@ -173,7 +187,10 @@ service cloud.firestore {
     }
 
     match /communityReports/{reportId} {
-      allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow create: if isSignedIn() && (
+        request.resource.data.reporterId == request.auth.uid
+        || isAdmin()
+      );
       allow read, update: if isAdmin();
     }
 

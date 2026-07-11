@@ -16,6 +16,8 @@ export type CommunityPost = {
   category: PostCategory;
   imageUrl: string | null;
   tags: string[];
+  /** Shared unlocked achievement ids (optional). */
+  achievementIds: string[];
   editHistory: PostEditSnapshot[];
   updatedAt: number;
   likeCount: number;
@@ -36,6 +38,7 @@ export type CommunityComment = {
   parentCommentId: string | null;
   replyToAuthorName: string | null;
   createdAt: number;
+  blocked: boolean;
 };
 
 export type ReportTargetType = "post" | "comment";
@@ -54,6 +57,22 @@ export type CommunityReport = {
   targetAuthorId: string;
   targetAuthorName: string;
   read: boolean;
+  /** Origin of this queue item. */
+  source?: "report" | "re_review" | "admin_direct";
+  /** Author's original request-review reason when source is re_review. */
+  requestReason?: string;
+};
+
+/** Author asked Support Admin to check a blocked post again. */
+export type PendingReReviewRequest = {
+  postId: string;
+  reason: string;
+  requestedBy: string;
+  requestedByName: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  requestedAt: number;
 };
 
 export type FriendRequest = {

@@ -26,6 +26,7 @@ type PostMenuModalProps = {
   onReport: () => void;
   onShare?: () => void;
   onBlock?: () => void;
+  onRequestReReview?: () => void;
 };
 
 export function PostMenuModal({
@@ -41,6 +42,7 @@ export function PostMenuModal({
   onReport,
   onShare,
   onBlock,
+  onRequestReReview,
 }: PostMenuModalProps) {
   const insets = useSafeAreaInsets();
   const { textMuted, theme } = useThemedScreen();
@@ -49,8 +51,21 @@ export function PostMenuModal({
 
   const options: MenuOption[] = isOwnPost
     ? [
-        { label: "Edit Post", icon: "create-outline", onPress: onEdit },
-        ...(onShare ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }] : []),
+        ...(post.blocked && onRequestReReview && !post.underReview
+          ? [
+              {
+                label: "Request check again",
+                icon: "alert-circle-outline" as const,
+                onPress: onRequestReReview,
+              },
+            ]
+          : []),
+        ...(!post.blocked
+          ? [{ label: "Edit Post", icon: "create-outline" as const, onPress: onEdit }]
+          : []),
+        ...(onShare && !post.blocked
+          ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }]
+          : []),
         { label: "Delete Post", icon: "trash-outline", onPress: onDelete, danger: true },
       ]
     : isAdmin

@@ -1,5 +1,7 @@
+import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { CommentReviewTip } from "@/components/community/CommentReviewTip";
+import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostLikesModal } from "@/components/community/PostLikesModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { Pressable } from "@/components/Pressable";
@@ -7,10 +9,12 @@ import { ProfileScreenHeader, ThemedText } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime, formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
   addComment,
+  adminBlockComment,
   deleteComment,
   displayCommunityUserName,
   getPostsByAuthor,
   getPublicUserProfile,
+  isCommunityAdminUserId,
   loadLikerProfiles,
   resolveAdminUid,
   subscribeComments,
@@ -77,6 +81,8 @@ export default function CommunityPostScreen() {
   const [replyingTo, setReplyingTo] = useState<CommunityComment | null>(null);
   const [menuComment, setMenuComment] = useState<CommunityComment | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [blockComment, setBlockComment] = useState<CommunityComment | null>(null);
 
   const [likesPost, setLikesPost] = useState<CommunityPost | null>(null);
   const [likers, setLikers] = useState<LikerProfile[]>([]);
@@ -103,6 +109,16 @@ export default function CommunityPostScreen() {
   useEffect(() => {
     void resolveAdminUid().then(setAdminUid).catch(() => setAdminUid(null));
   }, []);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setIsAdmin(false);
+      return;
+    }
+    void isCommunityAdminUserId(currentUserId)
+      .then(setIsAdmin)
+      .catch(() => setIsAdmin(false));
+  }, [currentUserId]);
 
   useEffect(() => {
     const unsub = subscribePosts(setAllPosts);
@@ -247,6 +263,36 @@ export default function CommunityPostScreen() {
     ]);
   };
 
+  const requestBlockComment = (comment: CommunityComment) => {
+    setMenuComment(null);
+    Alert.alert(
+      "Block Comment",
+      "This comment will be removed and the author will be notified via Support Admin chat. It will also appear under Reviewed in report management.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => setBlockComment(comment),
+        },
+      ]
+    );
+  };
+
+  const handleConfirmBlockComment = async (reason: string) => {
+    if (!post || !blockComment) return;
+    const target = blockComment;
+    await adminBlockComment(post.id, target, reason);
+    setBlockComment(null);
+    if (replyingTo?.id === target.id) {
+      setReplyingTo(null);
+      setCommentText("");
+    }
+    Alert.alert(
+      "Comment blocked",
+      "The author has been notified. This action is listed under Reviewed."
+    );
+  };
+
   const liked = currentUserId && post ? post.likedBy.includes(currentUserId) : false;
   const isOwnPost = post?.authorId === currentUserId;
   const menuCommentBusy = menuComment != null && deletingCommentId === menuComment.id;
@@ -303,7 +349,18 @@ export default function CommunityPostScreen() {
                 </Pressable>
               </View>
 
-              {post.underReview ? (
+              {post.blocked ? (
+                <View
+                  className="mt-3 rounded-xl px-3 py-2 border"
+                  style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca" }}
+                >
+                  <Text className="text-xs font-semibold text-[#b91c1c]">
+                    {post.underReview
+                      ? "Still hidden · Support Admin is checking your request again."
+                      : "Hidden by Support Admin · Only you can see this."}
+                  </Text>
+                </View>
+              ) : post.underReview ? (
                 <View
                   className="mt-3 rounded-xl px-3 py-2 border"
                   style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
@@ -320,6 +377,8 @@ export default function CommunityPostScreen() {
                   {post.content}
                 </Text>
               ) : null}
+
+              <PostAchievementChips achievementIds={post.achievementIds ?? []} />
 
               {post.imageUrl ? (
                 <Image
@@ -511,9 +570,16 @@ export default function CommunityPostScreen() {
         comment={menuComment}
         canDelete={menuComment != null && menuComment.authorId === currentUserId}
         canReport={
+          !isAdmin &&
           menuComment != null &&
           menuComment.authorId !== currentUserId &&
           menuComment.authorId !== adminUid
+        }
+        isAdmin={isAdmin}
+        canBlock={
+          isAdmin &&
+          menuComment != null &&
+          menuComment.authorId !== currentUserId
         }
         deleting={menuCommentBusy}
         onClose={() => setMenuComment(null)}
@@ -524,6 +590,17 @@ export default function CommunityPostScreen() {
           setMenuComment(null);
           Alert.alert("Report", "Open this post from Community to report comments.");
         }}
+        onBlock={() => {
+          if (menuComment) requestBlockComment(menuComment);
+        }}
+      />
+
+      <BlockReasonModal
+        visible={blockComment !== null}
+        title="Block Comment"
+        description="Choose a reason for blocking this comment. The author will be notified via Support Admin chat, and this action will appear under Reviewed."
+        onClose={() => setBlockComment(null)}
+        onConfirm={handleConfirmBlockComment}
       />
 
       <PostLikesModal

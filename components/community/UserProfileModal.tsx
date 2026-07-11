@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import {
   ProfileScreenHeader,
   ThemedCard,
@@ -48,6 +49,7 @@ type UserProfileModalProps = {
   onDeclineFriend?: () => void;
   friendActionBusy?: boolean;
   onChat?: () => void;
+  onOpenPost?: (postId: string) => void;
 };
 
 export function UserProfileModal({
@@ -65,6 +67,7 @@ export function UserProfileModal({
   onDeclineFriend,
   friendActionBusy = false,
   onChat,
+  onOpenPost,
 }: UserProfileModalProps) {
   const insets = useSafeAreaInsets();
   const { screenStyle, cardStyle, theme, iconButtonStyle } = useThemedScreen();
@@ -214,37 +217,61 @@ export function UserProfileModal({
               </ThemedCard>
             ) : null}
 
-            <ThemedText className="text-lg font-extrabold mb-3">Posts</ThemedText>
+            <ThemedText className="text-lg font-extrabold mb-3">
+              {isSelf ? "My posts" : "Posts"}
+            </ThemedText>
             {posts.length === 0 ? (
               <ThemedText variant="muted" className="text-sm text-center py-6">
-                No posts yet.
+                {isSelf ? "You have not posted yet." : "No posts yet."}
               </ThemedText>
             ) : (
               posts.map((post) => (
-                <ThemedCard key={post.id} rounded="2xl" className="p-4 mb-3">
-                  <ThemedText variant="secondary" className="text-sm leading-6">
-                    {post.content}
-                  </ThemedText>
-                  {post.imageUrl ? (
-                    <Image
-                      source={{ uri: post.imageUrl }}
-                      style={{ width: "100%", height: 160, borderRadius: 12, marginTop: 10 }}
-                      contentFit="cover"
-                    />
-                  ) : null}
-                  {post.tags.length > 0 ? (
-                    <View className="flex-row flex-wrap gap-1.5 mt-2">
-                      {post.tags.map((tag) => (
-                        <ThemedText key={tag} variant="accent" className="text-[10px] font-bold">
-                          #{tag}
+                <Pressable
+                  key={post.id}
+                  onPress={() => onOpenPost?.(post.id)}
+                  disabled={!onOpenPost}
+                >
+                  <ThemedCard rounded="2xl" className="p-4 mb-3">
+                    <ThemedText variant="secondary" className="text-sm leading-6">
+                      {post.content}
+                    </ThemedText>
+                    <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
+                    {post.imageUrl ? (
+                      <Image
+                        source={{ uri: post.imageUrl }}
+                        style={{ width: "100%", height: 160, borderRadius: 12, marginTop: 10 }}
+                        contentFit="cover"
+                      />
+                    ) : null}
+                    {post.tags.length > 0 ? (
+                      <View className="flex-row flex-wrap gap-1.5 mt-2">
+                        {post.tags.map((tag) => (
+                          <ThemedText key={tag} variant="accent" className="text-[10px] font-bold">
+                            #{tag}
+                          </ThemedText>
+                        ))}
+                      </View>
+                    ) : null}
+                    <View className="flex-row items-center mt-3 gap-4">
+                      <View className="flex-row items-center">
+                        <Ionicons name="heart" size={16} color="#ef4444" />
+                        <ThemedText variant="accent" className="text-xs font-bold ml-1.5">
+                          {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                         </ThemedText>
-                      ))}
+                      </View>
+                      <View className="flex-row items-center">
+                        <Ionicons name="chatbubble-outline" size={15} color="#52B69A" />
+                        <ThemedText variant="accent" className="text-xs font-bold ml-1.5">
+                          {post.commentCount}{" "}
+                          {post.commentCount === 1 ? "comment" : "comments"}
+                        </ThemedText>
+                      </View>
                     </View>
-                  ) : null}
-                  <ThemedText variant="muted" className="text-[10px] mt-2">
-                    {new Date(post.createdAt).toLocaleDateString()}
-                  </ThemedText>
-                </ThemedCard>
+                    <ThemedText variant="muted" className="text-[10px] mt-2">
+                      {new Date(post.createdAt).toLocaleDateString()}
+                    </ThemedText>
+                  </ThemedCard>
+                </Pressable>
               ))
             )}
           </ScrollView>

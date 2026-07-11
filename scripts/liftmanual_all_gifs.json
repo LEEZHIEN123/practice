@@ -1,0 +1,80 @@
+{
+  "Push-up": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/plank-push-up-row.gif",
+    "file": "push ups.gif",
+    "frames": 36,
+    "bytes": 896094
+  },
+  "Deadlift": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/barbell-stiff-legged-deadlift.gif",
+    "file": "Deadlift.gif",
+    "frames": 12,
+    "bytes": 377368
+  },
+  "Barbell Snatch": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/barbell-snatch-balance.gif",
+    "file": "Barbell Snatch.gif",
+    "frames": 24,
+    "bytes": 360504
+  },
+  "Squat": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/cossack-squats.gif",
+    "file": "Squat.gif",
+    "frames": 24,
+    "bytes": 515902
+  },
+  "Barbell Lunge": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/barbell-walking-lunge.gif",
+    "file": "lunge.gif",
+    "frames": 30,
+    "bytes": 362010
+  },
+  "Barbell Hip Thrust": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/frog-hip-thrust.gif",
+    "file": "Barbell Hip Thrust.gif",
+    "frames": 12,
+    "bytes": 365688
+  },
+  "Bulgarian split squat": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-split-squat.gif",
+    "file": "Bulgarian Split Squat.gif",
+    "frames": 12,
+    "bytes": 272894
+  },
+  "Front squat": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-front-squat.gif",
+    "file": "Barbell Front Squat.gif",
+    "frames": 12,
+    "bytes": 253823
+  },
+  "Goblet squat": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-goblet-squat.gif",
+    "file": "Goblet Squat.gif",
+    "frames": 12,
+    "bytes": 217203
+  },
+  "Barbell Row": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-one-arm-bent-over-row.gif",
+    "file": "Barbell Row.gif",
+    "frames": 12,
+    "bytes": 314615
+  },
+  "Plank": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/plank-walk-up.gif",
+    "file": "plank.gif",
+    "frames": 18,
+    "bytes": 250434
+  },
+  "Leg press": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/lever-seated-leg-press.gif",
+    "file": "leg press.gif",
+    "frames": 12,
+    "bytes": 344590
+  },
+  "Barbell Overhead Press (high)": {
+    "url": "https://liftmanual.com/wp-content/uploads/2023/04/lever-seated-shoulder-press.gif",
+    "file": "Barbell Overhead Press.gif",
+    "frames": 12,
+    "bytes": 332992
+  }
+}

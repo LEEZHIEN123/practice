@@ -25,8 +25,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     getDocs,
+    increment,
     limit,
     onSnapshot,
     orderBy,
@@ -141,6 +143,8 @@ export default function ProgressDetailsScreen() {
   const [mealSeries, setMealSeries] = useState<number[]>(() => Array(7).fill(0));
   const [mealRecentDay, setMealRecentDay] = useState<Date | null>(null);
   const [mealDayPickerOpen, setMealDayPickerOpen] = useState(false);
+  const [manageMode, setManageMode] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const calendarTz = useUserCalendarTimezone();
 
@@ -256,11 +260,11 @@ export default function ProgressDetailsScreen() {
       const rows = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
         .map((r) => {
-          const createdAt = getCreatedAtDate(r.createdAt) ?? new Date();
+          const createdAt = getCreatedAtDate(r.logDate) ?? getCreatedAtDate(r.createdAt) ?? new Date();
           return {
             id: r.id,
-          title: typeof r.title === "string" ? r.title : "Meal",
-          calories: typeof r.calories === "number" ? r.calories : 0,
+            title: typeof r.title === "string" ? r.title : "Meal",
+            calories: typeof r.calories === "number" ? r.calories : 0,
             createdAt,
             dayKey: formatCalendarDayKey(createdAt, calendarTz),
           };
@@ -692,6 +696,85 @@ export default function ProgressDetailsScreen() {
     }
   };
 
+  useEffect(() => {
+    setManageMode(false);
+    setDeletingId(null);
+  }, [tab]);
+
+  const confirmDeleteWorkout = (row: WorkoutRow) => {
+    Alert.alert(
+      "Delete this workout?",
+      `Remove "${row.title}" (${Math.round(row.burnedKcal)} kcal) from your workout history?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              const user = auth.currentUser;
+              if (!user) return;
+              try {
+                setDeletingId(row.id);
+                await deleteDoc(doc(db, "users", user.uid, "workoutLogs", row.id));
+                const kcal = Math.round(row.burnedKcal);
+                if (kcal > 0 && row.dayKey) {
+                  await updateDoc(doc(db, "users", user.uid, "dailyStats", row.dayKey), {
+                    burnedKcal: increment(-kcal),
+                    updatedAt: serverTimestamp(),
+                  }).catch(() => {});
+                }
+                setAllWorkoutRows((prev) => prev.filter((r) => r.id !== row.id));
+              } catch (e) {
+                console.log("Delete workout log failed:", e);
+                Alert.alert("Error", "Could not delete this workout record.");
+              } finally {
+                setDeletingId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteMeal = (row: MealRow) => {
+    Alert.alert(
+      "Delete this meal?",
+      `Remove "${row.title}" (${Math.round(row.calories)} kcal) from your meal history?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              const user = auth.currentUser;
+              if (!user) return;
+              try {
+                setDeletingId(row.id);
+                await deleteDoc(doc(db, "users", user.uid, "mealLogs", row.id));
+                const kcal = Math.round(row.calories);
+                if (kcal > 0 && row.dayKey) {
+                  await updateDoc(doc(db, "users", user.uid, "dailyStats", row.dayKey), {
+                    consumedKcal: increment(-kcal),
+                    updatedAt: serverTimestamp(),
+                  }).catch(() => {});
+                }
+                setAllMealRows((prev) => prev.filter((r) => r.id !== row.id));
+              } catch (e) {
+                console.log("Delete meal log failed:", e);
+                Alert.alert("Error", "Could not delete this meal record.");
+              } finally {
+                setDeletingId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <ThemedScreen>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
@@ -983,7 +1066,27 @@ export default function ProgressDetailsScreen() {
             </ThemedCard>
 
             <ThemedCard className="mt-6 p-5 pt-8 pb-14">
-              <ThemedText className="text-base tracking-[0.12em] font-extrabold">WORKOUT RECORD</ThemedText>
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1 pr-2">
+                  <ThemedText className="text-base tracking-[0.12em] font-extrabold">WORKOUT RECORD</ThemedText>
+                  {manageMode ? (
+                    <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
+                      Tap trash to delete
+                    </ThemedText>
+                  ) : null}
+                </View>
+                <Pressable
+                  onPress={() => setManageMode((v) => !v)}
+                  className="w-10 h-10 rounded-full items-center justify-center active:opacity-70"
+                  style={cardStyle}
+                >
+                  <Ionicons
+                    name={manageMode ? "close" : "options-outline"}
+                    size={20}
+                    color={theme.textPrimary}
+                  />
+                </Pressable>
+              </View>
               <ThemedText variant="muted" className="text-xs mt-1">
                 History includes today and previous days. Filter by day or pick a date.
               </ThemedText>
@@ -1105,9 +1208,26 @@ export default function ProgressDetailsScreen() {
                                 {w.title} • {formatDurationMinSec(w.durationMin)}
                               </ThemedText>
                             </View>
-                            <ThemedText className="text-base font-extrabold">
-                              {Math.round(w.burnedKcal).toLocaleString()} kcal
-                            </ThemedText>
+                            <View className="flex-row items-center">
+                              <ThemedText className="text-base font-extrabold">
+                                {Math.round(w.burnedKcal).toLocaleString()} kcal
+                              </ThemedText>
+                              {manageMode ? (
+                                <Pressable
+                                  onPress={() => confirmDeleteWorkout(w)}
+                                  disabled={deletingId === w.id}
+                                  hitSlop={10}
+                                  className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
+                                  style={{
+                                    backgroundColor: theme.dangerSoft,
+                                    borderColor: theme.danger,
+                                    opacity: deletingId === w.id ? 0.5 : 1,
+                                  }}
+                                >
+                                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
+                                </Pressable>
+                              ) : null}
+                            </View>
                           </View>
                         ))}
                       </View>
@@ -1212,7 +1332,27 @@ export default function ProgressDetailsScreen() {
             </ThemedCard>
 
             <ThemedCard className="mt-6 p-5 pt-8 pb-14">
-              <ThemedText className="text-base tracking-[0.12em] font-extrabold">MEAL RECORD</ThemedText>
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1 pr-2">
+                  <ThemedText className="text-base tracking-[0.12em] font-extrabold">MEAL RECORD</ThemedText>
+                  {manageMode ? (
+                    <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
+                      Tap trash to delete
+                    </ThemedText>
+                  ) : null}
+                </View>
+                <Pressable
+                  onPress={() => setManageMode((v) => !v)}
+                  className="w-10 h-10 rounded-full items-center justify-center active:opacity-70"
+                  style={cardStyle}
+                >
+                  <Ionicons
+                    name={manageMode ? "close" : "options-outline"}
+                    size={20}
+                    color={theme.textPrimary}
+                  />
+                </Pressable>
+              </View>
               <ThemedText variant="muted" className="text-xs mt-1">
                 History includes today and previous days. Filter by day or pick a date.
               </ThemedText>
@@ -1334,9 +1474,26 @@ export default function ProgressDetailsScreen() {
                                 {m.title}
                               </ThemedText>
                             </View>
-                            <ThemedText className="text-base font-extrabold">
-                              {Math.round(m.calories).toLocaleString()} kcal
-                            </ThemedText>
+                            <View className="flex-row items-center">
+                              <ThemedText className="text-base font-extrabold">
+                                {Math.round(m.calories).toLocaleString()} kcal
+                              </ThemedText>
+                              {manageMode ? (
+                                <Pressable
+                                  onPress={() => confirmDeleteMeal(m)}
+                                  disabled={deletingId === m.id}
+                                  hitSlop={10}
+                                  className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
+                                  style={{
+                                    backgroundColor: theme.dangerSoft,
+                                    borderColor: theme.danger,
+                                    opacity: deletingId === m.id ? 0.5 : 1,
+                                  }}
+                                >
+                                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
+                                </Pressable>
+                              ) : null}
+                            </View>
                           </View>
                         ))}
                       </View>

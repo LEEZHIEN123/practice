@@ -1,8 +1,12 @@
+import { FavouriteButton } from "@/components/FavouriteButton";
 import { Pressable } from "@/components/Pressable";
 import { FoodTagChips } from "@/components/nutrition/FoodTagChips";
 import { MacroDonut } from "@/components/nutrition/MacroDonut";
+import { ZoomableImageModal } from "@/components/ZoomableImageModal";
 import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { getFoodById, isFoodDatasetReady, prefetchFoodDataset, type FoodItem } from "@/lib/foodDataset";
+import { FOOD_IMAGE_FALLBACK, resolveFoodImageSource, resolveFoodImageUrl } from "@/lib/foodImages";
+import { buildNutritionFavouriteItem } from "@/lib/favourites";
 import { logMealFood } from "@/lib/mealLogService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -61,6 +65,22 @@ export default function FoodDetailScreen() {
 
   const [servingsText, setServingsText] = useState("1");
   const [logging, setLogging] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const imageSource = useMemo(
+    () => (food ? resolveFoodImageSource(food.name, food.imageUrl) : { uri: FOOD_IMAGE_FALLBACK }),
+    [food]
+  );
+  const imageUri = useMemo(
+    () => (food ? resolveFoodImageUrl(food.name, food.imageUrl) : FOOD_IMAGE_FALLBACK),
+    [food]
+  );
+  const [displayImageSource, setDisplayImageSource] = useState(imageSource);
+  const [displayImageUri, setDisplayImageUri] = useState(imageUri);
+
+  useEffect(() => {
+    setDisplayImageSource(imageSource);
+    setDisplayImageUri(imageUri);
+  }, [imageSource, imageUri]);
 
   const servings = Math.max(0.25, Math.min(10, Number(servingsText) || 1));
   const nutrition = useMemo(() => {
@@ -74,6 +94,18 @@ export default function FoodDetailScreen() {
   }, [food, servings]);
 
   const servesLabel = food?.servingSize ? formatServesLabel(food.servingSize) : null;
+
+  const favouriteItem = useMemo(
+    () =>
+      food
+        ? buildNutritionFavouriteItem(
+            food.id,
+            food.name,
+            food.servingSize?.trim() || food.category || "Recipe"
+          )
+        : null,
+    [food]
+  );
 
   const submitLog = () => {
     if (!food || !nutrition) return;
@@ -92,9 +124,7 @@ export default function FoodDetailScreen() {
           servings,
           calendarTz,
         });
-        Alert.alert("Logged", `${food.name} (${nutrition.calories} kcal) added to today.`, [
-          { text: "OK", onPress: () => router.back() },
-        ]);
+        Alert.alert("Logged", `${food.name} (${nutrition.calories} kcal) added to today.`);
       } catch (e: unknown) {
         Alert.alert("Error", e instanceof Error ? e.message : "Could not log meal.");
       } finally {
@@ -122,7 +152,12 @@ export default function FoodDetailScreen() {
   return (
     <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 8 }}>
-        <ProfileScreenHeader title="Food Details" onBack={() => router.back()} titleClassName="text-xl" />
+        <ProfileScreenHeader
+          title="Food Details"
+          onBack={() => router.back()}
+          titleClassName="text-xl"
+          rightSlot={<FavouriteButton item={favouriteItem} />}
+        />
       </View>
 
       {!food && loadingFood ? (
@@ -143,28 +178,39 @@ export default function FoodDetailScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-          <View className="relative">
-            {food.imageUrl ? (
-              <Image
-                source={{ uri: food.imageUrl }}
-                style={{ width: "100%", height: 260 }}
-                contentFit="cover"
-                transition={200}
-              />
-            ) : (
-              <View style={{ width: "100%", height: 260, backgroundColor: theme.rowBg }} />
-            )}
-          </View>
-
-          <View className="px-5 pt-5">
+          <View className="px-5 pt-2">
             <Text className="text-3xl font-extrabold text-gray-900 leading-tight">{food.name}</Text>
             {servesLabel ? (
               <Text className="text-base text-gray-500 mt-2">{servesLabel}</Text>
             ) : null}
+          </View>
 
-            <FoodTagChips tags={food.tags ?? []} onTagPress={handleTagPress} />
+          <View className="mt-4 mx-5 overflow-hidden rounded-3xl">
+            <Pressable onPress={() => setViewerOpen(true)} className="active:opacity-95">
+              <Image
+                source={displayImageSource}
+                style={{ width: "100%", height: 260, backgroundColor: theme.rowBg }}
+                contentFit="cover"
+                transition={200}
+                onError={() => {
+                  if (displayImageUri !== FOOD_IMAGE_FALLBACK) {
+                    setDisplayImageSource({ uri: FOOD_IMAGE_FALLBACK });
+                    setDisplayImageUri(FOOD_IMAGE_FALLBACK);
+                  }
+                }}
+              />
+            </Pressable>
+          </View>
 
-            <Text className="text-xl font-extrabold text-gray-900 mt-6 mb-4">Nutrition Per Serving</Text>
+          {(food.tags?.length ?? 0) > 0 ? (
+            <View className="px-5 pt-5">
+              <Text className="text-xl font-extrabold text-gray-900 mb-1">Food category</Text>
+              <FoodTagChips tags={food.tags ?? []} onTagPress={handleTagPress} />
+            </View>
+          ) : null}
+
+          <View className="px-5 pt-5">
+            <Text className="text-xl font-extrabold text-gray-900 mb-4">Nutrition Per Serving</Text>
             {nutrition ? (
               <MacroDonut
                 proteinG={nutrition.proteinG}
@@ -192,8 +238,8 @@ export default function FoodDetailScreen() {
             {food.ingredients.length ? (
               <View className="mt-5 mb-4">
                 <ThemedText className="text-lg font-extrabold mb-2">Ingredients</ThemedText>
-                {food.ingredients.map((item) => (
-                  <ThemedText key={item} variant="secondary" className="text-sm leading-6 mb-1">
+                {food.ingredients.map((item, index) => (
+                  <ThemedText key={`ingredient-${index}`} variant="secondary" className="text-sm leading-6 mb-1">
                     {"\u2022 "} {item}
                   </ThemedText>
                 ))}
@@ -232,6 +278,14 @@ export default function FoodDetailScreen() {
               )}
             </Pressable>
           </View>
+
+          {displayImageUri ? (
+            <ZoomableImageModal
+              visible={viewerOpen}
+              uri={displayImageUri}
+              onClose={() => setViewerOpen(false)}
+            />
+          ) : null}
         </>
       )}
     </View>

@@ -1,0 +1,103 @@
+{
+  "ok": {
+    "Push-up": {
+      "page": "https://liftmanual.com/push-up/",
+      "url": "https://liftmanual.com/wp-content/uploads/2023/04/push-up.gif",
+      "frames": 30,
+      "bytes": 406877,
+      "file": "push ups.gif"
+    },
+    "Plank": {
+      "page": "https://liftmanual.com/plank/",
+      "url": "https://liftmanual.com/wp-content/uploads/2023/04/plank-arm-lifts.gif",
+      "frames": 12,
+      "bytes": 126161,
+      "file": "plank.gif"
+    },
+    "Goblet squat": {
+      "page": "https://liftmanual.com/dumbbell-goblet-squat/",
+      "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-goblet-squat.gif",
+      "frames": 12,
+      "bytes": 217203,
+      "file": "Goblet Squat.gif"
+    },
+    "Bulgarian split squat": {
+      "page": "https://liftmanual.com/bulgarian-split-squat/",
+      "url": "https://liftmanual.com/wp-content/uploads/2023/04/dumbbell-bulgarian-split-squat.gif",
+      "frames": 12,
+      "bytes": 251963,
+      "file": "Bulgarian Split Squat.gif"
+    },
+    "Barbell Snatch": {
+      "page": "https://liftmanual.com/barbell-snatch/",
+      "url": "https://liftmanual.com/wp-content/uploads/2023/04/barbell-snatch.gif",
+      "frames": 24,
+      "bytes": 357192,
+      "file": "Barbell Snatch.gif"
+    }
+  },
+  "page_only": {
+    "Squat": {
+      "page": "https://liftmanual.com/squat/"
+    },
+    "Deadlift": {
+      "page": "https://liftmanual.com/barbell-deadlift/"
+    },
+    "Kettlebell swing": {
+      "page": "https://liftmanual.com/kettlebell-swing/"
+    },
+    "Barbell Lunge": {
+      "page": "https://liftmanual.com/barbell-lunge/"
+    },
+    "Pull-up": {
+      "page": "https://liftmanual.com/pull-up/"
+    },
+    "Front squat": {
+      "page": "https://liftmanual.com/barbell-front-squat/"
+    },
+    "Romanian deadlift": {
+      "page": "https://liftmanual.com/barbell-romanian-deadlift/"
+    },
+    "Barbell Incline Bench Press": {
+      "page": "https://liftmanual.com/barbell-incline-bench-press/"
+    },
+    "Barbell Row": {
+      "page": "https://liftmanual.com/barbell-bent-over-row/"
+    },
+    "Barbell Hip Thrust": {
+      "page": "https://liftmanual.com/barbell-hip-thrust/"
+    },
+    "Mountain climbers": {
+      "page": "https://liftmanual.com/mountain-climber/"
+    },
+    "Jumping jacks": {
+      "page": "https://liftmanual.com/jumping-jack/"
+    },
+    "Burpees": {
+      "page": "https://liftmanual.com/burpee/"
+    },
+    "Jump squats": {
+      "page": "https://liftmanual.com/jump-squat/"
+    }
+  },
+  "missing": {
+    "Leg press": {
+      "tried": [
+        "leg-press"
+      ]
+    },
+    "Barbell Overhead Press (high)": {
+      "tried": [
+        "barbell-overhead-press",
+        "overhead-press",
+        "military-press"
+      ]
+    },
+    "Battle ropes": {
+      "tried": [
+        "battle-ropes",
+        "battle-rope"
+      ]
+    }
+  }
+}

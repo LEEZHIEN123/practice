@@ -8,14 +8,15 @@ import { Alert } from "react-native";
 type FavouriteButtonProps = {
   item: FavouriteItemInput | null;
   compact?: boolean;
+  disabled?: boolean;
 };
 
-export function FavouriteButton({ item, compact = false }: FavouriteButtonProps) {
+export function FavouriteButton({ item, compact = false, disabled = false }: FavouriteButtonProps) {
   const { iconButtonStyle, theme } = useThemedScreen();
   const { favourited, signedIn, toggle } = useFavourite(item);
 
   const handlePress = () => {
-    if (!item) return;
+    if (disabled || !item) return;
     if (!signedIn) {
       Alert.alert("Sign in required", "Sign in to save favourites.");
       return;
@@ -25,7 +26,12 @@ export function FavouriteButton({ item, compact = false }: FavouriteButtonProps)
 
   if (compact) {
     return (
-      <Pressable onPress={handlePress} hitSlop={8} className="p-2">
+      <Pressable
+        onPress={handlePress}
+        hitSlop={8}
+        disabled={disabled}
+        className={`p-2 ${disabled ? "opacity-40" : ""}`}
+      >
         <Ionicons
           name={favourited ? "heart" : "heart-outline"}
           size={22}
@@ -38,7 +44,8 @@ export function FavouriteButton({ item, compact = false }: FavouriteButtonProps)
   return (
     <Pressable
       onPress={handlePress}
-      className="w-12 h-12 rounded-full items-center justify-center"
+      disabled={disabled}
+      className={`w-12 h-12 rounded-full items-center justify-center ${disabled ? "opacity-40" : ""}`}
       style={iconButtonStyle}
     >
       <Ionicons

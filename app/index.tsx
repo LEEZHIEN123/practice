@@ -1,16 +1,21 @@
 import { checkIsAdmin } from "@/lib/communityService";
 import { Pressable } from "@/components/Pressable";
+import { isOnboardingGate } from "@/lib/onboardingGate";
+import { isOnboardingPath, resolvePostAuthRoute } from "@/lib/onboardingRoute";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePathname, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 import { auth } from "../firebaseConfig";
 
-export default function Home() {
+export default function WelcomeScreen() {
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
   const [checkingSession, setCheckingSession] = useState(true);
+
+  pathnameRef.current = pathname;
 
   const handleGetStarted = () => {
     router.push("/login");
@@ -18,18 +23,54 @@ export default function Home() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user && pathname === "/") {
-        void checkIsAdmin(user).then((admin) => {
-          router.replace(admin ? ("/admin" as any) : "/home");
-        }).catch(() => {
-          router.replace("/home");
-        });
+      if (!user) {
+        setCheckingSession(false);
         return;
       }
-      setCheckingSession(false);
+
+      // Sync gate — do not race React state during register → profile details.
+      if (isOnboardingGate()) {
+        setCheckingSession(false);
+        return;
+      }
+
+      const currentPath = pathnameRef.current;
+      // Only auto-route from the welcome screen itself — never while onboarding.
+      if (currentPath !== "/" && currentPath !== "/index") {
+        setCheckingSession(false);
+        return;
+      }
+      if (isOnboardingPath(currentPath)) {
+        setCheckingSession(false);
+        return;
+      }
+
+      void (async () => {
+        try {
+          let admin = false;
+          try {
+            admin = await checkIsAdmin(user);
+          } catch {
+            admin = false;
+          }
+          if (isOnboardingGate()) return;
+          if (admin) {
+            router.replace("/admin" as any);
+            return;
+          }
+          const next = await resolvePostAuthRoute(user.uid);
+          if (isOnboardingGate()) return;
+          // Never land on Home while registration is incomplete.
+          if (next === "/home" && isOnboardingGate()) return;
+          router.replace(next as any);
+        } catch {
+          if (isOnboardingGate()) return;
+          router.replace("/profiledetails");
+        }
+      })();
     });
     return unsub;
-  }, [router, pathname]);
+  }, [router]);
 
   if (checkingSession) {
     return (

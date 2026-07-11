@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
+import { resolvePostAuthRoute } from "@/lib/onboardingRoute";
 import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useLightScreen } from "@/lib/useLightScreen";
 import { Ionicons } from "@expo/vector-icons";
@@ -96,7 +97,9 @@ export default function Login() {
         void syncAdminConfig().catch(() => {});
         router.replace("/admin" as any);
       } else {
-        router.replace("/home");
+        const uid = auth.currentUser?.uid;
+        const next = uid ? await resolvePostAuthRoute(uid) : "/home";
+        router.replace(next as any);
       }
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;

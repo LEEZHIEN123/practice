@@ -22,6 +22,7 @@ export type ReportPeriod = "daily" | "weekly";
 export type ReportWorkoutItem = {
   title: string;
   burnedKcal: number;
+  /** Fractional minutes from the log (preserves seconds). */
   durationMin: number;
 };
 
@@ -93,6 +94,17 @@ export function formatMealReportLine(meal: ReportMealItem): string {
   const macro = formatMealMacroSummary(meal);
   const base = `${meal.title} — ${meal.calories.toLocaleString()} kcal`;
   return macro ? `${base} · ${macro}` : base;
+}
+
+/** Formats workout duration as minutes + seconds when seconds are present. */
+export function formatWorkoutDuration(durationMin: number): string {
+  const totalSec = Math.max(0, Math.round((Number.isFinite(durationMin) ? durationMin : 0) * 60));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  if (minutes <= 0 && seconds <= 0) return "0 sec";
+  if (minutes <= 0) return `${seconds} sec`;
+  if (seconds === 0) return `${minutes} min`;
+  return `${minutes} min ${seconds} sec`;
 }
 
 function getCreatedAtDate(v: unknown): Date | null {
@@ -297,7 +309,7 @@ export async function loadUserReport(options: {
       burnedKcal,
       durationMin:
         typeof data.durationMin === "number" && Number.isFinite(data.durationMin)
-          ? Math.round(data.durationMin)
+          ? Math.max(0, data.durationMin)
           : 0,
     });
   });

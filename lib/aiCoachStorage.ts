@@ -1,6 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type StoredChatMessage = { id: string; role: "user" | "assistant"; text: string };
+export type StoredChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  /** Unix ms when the message was sent. */
+  createdAt?: number;
+};
 
 export type ArchivedChatSession = {
   id: string;
@@ -26,7 +32,21 @@ function archiveKey(uid: string) {
 }
 
 export function defaultWelcomeMessages(): StoredChatMessage[] {
-  return [{ id: "welcome", role: "assistant", text: WELCOME_TEXT }];
+  return [{ id: "welcome", role: "assistant", text: WELCOME_TEXT, createdAt: Date.now() }];
+}
+
+function normalizeStoredMessage(message: StoredChatMessage): StoredChatMessage {
+  return {
+    ...message,
+    createdAt:
+      typeof message.createdAt === "number" && Number.isFinite(message.createdAt) && message.createdAt > 0
+        ? message.createdAt
+        : undefined,
+  };
+}
+
+function normalizeStoredMessages(messages: StoredChatMessage[]): StoredChatMessage[] {
+  return messages.map(normalizeStoredMessage);
 }
 
 export function hasUserMessages(messages: StoredChatMessage[]): boolean {
@@ -68,14 +88,17 @@ export async function loadActiveChat(uid: string): Promise<ActiveChatState> {
     const parsed = JSON.parse(raw) as ActiveChatState | StoredChatMessage[];
     if (Array.isArray(parsed)) {
       if (parsed.length === 0) return { sessionId: null, messages: defaultWelcomeMessages() };
-      return { sessionId: null, messages: parsed };
+      return { sessionId: null, messages: normalizeStoredMessages(parsed) };
     }
 
     if (parsed?.messages && Array.isArray(parsed.messages)) {
       if (parsed.messages.length === 0) {
         return { sessionId: parsed.sessionId ?? null, messages: defaultWelcomeMessages() };
       }
-      return { sessionId: parsed.sessionId ?? null, messages: parsed.messages };
+      return {
+        sessionId: parsed.sessionId ?? null,
+        messages: normalizeStoredMessages(parsed.messages),
+      };
     }
 
     return { sessionId: null, messages: defaultWelcomeMessages() };
@@ -98,7 +121,13 @@ export async function loadArchivedChats(uid: string): Promise<ArchivedChatSessio
     const raw = await AsyncStorage.getItem(archiveKey(uid));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as ArchivedChatSession[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((session) => ({
+      ...session,
+      messages: Array.isArray(session.messages)
+        ? normalizeStoredMessages(session.messages)
+        : [],
+    }));
   } catch {
     return [];
   }

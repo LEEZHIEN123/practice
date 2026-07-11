@@ -1,9 +1,9 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ProfileScreenHeader,
-  ThemedCard,
-  ThemedScreen,
-  ThemedText,
+    ProfileScreenHeader,
+    ThemedCard,
+    ThemedScreen,
+    ThemedText,
 } from "@/components/themed/ThemedUi";
 import { loadFavourites, removeFavourite, type FavouriteItem } from "@/lib/favourites";
 import { useThemedScreen } from "@/lib/useThemedScreen";
