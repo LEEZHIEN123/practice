@@ -1,4 +1,4 @@
-import { AdminPendingReportTip } from "@/components/community/AdminPendingReportTip";
+import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { Pressable } from "@/components/Pressable";
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
@@ -6,8 +6,10 @@ import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadg
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
+import { PostLikesModal } from "@/components/community/PostLikesModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
+import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { AppearanceModal } from "@/components/profile/AppearanceModal";
 import { ThemedBackButton, ProfileScreenHeader, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -29,10 +31,19 @@ import {
   restoreReportedComment,
   ensureDirectChat,
   fetchPostById,
+  fetchPostIdsCommentedByUser,
+  filterPostsByKeyword,
   filterPostsByTag,
   getCurrentUserProfile,
+  getPostsByAuthor,
+  getPublicUserProfile,
+  loadLikerProfiles,
+  purgeAdminQueueForMissingPosts,
   subscribeChats,
+  subscribeFriendsList,
   subscribePendingReReviewRequests,
+  subscribePendingCommunityPostIds,
+  subscribePostIdsCommentedByUser,
   subscribeReports,
   syncPendingReviewFlags,
   subscribePosts,
@@ -41,6 +52,7 @@ import {
   syncAdminConfig,
   togglePostLike,
   updatePost,
+  type LikerProfile,
 } from "@/lib/communityService";
 import {
   ADMIN_BLOCK_POST_REASONS,
@@ -49,6 +61,7 @@ import {
   type CommunityPost,
   type CommunityReport,
   type PendingReReviewRequest,
+  type PublicUserProfile,
   type RegisteredUser,
 } from "@/lib/communityTypes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -62,10 +75,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
-import {
-  adminDeleteUserAccount,
-  adminResendPasswordResetEmail,
-} from "@/lib/adminUserManagement";
+import { adminResendPasswordResetEmail } from "@/lib/adminUserManagement";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -84,7 +94,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../firebaseConfig";
 
 type AdminTab = "community" | "reports" | "users" | "profile";
-type ReportTypeFilter = "all" | "post" | "comment";
 type PendingSourceFilter = "all" | "reported" | "request_review";
 type ReviewedStatusFilter = "all" | "blocked" | "dismissed";
 
@@ -102,11 +111,6 @@ function matchesReportSearch(report: CommunityReport, query: string): boolean {
     report.targetAuthorName,
     report.targetType,
   ].some((field) => field.toLowerCase().includes(needle));
-}
-
-function filterReportsByType(reports: CommunityReport[], typeFilter: ReportTypeFilter): CommunityReport[] {
-  if (typeFilter === "all") return reports;
-  return reports.filter((report) => report.targetType === typeFilter);
 }
 
 function commentFromCommunityReport(report: CommunityReport): CommunityComment {
@@ -265,6 +269,7 @@ export function AdminCommunityHub() {
     theme,
     cardStyle,
     surfaceStyle,
+    screenStyle,
     textPrimary,
     textSecondary,
     textMuted,
@@ -275,17 +280,22 @@ export function AdminCommunityHub() {
   } = useThemedScreen();
   const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [activeTab, setActiveTab] = useState<AdminTab>("community");
+  const previousAdminTabRef = useRef<AdminTab>("community");
+  const switchAdminTab = useCallback((tab: AdminTab) => {
+    setActiveTab((prev) => {
+      if (prev !== tab) previousAdminTabRef.current = prev;
+      return tab;
+    });
+  }, []);
   const [communitySubTab, setCommunitySubTab] = useState<"feed" | "chat">("feed");
   const [reportsSubTab, setReportsSubTab] = useState<"pending" | "reviewed">("pending");
   const [pendingReportSearch, setPendingReportSearch] = useState("");
   const [reviewedReportSearch, setReviewedReportSearch] = useState("");
-  const [pendingReportTypeFilter, setPendingReportTypeFilter] = useState<ReportTypeFilter>("all");
   const [pendingSourceFilter, setPendingSourceFilter] = useState<PendingSourceFilter>("all");
-  const [reviewedReportTypeFilter, setReviewedReportTypeFilter] = useState<ReportTypeFilter>("all");
   const [reviewedReportStatusFilter, setReviewedReportStatusFilter] =
     useState<ReviewedStatusFilter>("all");
   const [openReportFilter, setOpenReportFilter] = useState<
-    "pending-type" | "pending-source" | "reviewed-type" | "reviewed-status" | null
+    "pending-source" | "reviewed-status" | null
   >(null);
   const [reportDeleteMode, setReportDeleteMode] = useState(false);
   const [selectedReportDeleteIds, setSelectedReportDeleteIds] = useState<string[]>([]);
@@ -323,6 +333,12 @@ export function AdminCommunityHub() {
   const [historyPost, setHistoryPost] = useState<CommunityPost | null>(null);
   const [editingPost, setEditingPost] = useState<CommunityPost | null>(null);
   const [composerVisible, setComposerVisible] = useState(false);
+  const [likesPost, setLikesPost] = useState<CommunityPost | null>(null);
+  const [likers, setLikers] = useState<LikerProfile[]>([]);
+  const [likersLoading, setLikersLoading] = useState(false);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [profileData, setProfileData] = useState<PublicUserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [blockTarget, setBlockTarget] = useState<{
     type: "post" | "comment" | "report" | "reReview";
     post?: CommunityPost;
@@ -332,6 +348,12 @@ export function AdminCommunityHub() {
   } | null>(null);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [tagFilterView, setTagFilterView] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [manageFilter, setManageFilter] = useState<"liked" | "commented" | null>(null);
+  const [manageMenuVisible, setManageMenuVisible] = useState(false);
+  const [commentedPostIds, setCommentedPostIds] = useState<string[]>([]);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
+  const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
@@ -389,6 +411,40 @@ export function AdminCommunityHub() {
   }, [handleFirestoreErr]);
 
   useEffect(() => {
+    if (!currentUserId) {
+      setCommentedPostIds([]);
+      setFriendIds([]);
+      return;
+    }
+    const unsubCommented = subscribePostIdsCommentedByUser(
+      currentUserId,
+      setCommentedPostIds,
+      () => setCommentedPostIds([])
+    );
+    const unsubFriends = subscribeFriendsList(
+      (friends) => setFriendIds(friends.map((f) => f.id)),
+      () => setFriendIds([])
+    );
+    return () => {
+      unsubCommented();
+      unsubFriends();
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || manageFilter !== "commented") return;
+    void fetchPostIdsCommentedByUser(currentUserId)
+      .then(setCommentedPostIds)
+      .catch(() => {});
+  }, [currentUserId, manageFilter]);
+
+  useEffect(() => {
+    if (communitySubTab !== "feed" || activeTab !== "community") {
+      setManageFilter(null);
+    }
+  }, [communitySubTab, activeTab]);
+
+  useEffect(() => {
     const unsub = subscribeChats(setChats, handleFirestoreErr);
     return unsub;
   }, [handleFirestoreErr]);
@@ -399,9 +455,50 @@ export function AdminCommunityHub() {
   }, [handleFirestoreErr]);
 
   useEffect(() => {
+    const unsub = subscribePendingCommunityPostIds(setPendingReviewPostIds, handleFirestoreErr);
+    return unsub;
+  }, [handleFirestoreErr]);
+
+  useEffect(() => {
     const unsub = subscribePendingReReviewRequests(setReReviewRequests, handleFirestoreErr);
     return unsub;
   }, [handleFirestoreErr]);
+
+  // If an author deletes a reported post, drop it from pending + reviewed queues.
+  const verifiedExistingPostIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const postIds = [
+      ...new Set([
+        ...reports.map((report) => report.postId),
+        ...reReviewRequests.map((request) => request.postId),
+      ]),
+    ].filter((postId) => postId && !verifiedExistingPostIdsRef.current.has(postId));
+    if (postIds.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      // Mark posts that still exist so we don't re-check them every snapshot.
+      await Promise.all(
+        postIds.map(async (postId) => {
+          try {
+            const post = await fetchPostById(postId);
+            if (post) verifiedExistingPostIdsRef.current.add(postId);
+          } catch {
+            // Will be included in purge attempt below.
+          }
+        })
+      );
+      if (cancelled) return;
+      const maybeMissing = postIds.filter((id) => !verifiedExistingPostIdsRef.current.has(id));
+      if (maybeMissing.length === 0) return;
+      const missing = await purgeAdminQueueForMissingPosts(maybeMissing);
+      missing.forEach((id) => verifiedExistingPostIdsRef.current.delete(id));
+    })().catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reports, reReviewRequests]);
 
   useEffect(() => {
     const unsub = subscribeRegisteredUsers(setUsers, handleFirestoreErr);
@@ -423,7 +520,7 @@ export function AdminCommunityHub() {
   );
 
   const pendingReportPostIds = useMemo(
-    () => new Set(pendingReports.filter((report) => report.targetType === "post").map((report) => report.postId)),
+    () => new Set(pendingReports.map((report) => report.postId)),
     [pendingReports]
   );
 
@@ -446,19 +543,35 @@ export function AdminCommunityHub() {
     [reports]
   );
 
-  const filteredPendingReports = useMemo(() => {
-    let list = filterReportsByType(pendingReports, pendingReportTypeFilter);
-    if (pendingReportSearch.trim()) {
-      list = list.filter((report) => matchesReportSearch(report, pendingReportSearch));
+  /** One card per post/comment — multiple reporters should not repeat the same target. */
+  const uniqueReviewedReports = useMemo(() => {
+    const byTarget = new Map<string, CommunityReport>();
+    for (const report of reviewedReports) {
+      const key =
+        report.targetType === "comment"
+          ? `comment:${report.targetId}`
+          : `post:${report.postId || report.targetId}`;
+      const existing = byTarget.get(key);
+      if (!existing || report.createdAt > existing.createdAt) {
+        byTarget.set(key, report);
+      }
     }
-    return list;
-  }, [pendingReports, pendingReportTypeFilter, pendingReportSearch]);
+    return [...byTarget.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }, [reviewedReports]);
+
+  const filteredPendingReports = useMemo(() => {
+    if (!pendingReportSearch.trim()) return pendingReports;
+    return pendingReports.filter((report) => matchesReportSearch(report, pendingReportSearch));
+  }, [pendingReports, pendingReportSearch]);
 
   const filteredPendingQueue = useMemo(() => {
     const items: PendingQueueItem[] = [];
+    const pendingReReviewPostIds = new Set(
+      pendingReports.filter((report) => report.source === "re_review").map((report) => report.postId)
+    );
 
     if (pendingSourceFilter !== "request_review") {
-      for (const report of filterReportsByType(pendingReports, pendingReportTypeFilter)) {
+      for (const report of pendingReports) {
         items.push({
           kind: "report",
           id: `report-${report.id}`,
@@ -468,8 +581,9 @@ export function AdminCommunityHub() {
       }
     }
 
-    if (pendingSourceFilter !== "reported" && pendingReportTypeFilter !== "comment") {
+    if (pendingSourceFilter !== "reported") {
       for (const request of reReviewRequests) {
+        if (pendingReReviewPostIds.has(request.postId)) continue;
         items.push({
           kind: "reReview",
           id: `rereview-${request.postId}`,
@@ -496,18 +610,12 @@ export function AdminCommunityHub() {
       : items;
 
     return filtered.sort((a, b) => b.createdAt - a.createdAt);
-  }, [
-    pendingReports,
-    reReviewRequests,
-    pendingReportTypeFilter,
-    pendingSourceFilter,
-    pendingReportSearch,
-  ]);
+  }, [pendingReports, reReviewRequests, pendingSourceFilter, pendingReportSearch]);
 
   const pendingQueueTotalCount = pendingReports.length + reReviewRequests.length;
 
   const filteredReviewedReports = useMemo(() => {
-    let list = filterReportsByType(reviewedReports, reviewedReportTypeFilter);
+    let list = uniqueReviewedReports;
     if (reviewedReportStatusFilter === "blocked") {
       list = list.filter((report) => report.status === "resolved");
     } else if (reviewedReportStatusFilter === "dismissed") {
@@ -517,12 +625,27 @@ export function AdminCommunityHub() {
       list = list.filter((report) => matchesReportSearch(report, reviewedReportSearch));
     }
     return list;
-  }, [reviewedReports, reviewedReportTypeFilter, reviewedReportStatusFilter, reviewedReportSearch]);
+  }, [uniqueReviewedReports, reviewedReportStatusFilter, reviewedReportSearch]);
 
-  const displayedPosts = useMemo(
-    () => filterPostsByTag(posts, tagFilterView ? activeTagFilter : null),
-    [posts, activeTagFilter, tagFilterView]
-  );
+  const displayedPosts = useMemo(() => {
+    let list = filterPostsByTag(posts, tagFilterView ? activeTagFilter : null);
+    list = filterPostsByKeyword(list, searchQuery);
+    if (manageFilter === "liked" && currentUserId) {
+      list = list.filter((post) => post.likedBy.includes(currentUserId));
+    } else if (manageFilter === "commented") {
+      const idSet = new Set(commentedPostIds);
+      list = list.filter((post) => idSet.has(post.id));
+    }
+    return list;
+  }, [
+    posts,
+    activeTagFilter,
+    tagFilterView,
+    searchQuery,
+    manageFilter,
+    currentUserId,
+    commentedPostIds,
+  ]);
 
   const filteredUsers = useMemo(() => {
     const needle = userSearch.trim().toLowerCase();
@@ -533,6 +656,26 @@ export function AdminCommunityHub() {
     );
   }, [users, userSearch]);
 
+  const profilePosts = useMemo(
+    () => (profileUserId ? getPostsByAuthor(posts, profileUserId) : []),
+    [posts, profileUserId]
+  );
+
+  const openCommunityUserProfile = async (userId: string) => {
+    setProfileUserId(userId);
+    setProfileLoading(true);
+    setProfileData(null);
+    try {
+      const profile = await getPublicUserProfile(userId);
+      setProfileData(profile);
+    } catch {
+      Alert.alert("Error", "Could not load profile.");
+      setProfileUserId(null);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   const openTagFromPost = (tag: string) => {
     setActiveTagFilter(tag);
     setTagFilterView(true);
@@ -541,26 +684,6 @@ export function AdminCommunityHub() {
   const exitTagView = () => {
     setTagFilterView(false);
     setActiveTagFilter(null);
-  };
-
-  const handleCreatePost = async () => {
-    if (!auth.currentUser?.uid) {
-      Alert.alert("Sign in required", "Please sign in to post.");
-      return;
-    }
-    try {
-      setPosting(true);
-      const created = await createPost({ content: postText, tags: [] });
-      setPosts((prev) => {
-        const merged = [created, ...prev.filter((item) => item.id !== created.id)];
-        return merged.sort((a, b) => b.createdAt - a.createdAt);
-      });
-      setPostText("");
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not create post.");
-    } finally {
-      setPosting(false);
-    }
   };
 
   const handleBlock = (report: CommunityReport) => {
@@ -598,14 +721,14 @@ export function AdminCommunityHub() {
     if (selectedReports.length === 0) return;
 
     Alert.alert(
-      "Permanently delete selected",
-      `Delete ${selectedReports.length} selected report${
+      "Remove from admin list",
+      `Remove ${selectedReports.length} selected record${
         selectedReports.length === 1 ? "" : "s"
-      } and permanently remove the related posts or comments? This cannot be undone.`,
+      } from the admin report list? The author's post or comment stays on their profile (they can still request another check if it is blocked).`,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete permanently",
+          text: "Remove",
           style: "destructive",
           onPress: () => {
             void (async () => {
@@ -616,15 +739,15 @@ export function AdminCommunityHub() {
                 }
                 exitReportDeleteMode();
                 Alert.alert(
-                  "Deleted",
-                  `${selectedReports.length} item${
+                  "Removed",
+                  `${selectedReports.length} admin record${
                     selectedReports.length === 1 ? "" : "s"
-                  } permanently deleted.`
+                  } removed. Author content was kept.`
                 );
               } catch (e: unknown) {
                 Alert.alert(
                   "Error",
-                  e instanceof Error ? e.message : "Could not permanently delete content."
+                  e instanceof Error ? e.message : "Could not remove admin records."
                 );
               } finally {
                 setReportBulkDeleting(false);
@@ -634,6 +757,27 @@ export function AdminCommunityHub() {
         },
       ]
     );
+  };
+
+  const handleCreatePost = async () => {
+    if (!auth.currentUser?.uid) {
+      Alert.alert("Sign in required", "Please sign in to post.");
+      return;
+    }
+    if (!postText.trim()) return;
+    try {
+      setPosting(true);
+      const created = await createPost({ content: postText, tags: [] });
+      setPosts((prev) => {
+        const merged = [created, ...prev.filter((item) => item.id !== created.id)];
+        return merged.sort((a, b) => b.createdAt - a.createdAt);
+      });
+      setPostText("");
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not create post.");
+    } finally {
+      setPosting(false);
+    }
   };
 
   const handleLike = async (post: CommunityPost) => {
@@ -657,6 +801,21 @@ export function AdminCommunityHub() {
     } catch (e: unknown) {
       setPosts((prev) => prev.map((item) => (item.id === post.id ? post : item)));
       Alert.alert("Error", e instanceof Error ? e.message : "Could not update like.");
+    }
+  };
+
+  const openLikesModal = async (post: CommunityPost) => {
+    setLikesPost(post);
+    setLikersLoading(true);
+    setLikers([]);
+    try {
+      const profiles = await loadLikerProfiles(post.likedBy);
+      setLikers(profiles);
+    } catch {
+      Alert.alert("Error", "Could not load likes.");
+      setLikesPost(null);
+    } finally {
+      setLikersLoading(false);
     }
   };
 
@@ -1046,7 +1205,7 @@ export function AdminCommunityHub() {
       const chatId = await ensureDirectChat(user.id);
       setUserDetailVisible(false);
       setSelectedUser(null);
-      setActiveTab("community");
+      switchAdminTab("community");
       setCommunitySubTab("chat");
       setHighlightChatId(chatId);
       router.push({
@@ -1084,35 +1243,6 @@ export function AdminCommunityHub() {
                 );
               } catch (e: unknown) {
                 Alert.alert("Error", e instanceof Error ? e.message : "Could not send reset email.");
-              } finally {
-                setUserManagementActionId(null);
-              }
-            })();
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDeleteUserAccount = (user: RegisteredUser) => {
-    Alert.alert(
-      "Delete user account",
-      `Delete ${user.name}'s account and remove all app data? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                setUserManagementActionId(user.id);
-                await adminDeleteUserAccount(user.id, user.email);
-                setUserDetailVisible(false);
-                setSelectedUser(null);
-                Alert.alert("Account deleted", `${user.name}'s app data has been removed.`);
-              } catch (e: unknown) {
-                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete account.");
               } finally {
                 setUserManagementActionId(null);
               }
@@ -1189,6 +1319,48 @@ export function AdminCommunityHub() {
     );
   }, []);
 
+  const handleApproveReReviewFromReport = useCallback((report: CommunityReport) => {
+    Alert.alert(
+      "Restore post",
+      "Approve this review request and restore the post to the community?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            void (async () => {
+              try {
+                setReportActionId(report.id);
+                await approveReReviewRequest(report.postId);
+                Alert.alert("Post restored", "The author has been notified.");
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not restore post.");
+              } finally {
+                setReportActionId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  }, []);
+
+  const handleDismissReReviewFromReport = useCallback((report: CommunityReport) => {
+    setBlockTarget({
+      type: "reReview",
+      reReview: {
+        postId: report.postId,
+        reason: report.requestReason ?? report.reason,
+        requestedBy: report.reporterId,
+        requestedByName: report.reporterName,
+        authorId: report.targetAuthorId,
+        authorName: report.targetAuthorName,
+        content: report.targetContent,
+        requestedAt: report.createdAt,
+      },
+    });
+  }, []);
+
   const handleReopenReport = useCallback((report: CommunityReport) => {
     Alert.alert(
       "Move to pending",
@@ -1260,40 +1432,55 @@ export function AdminCommunityHub() {
   }, []);
 
   const renderCommunityTab = () => (
-    <ScrollView
-      contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <AdminTabHeader title="Community" right={<AdminBadge />} />
+    <View className="flex-1">
+      <View style={{ backgroundColor: theme.screenBg }}>
+        <View className="px-4">
+          <AdminTabHeader title="Community" right={<AdminBadge />} />
+        </View>
 
-      <View className="rounded-[28px] p-5" style={cardStyle}>
-        <View className="flex-row mb-4">
+        <View className="flex-row mb-3 px-4 gap-2">
           <Pressable
             onPress={() => setCommunitySubTab("feed")}
-            className="flex-1 rounded-full py-3 items-center mr-2"
-            style={communitySubTab === "feed" ? segmentActiveStyle : segmentTrackStyle}
+            className="flex-1 rounded-full py-3.5 items-center justify-center border-2"
+            style={
+              communitySubTab === "feed"
+                ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                : cardStyle
+            }
           >
             <Text
-              className="text-sm font-extrabold"
-              style={{ color: communitySubTab === "feed" ? theme.accentText : theme.textMuted }}
+              className={`font-extrabold ${communitySubTab === "feed" ? "text-base" : "text-sm"}`}
+              style={{ color: communitySubTab === "feed" ? "#ffffff" : theme.textSecondary }}
             >
               Community
             </Text>
           </Pressable>
           <Pressable
             onPress={() => setCommunitySubTab("chat")}
-            className="flex-1 rounded-full py-3 items-center ml-2 flex-row justify-center"
-            style={communitySubTab === "chat" ? segmentActiveStyle : segmentTrackStyle}
+            className="flex-1 rounded-full py-3.5 items-center justify-center flex-row border-2"
+            style={
+              communitySubTab === "chat"
+                ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                : cardStyle
+            }
           >
             <Text
-              className="text-sm font-extrabold"
-              style={{ color: communitySubTab === "chat" ? theme.accentText : theme.textMuted }}
+              className={`font-extrabold ${communitySubTab === "chat" ? "text-base" : "text-sm"}`}
+              style={{ color: communitySubTab === "chat" ? "#ffffff" : theme.textSecondary }}
             >
               Chat
             </Text>
             {totalUnreadChats > 0 ? (
-              <View className="ml-2 min-w-[20px] h-5 px-1 rounded-full bg-[#ef4444] items-center justify-center">
-                <Text className="text-[10px] font-extrabold text-white">
+              <View
+                className={`ml-1.5 min-w-[20px] h-5 px-1 rounded-full items-center justify-center ${
+                  communitySubTab === "chat" ? "bg-white" : "bg-[#ef4444]"
+                }`}
+              >
+                <Text
+                  className={`text-[10px] font-extrabold ${
+                    communitySubTab === "chat" ? "text-[#52B69A]" : "text-white"
+                  }`}
+                >
                   {totalUnreadChats > 9 ? "9+" : totalUnreadChats}
                 </Text>
               </View>
@@ -1302,71 +1489,130 @@ export function AdminCommunityHub() {
         </View>
 
         {communitySubTab === "feed" ? (
-          <>
-            <View className="rounded-2xl px-4 py-4" style={surfaceStyle}>
-              <View className="flex-row items-center">
-                <ProfileAvatar uri={myProfileImage} />
-                <View className="flex-1 ml-3">
-                  <View className="flex-row items-center">
-                    <Text className="text-base font-extrabold" style={textPrimary}>
-                      Share Any Announcements
-                    </Text>
-                    <AdminBadge small />
-                  </View>
-                  <Text className="text-sm mt-1" style={textMuted}>
-                    Post any announcements or updates for the community.
-                  </Text>
-                </View>
-              </View>
-              <TextInput
-                value={postText}
-                onChangeText={setPostText}
-                placeholder="What would you like to share today?"
-                multiline
-                className="mt-4 rounded-2xl px-4 py-4 text-sm min-h-[80px]"
-                style={inputStyle}
-                placeholderTextColor={placeholderColor}
-              />
-              <Pressable
-                onPress={() => void handleCreatePost()}
-                disabled={posting || !postText.trim()}
-                className="mt-3 rounded-full py-3 items-center"
-                style={{ backgroundColor: postText.trim() ? "#52B69A" : theme.iconMuted }}
-              >
-                {posting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text className="text-sm font-extrabold text-white">Post</Text>
-                )}
-              </Pressable>
+          tagFilterView && activeTagFilter ? (
+            <View className="flex-row items-center mb-3 px-4">
+              <ThemedBackButton onPress={exitTagView} className="mr-3" />
+              <Text className="text-lg font-extrabold" style={textPrimary}>
+                #{activeTagFilter}
+              </Text>
             </View>
-            {tagFilterView && activeTagFilter ? (
-              <View className="flex-row items-center mb-3 mt-4">
-                <ThemedBackButton onPress={exitTagView} className="mr-3" />
-                <Text className="text-lg font-extrabold" style={textPrimary}>
-                  #{activeTagFilter}
+          ) : (
+            <View className="flex-row items-center gap-2 px-4 mb-3">
+              <View className="flex-1">
+                <CommunitySearchBar
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search posts, tags, or people..."
+                  className="mb-0"
+                />
+              </View>
+              <Pressable
+                onPress={() => setManageMenuVisible(true)}
+                className="w-12 h-12 rounded-2xl items-center justify-center border"
+                style={
+                  manageFilter
+                    ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                    : cardStyle
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Manage posts"
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={22}
+                  color={manageFilter ? theme.accent : theme.textPrimary}
+                />
+              </Pressable>
+              {manageFilter ? (
+                <Pressable
+                  onPress={() => setManageFilter(null)}
+                  className="w-12 h-12 rounded-2xl items-center justify-center border"
+                  style={cardStyle}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear manage filter"
+                >
+                  <Ionicons name="close" size={20} color={theme.textPrimary} />
+                </Pressable>
+              ) : null}
+            </View>
+          )
+        ) : null}
+      </View>
+
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {communitySubTab === "feed" ? (
+          <View className="gap-3 px-4 pb-4">
+            {!tagFilterView ? (
+              <View className="rounded-2xl px-4 py-4" style={cardStyle}>
+                <View className="flex-row items-center">
+                  <ProfileAvatar uri={myProfileImage} />
+                  <View className="flex-1 ml-3">
+                    <View className="flex-row items-center">
+                      <Text className="text-base font-extrabold" style={textPrimary}>
+                        Share Any Announcements
+                      </Text>
+                      <AdminBadge small />
+                    </View>
+                    <Text className="text-sm mt-1" style={textMuted}>
+                      Post any announcements or updates for the community.
+                    </Text>
+                  </View>
+                </View>
+                <TextInput
+                  value={postText}
+                  onChangeText={setPostText}
+                  placeholder="What would you like to share today?"
+                  multiline
+                  className="mt-4 rounded-2xl px-4 py-4 text-sm min-h-[80px]"
+                  style={inputStyle}
+                  placeholderTextColor={placeholderColor}
+                />
+                <Pressable
+                  onPress={() => void handleCreatePost()}
+                  disabled={posting || !postText.trim()}
+                  className="mt-3 rounded-full py-3 items-center"
+                  style={{ backgroundColor: postText.trim() ? "#52B69A" : theme.iconMuted }}
+                >
+                  {posting ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-sm font-extrabold text-white">Post</Text>
+                  )}
+                </Pressable>
+              </View>
+            ) : null}
+
+            {displayedPosts.length === 0 ? (
+              <View className="px-4 py-8 rounded-2xl items-center" style={cardStyle}>
+                <Text className="text-sm text-center" style={textMuted}>
+                  {manageFilter === "liked"
+                    ? "No liked posts yet."
+                    : manageFilter === "commented"
+                      ? "No posts you've commented on yet."
+                      : tagFilterView && activeTagFilter
+                        ? `No posts with #${activeTagFilter}`
+                        : searchQuery.trim()
+                          ? "No posts match your search."
+                          : "No posts yet."}
                 </Text>
               </View>
             ) : null}
-            <View className="mt-4 gap-3">
-              {displayedPosts.length === 0 ? (
-                <Text className="text-sm text-center py-8" style={textMuted}>
-                  {tagFilterView && activeTagFilter
-                    ? `No posts with #${activeTagFilter}`
-                    : "No posts yet."}
-                </Text>
-              ) : null}
-              {displayedPosts.map((post) => {
-                const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
-                const isOwnPost = post.authorId === currentUserId;
-                const hasPendingPostReport = pendingReportPostIds.has(post.id);
-                return (
-                <Pressable
-                  key={post.id}
-                  onPress={() => openPostDetail(post.id)}
-                  className="rounded-2xl px-4 py-4"
-                  style={surfaceStyle}
-                >
+
+            {displayedPosts.map((post) => {
+              const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
+              const isOwnPost = post.authorId === currentUserId;
+              const isPendingReview =
+                !post.blocked &&
+                (post.underReview ||
+                  pendingReviewPostIds.includes(post.id) ||
+                  pendingReportPostIds.has(post.id));
+              return (
+                <View key={post.id} className="rounded-2xl px-4 py-4" style={cardStyle}>
                   <View className="flex-row items-center">
                     <ProfileAvatar uri={post.authorProfileImage} size={40} />
                     <View className="flex-1 ml-3">
@@ -1390,22 +1636,26 @@ export function AdminCommunityHub() {
                       <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
                     </Pressable>
                   </View>
-                  {hasPendingPostReport ? (
-                    <View className="mt-3">
-                      <AdminPendingReportTip target="post" />
+
+                  {isPendingReview ? (
+                    <View className="mt-2">
+                      <PostPendingReviewTip variant="admin" />
                     </View>
                   ) : null}
-                  <Text className="text-sm mt-3 leading-6" style={textSecondary}>
-                    {post.content}
-                  </Text>
-                  <PostAchievementChips achievementIds={post.achievementIds ?? []} />
-                  {post.imageUrl ? (
-                    <Image
-                      source={{ uri: post.imageUrl }}
-                      style={{ width: "100%", height: 180, borderRadius: 16, marginTop: 10 }}
-                      contentFit="cover"
-                    />
-                  ) : null}
+
+                  <Pressable onPress={() => openPostDetail(post.id)}>
+                    <Text className="text-sm mt-3 leading-6" style={textSecondary}>
+                      {post.content}
+                    </Text>
+                    <PostAchievementChips achievementIds={post.achievementIds ?? []} />
+                    {post.imageUrl ? (
+                      <Image
+                        source={{ uri: post.imageUrl }}
+                        style={{ width: "100%", height: 180, borderRadius: 16, marginTop: 10 }}
+                        contentFit="cover"
+                      />
+                    ) : null}
+                  </Pressable>
                   {post.tags.length > 0 ? (
                     <View className="flex-row flex-wrap gap-2 mt-3">
                       {post.tags.map((tag) => (
@@ -1423,16 +1673,27 @@ export function AdminCommunityHub() {
                     </View>
                   ) : null}
                   <View className="flex-row items-center mt-4">
-                    <Pressable onPress={() => void handleLike(post)} className="flex-row items-center mr-4">
-                      <Ionicons
-                        name={liked ? "heart" : "heart-outline"}
-                        size={20}
-                        color={liked ? "#ef4444" : "#52B69A"}
-                      />
-                      <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
-                        {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
-                      </Text>
-                    </Pressable>
+                    <View className="flex-row items-center mr-4">
+                      <Pressable
+                        onPress={() => void handleLike(post)}
+                        hitSlop={10}
+                        className="flex-row items-center"
+                      >
+                        <Ionicons
+                          name={liked ? "heart" : "heart-outline"}
+                          size={20}
+                          color={liked ? "#ef4444" : "#52B69A"}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void openLikesModal(post)}
+                        hitSlop={{ top: 10, bottom: 10, left: 4, right: 8 }}
+                      >
+                        <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+                          {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
+                        </Text>
+                      </Pressable>
+                    </View>
                     <Pressable
                       onPress={() => openPostDetail(post.id)}
                       className="flex-row items-center"
@@ -1444,17 +1705,18 @@ export function AdminCommunityHub() {
                       </Text>
                     </Pressable>
                   </View>
-                </Pressable>
+                </View>
               );
-              })}
-            </View>
-          </>
+            })}
+          </View>
         ) : (
-          <View className="gap-3">
+          <View className="px-4 gap-0 pb-4">
             {chats.length === 0 ? (
-              <Text className="text-sm text-center py-8" style={textMuted}>
-                No user chats yet.
-              </Text>
+              <View className="px-4 py-8 items-center rounded-2xl" style={surfaceStyle}>
+                <Text className="text-sm text-center" style={textMuted}>
+                  No user chats yet.
+                </Text>
+              </View>
             ) : null}
             {chats.map((chat) => {
               const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
@@ -1470,7 +1732,7 @@ export function AdminCommunityHub() {
                       params: { chatId: chat.id, name, image: image ?? "", isAdmin: "1" },
                     })
                   }
-                  className="flex-row items-center rounded-2xl px-4 py-4"
+                  className="flex-row items-center rounded-2xl px-4 py-4 mb-2"
                   style={[
                     surfaceStyle,
                     highlightChatId === chat.id
@@ -1500,16 +1762,11 @@ export function AdminCommunityHub() {
             })}
           </View>
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 
   const renderReportsTab = () => {
-    const reportTypeOptions = [
-      { key: "all" as const, label: "All" },
-      { key: "post" as const, label: "Post" },
-      { key: "comment" as const, label: "Comment" },
-    ];
     const pendingSourceOptions = [
       { key: "all" as const, label: "All" },
       { key: "reported" as const, label: "Reported" },
@@ -1525,7 +1782,6 @@ export function AdminCommunityHub() {
       totalLabel: string,
       totalCount: number,
       totalColor: string,
-      reportsForDelete: CommunityReport[],
       description: string
     ) => (
       <>
@@ -1568,28 +1824,6 @@ export function AdminCommunityHub() {
         <Text className="text-xs leading-5" style={textMuted}>
           {description}
         </Text>
-        {reportDeleteMode ? (
-          <Pressable
-            onPress={() => handleConfirmBulkPermanentDelete(reportsForDelete)}
-            disabled={selectedReportDeleteIds.length === 0 || reportBulkDeleting}
-            className="rounded-full py-2.5 items-center flex-row justify-center"
-            style={{
-              backgroundColor: "#ef4444",
-              opacity: selectedReportDeleteIds.length === 0 || reportBulkDeleting ? 0.5 : 1,
-            }}
-          >
-            {reportBulkDeleting ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" />
-                <Text className="text-xs font-extrabold text-white ml-1.5">
-                  Confirm delete ({selectedReportDeleteIds.length})
-                </Text>
-              </>
-            )}
-          </Pressable>
-        ) : null}
       </>
     );
 
@@ -1615,12 +1849,14 @@ export function AdminCommunityHub() {
       onScroll={(event) => onReportsScroll(event.nativeEvent.contentOffset.y)}
       scrollEventThrottle={16}
       contentContainerStyle={{
-        paddingBottom: reportsKeyboardHeight > 0 ? reportsScrollBottomPad + 24 : 20,
+        paddingBottom:
+          (reportsKeyboardHeight > 0 ? reportsScrollBottomPad + 24 : 20) +
+          (reportDeleteMode ? 72 : 0),
         paddingHorizontal: 12,
         paddingTop: 12,
       }}
     >
-      <AdminTabHeader title="Report Management" />
+      <AdminTabHeader title="Report Management" right={<AdminBadge />} />
       <View
         className="rounded-[28px] p-5 gap-3"
         style={[cardStyle, openReportFilter ? { overflow: "visible", zIndex: 20 } : undefined]}
@@ -1666,7 +1902,6 @@ export function AdminCommunityHub() {
               "Total pending",
               pendingQueueTotalCount,
               "#ef4444",
-              filteredPendingReports,
               "All posts and comments below are waiting for a decision. You can block or dismiss reports, and restore or keep hidden review requests."
             )}
             <CommunitySearchBar
@@ -1681,14 +1916,6 @@ export function AdminCommunityHub() {
               className="flex-row gap-2 mt-3"
               style={openReportFilter ? { zIndex: 30, elevation: 30, overflow: "visible" } : undefined}
             >
-              <ReportFilterDropdown
-                label="Report Type"
-                value={pendingReportTypeFilter}
-                options={reportTypeOptions}
-                onChange={setPendingReportTypeFilter}
-                open={openReportFilter === "pending-type"}
-                onOpenChange={(next) => setOpenReportFilter(next ? "pending-type" : null)}
-              />
               <ReportFilterDropdown
                 label="Source"
                 value={pendingSourceFilter}
@@ -1805,6 +2032,18 @@ export function AdminCommunityHub() {
               const busy = reportActionId === report.id;
               const cardDisabled = reportDeleteMode || busy;
               const selected = selectedReportDeleteIds.includes(report.id);
+              const isReReviewPending =
+                report.source === "re_review" && report.targetType === "post";
+              const reportTypeLabel = isReReviewPending
+                ? `Request review · ${report.targetType}`
+                : report.source === "admin_direct"
+                  ? `Admin block · ${report.targetType}`
+                  : `Reported · ${report.targetType}`;
+              const reportByPrefix = isReReviewPending
+                ? "Request review by "
+                : report.source === "admin_direct"
+                  ? "Blocked by "
+                  : "Reported by ";
               return (
                 <View
                   key={item.id}
@@ -1827,7 +2066,7 @@ export function AdminCommunityHub() {
                           className="text-xs font-extrabold uppercase flex-1"
                           style={{ color: theme.accentText }}
                         >
-                          Reported · {report.targetType}
+                          {reportTypeLabel}
                         </Text>
                       </View>
                       <Text
@@ -1835,7 +2074,7 @@ export function AdminCommunityHub() {
                         style={textPrimary}
                         numberOfLines={2}
                       >
-                        Reported by{" "}
+                        {reportByPrefix}
                         <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
                       </Text>
                     </Pressable>
@@ -1845,20 +2084,37 @@ export function AdminCommunityHub() {
                         className="text-xs font-extrabold uppercase flex-1"
                         style={{ color: theme.accentText }}
                       >
-                        Reported · {report.targetType}
+                        {reportTypeLabel}
                       </Text>
                       <Text
                         className="text-xs font-extrabold text-right shrink max-w-[55%]"
                         style={textPrimary}
                         numberOfLines={2}
                       >
-                        Reported by{" "}
+                        {reportByPrefix}
                         <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
                       </Text>
                     </View>
                   )}
-                  <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
-                    Report reason:{" "}
+                  {isReReviewPending && report.requestReason ? (
+                    <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
+                      Request reason:{" "}
+                      <Text className="font-extrabold" style={{ color: "#16a34a" }}>
+                        {report.requestReason}
+                      </Text>
+                    </Text>
+                  ) : null}
+                  <Text
+                    className={`text-sm font-extrabold ${
+                      isReReviewPending && report.requestReason ? "mt-1" : "mt-2"
+                    }`}
+                    style={textPrimary}
+                  >
+                    {isReReviewPending
+                      ? "Block reason: "
+                      : report.source === "admin_direct"
+                        ? "Block reason: "
+                        : "Report reason: "}
                     <Text className="font-extrabold" style={{ color: "#16a34a" }}>
                       {report.reason}
                     </Text>
@@ -1881,26 +2137,53 @@ export function AdminCommunityHub() {
                     <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
                   </Pressable>
                   <View className="flex-row gap-2 mt-3">
-                    <Pressable
-                      onPress={() => void handleBlock(report)}
-                      disabled={cardDisabled}
-                      className="flex-1 rounded-full py-2.5 items-center"
-                      style={{ backgroundColor: "#ef4444", opacity: cardDisabled ? 0.5 : 1 }}
-                    >
-                      <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
-                        {report.targetType === "comment" ? "Block Comment" : "Block Post"}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleDismiss(report)}
-                      disabled={cardDisabled}
-                      className="flex-1 rounded-full py-2.5 items-center border"
-                      style={[cardStyle, cardDisabled ? { opacity: 0.5 } : undefined]}
-                    >
-                      <Text className="text-xs font-extrabold" style={textSecondary}>
-                        Dismiss
-                      </Text>
-                    </Pressable>
+                    {isReReviewPending ? (
+                      <>
+                        <Pressable
+                          onPress={() => handleApproveReReviewFromReport(report)}
+                          disabled={cardDisabled}
+                          className="flex-1 rounded-full py-2.5 items-center"
+                          style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
+                        >
+                          <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                            Restore Post
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleDismissReReviewFromReport(report)}
+                          disabled={cardDisabled}
+                          className="flex-1 rounded-full py-2.5 items-center"
+                          style={{ backgroundColor: "#ef4444", opacity: cardDisabled ? 0.5 : 1 }}
+                        >
+                          <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                            Keep Hidden
+                          </Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <Pressable
+                          onPress={() => void handleBlock(report)}
+                          disabled={cardDisabled}
+                          className="flex-1 rounded-full py-2.5 items-center"
+                          style={{ backgroundColor: "#ef4444", opacity: cardDisabled ? 0.5 : 1 }}
+                        >
+                          <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
+                            {report.targetType === "comment" ? "Block Comment" : "Block Post"}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleDismiss(report)}
+                          disabled={cardDisabled}
+                          className="flex-1 rounded-full py-2.5 items-center border"
+                          style={[cardStyle, cardDisabled ? { opacity: 0.5 } : undefined]}
+                        >
+                          <Text className="text-xs font-extrabold" style={textSecondary}>
+                            Dismiss
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
                   </View>
                 </View>
               );
@@ -1910,10 +2193,9 @@ export function AdminCommunityHub() {
           <>
             {renderReportTotalsHeader(
               "Total reviewed",
-              reviewedReports.length,
+              uniqueReviewedReports.length,
               "#3b82f6",
-              filteredReviewedReports,
-              "All posts and comments below have already been reviewed. You can restore a blocked post or comment, block a dismissed item, move items back to pending, or permanently delete records."
+              "All posts and comments below have already been reviewed. You can restore a blocked post or comment, block a dismissed item, move items back to pending, or remove records from this admin list (author content stays on their profile)."
             )}
             <CommunitySearchBar
               value={reviewedReportSearch}
@@ -1928,14 +2210,6 @@ export function AdminCommunityHub() {
               style={openReportFilter ? { zIndex: 30, elevation: 30, overflow: "visible" } : undefined}
             >
               <ReportFilterDropdown
-                label="Report Type"
-                value={reviewedReportTypeFilter}
-                options={reportTypeOptions}
-                onChange={setReviewedReportTypeFilter}
-                open={openReportFilter === "reviewed-type"}
-                onOpenChange={(next) => setOpenReportFilter(next ? "reviewed-type" : null)}
-              />
-              <ReportFilterDropdown
                 label="Status"
                 value={reviewedReportStatusFilter}
                 options={reportStatusOptions}
@@ -1944,7 +2218,7 @@ export function AdminCommunityHub() {
                 onOpenChange={(next) => setOpenReportFilter(next ? "reviewed-status" : null)}
               />
             </View>
-            {reviewedReports.length === 0 ? (
+            {uniqueReviewedReports.length === 0 ? (
               <Text className="text-sm text-center py-6" style={textMuted}>
                 No reviewed reports yet.
               </Text>
@@ -2126,9 +2400,7 @@ export function AdminCommunityHub() {
 
   const renderUsersTab = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}>
-      <Text className="text-3xl font-extrabold mb-1" style={textPrimary}>
-        User Management
-      </Text>
+      <AdminTabHeader title="User Management" right={<AdminBadge />} />
       <Text className="text-sm font-bold mb-3" style={{ color: theme.accentText }}>
         {filteredUsers.length === users.length
           ? `${users.length} registered users`
@@ -2195,15 +2467,6 @@ export function AdminCommunityHub() {
                   </>
                 )}
               </Pressable>
-              <Pressable
-                onPress={() => handleDeleteUserAccount(user)}
-                disabled={busy}
-                className="flex-1 rounded-full py-2.5 items-center flex-row justify-center"
-                style={{ backgroundColor: "#ef4444", opacity: busy ? 0.6 : 1 }}
-              >
-                <Ionicons name="trash-outline" size={14} color="#ffffff" />
-                <Text className="text-xs font-extrabold text-white ml-1.5">Delete account</Text>
-              </Pressable>
             </View>
           </View>
         );
@@ -2225,7 +2488,14 @@ export function AdminCommunityHub() {
       contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 12 }}
       style={{ backgroundColor: theme.screenBg }}
     >
-      <ProfileScreenHeader title="Profile" onBack={() => router.back()} titleClassName="text-3xl" />
+      <ProfileScreenHeader
+        title="Profile"
+        onBack={() => {
+          const prev = previousAdminTabRef.current;
+          switchAdminTab(prev === "profile" ? "community" : prev);
+        }}
+        titleClassName="text-3xl"
+      />
 
       <View className="items-center mb-6">
         <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
@@ -2351,7 +2621,7 @@ export function AdminCommunityHub() {
   ];
 
   return (
-    <View className="flex-1" style={{ paddingTop: insets.top + 12, backgroundColor: theme.screenBg }}>
+    <View className="flex-1" style={[screenStyle, { paddingTop: insets.top + 12 }]}>
       {firestoreError ? (
         <View className="mx-3 mt-2 rounded-2xl bg-[#fef2f2] border border-[#fecaca] px-4 py-3">
           <Text className="text-xs font-bold text-[#b91c1c] leading-5">{firestoreError}</Text>
@@ -2363,6 +2633,54 @@ export function AdminCommunityHub() {
         {activeTab === "users" ? renderUsersTab() : null}
         {activeTab === "profile" ? renderProfileTab() : null}
       </View>
+
+      {activeTab === "community" && communitySubTab === "feed" ? (
+        <Pressable
+          onPress={() => {
+            setEditingPost(null);
+            setComposerVisible(true);
+          }}
+          className="absolute right-5 flex-row items-center rounded-full bg-[#52B69A] px-6 py-4 shadow-lg z-10"
+          style={{ bottom: insets.bottom + 72 }}
+          accessibilityRole="button"
+          accessibilityLabel="New post"
+        >
+          <Ionicons name="add" size={28} color="white" />
+          <Text className="text-base font-extrabold text-white ml-1.5">New post</Text>
+        </Pressable>
+      ) : null}
+
+      {activeTab === "reports" && reportDeleteMode ? (
+        <View
+          className="px-4 pt-2 pb-2 border-t"
+          style={{ backgroundColor: theme.screenBg, borderTopColor: theme.cardBorder }}
+        >
+          <Pressable
+            onPress={() =>
+              handleConfirmBulkPermanentDelete(
+                reportsSubTab === "pending" ? filteredPendingReports : filteredReviewedReports
+              )
+            }
+            disabled={selectedReportDeleteIds.length === 0 || reportBulkDeleting}
+            className="rounded-full py-3.5 items-center flex-row justify-center"
+            style={{
+              backgroundColor: "#ef4444",
+              opacity: selectedReportDeleteIds.length === 0 || reportBulkDeleting ? 0.5 : 1,
+            }}
+          >
+            {reportBulkDeleting ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#ffffff" />
+                <Text className="text-sm font-extrabold text-white ml-1.5">
+                  Confirm delete ({selectedReportDeleteIds.length})
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
 
       {!(activeTab === "reports" && reportsKeyboardHeight > 0) ? (
       <View
@@ -2380,7 +2698,7 @@ export function AdminCommunityHub() {
           return (
             <Pressable
               key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => switchAdminTab(tab.key)}
               className="flex-1 items-center py-2"
             >
               <View>
@@ -2480,33 +2798,19 @@ export function AdminCommunityHub() {
                   )}
                 </Pressable>
 
-                <View className="flex-row gap-2 mb-3">
-                  <Pressable
-                    onPress={() => handleResendPasswordReset(selectedUser)}
-                    disabled={userManagementActionId === selectedUser.id}
-                    className="flex-1 rounded-full py-3 items-center border flex-row justify-center"
-                    style={{
-                      backgroundColor: "#eaf7f0",
-                      borderColor: "#b7e4c7",
-                      opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
-                    }}
-                  >
-                    <Ionicons name="mail-outline" size={14} color="#52B69A" />
-                    <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleDeleteUserAccount(selectedUser)}
-                    disabled={userManagementActionId === selectedUser.id}
-                    className="flex-1 rounded-full py-3 items-center flex-row justify-center"
-                    style={{
-                      backgroundColor: "#ef4444",
-                      opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={14} color="#ffffff" />
-                    <Text className="text-xs font-extrabold text-white ml-1.5">Delete account</Text>
-                  </Pressable>
-                </View>
+                <Pressable
+                  onPress={() => handleResendPasswordReset(selectedUser)}
+                  disabled={userManagementActionId === selectedUser.id}
+                  className="rounded-full py-3 items-center border flex-row justify-center mb-3"
+                  style={{
+                    backgroundColor: "#eaf7f0",
+                    borderColor: "#b7e4c7",
+                    opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
+                  }}
+                >
+                  <Ionicons name="mail-outline" size={14} color="#52B69A" />
+                  <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
+                </Pressable>
 
                 <Pressable
                   onPress={() => {
@@ -2647,6 +2951,44 @@ export function AdminCommunityHub() {
         onClose={() => setSharePost(null)}
       />
 
+      <PostLikesModal
+        visible={likesPost !== null}
+        likers={likers}
+        loading={likersLoading}
+        currentUserId={currentUserId}
+        friendIds={friendIds}
+        onClose={() => {
+          setLikesPost(null);
+          setLikers([]);
+        }}
+        onOpenProfile={(userId) => {
+          setLikesPost(null);
+          setLikers([]);
+          void openCommunityUserProfile(userId);
+        }}
+      />
+
+      <UserProfileModal
+        visible={profileUserId !== null}
+        profile={profileData}
+        posts={profilePosts}
+        relation="none"
+        loading={profileLoading}
+        isSelf={profileUserId === currentUserId}
+        isSupportAdmin={false}
+        canAddFriend={false}
+        onClose={() => {
+          setProfileUserId(null);
+          setProfileData(null);
+        }}
+        onAddFriend={() => {}}
+        onOpenPost={(postId) => {
+          setProfileUserId(null);
+          setProfileData(null);
+          openPostDetail(postId);
+        }}
+      />
+
       <PostEditHistoryModal
         visible={historyPost !== null}
         authorName={historyPost?.authorName ?? ""}
@@ -2657,6 +2999,7 @@ export function AdminCommunityHub() {
       <PostComposerModal
         visible={composerVisible}
         title={editingPost ? "Edit Post" : "New Post"}
+        showAchievements={false}
         initial={
           editingPost
             ? {
@@ -2804,6 +3147,48 @@ export function AdminCommunityHub() {
       </Modal>
 
       <AppearanceModal visible={appearanceVisible} onClose={() => setAppearanceVisible(false)} />
+
+      <Modal
+        visible={manageMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setManageMenuVisible(false)}
+      >
+        <View className="flex-1 justify-center px-8" style={{ backgroundColor: theme.modalOverlay }}>
+          <Pressable className="absolute inset-0" onPress={() => setManageMenuVisible(false)} />
+          <View className="rounded-[24px] overflow-hidden" style={modalCardStyle}>
+            <Text className="text-lg font-extrabold px-5 pt-5 pb-2" style={textPrimary}>
+              Manage
+            </Text>
+            {(
+              [
+                { key: "liked", label: "My like", icon: "heart-outline" as const },
+                { key: "commented", label: "My comment", icon: "chatbubble-outline" as const },
+              ] as const
+            ).map((opt) => (
+              <Pressable
+                key={opt.key}
+                onPress={() => {
+                  setManageFilter(opt.key);
+                  setManageMenuVisible(false);
+                }}
+                className="px-5 py-4 border-b flex-row items-center gap-3"
+                style={{ borderBottomColor: theme.cardBorder }}
+              >
+                <Ionicons name={opt.icon} size={20} color={theme.textPrimary} />
+                <Text className="text-base font-bold flex-1" style={textPrimary}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setManageMenuVisible(false)} className="px-5 py-4">
+              <Text className="text-center text-base font-bold" style={textMuted}>
+                Cancel
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

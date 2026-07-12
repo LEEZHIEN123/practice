@@ -33,6 +33,8 @@ type PostComposerModalProps = {
   title: string;
   initial?: Partial<PostComposerValues>;
   submitting: boolean;
+  /** When false, hides the share-achievements picker (e.g. admin posts). Default true. */
+  showAchievements?: boolean;
   onClose: () => void;
   onSubmit: (values: PostComposerValues) => Promise<void>;
 };
@@ -42,6 +44,7 @@ export function PostComposerModal({
   title,
   initial,
   submitting,
+  showAchievements = true,
   onClose,
   onSubmit,
 }: PostComposerModalProps) {
@@ -64,9 +67,15 @@ export function PostComposerModal({
     }
     setContent(initial?.content ?? "");
     setTags(initial?.tags ?? []);
-    setAchievementIds(initial?.achievementIds ?? []);
+    setAchievementIds(showAchievements ? initial?.achievementIds ?? [] : []);
     setCustomTag("");
     setAchievementsExpanded(false);
+
+    if (!showAchievements) {
+      setCompletedAchievements([]);
+      setLoadingAchievements(false);
+      return;
+    }
 
     let cancelled = false;
     setLoadingAchievements(true);
@@ -84,7 +93,7 @@ export function PostComposerModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, initial]);
+  }, [visible, initial, showAchievements]);
 
   const toggleTag = (tag: string) => {
     setTags((prev) =>
@@ -127,7 +136,11 @@ export function PostComposerModal({
     setBusy(true);
     Keyboard.dismiss();
     try {
-      await onSubmit({ content, tags, achievementIds });
+      await onSubmit({
+        content,
+        tags,
+        achievementIds: showAchievements ? achievementIds : [],
+      });
     } finally {
       setBusy(false);
     }
@@ -182,86 +195,90 @@ export function PostComposerModal({
               placeholderTextColor={placeholderColor}
             />
 
-            <Text className="text-base font-extrabold mt-5 mb-1" style={{ color: theme.textPrimary }}>
-              Share achievements
-            </Text>
-            <ThemedText variant="muted" className="text-xs mb-2">
-              Choose unlocked achievements to show on your post.
-            </ThemedText>
-            {loadingAchievements ? (
-              <View className="py-3">
-                <ActivityIndicator color={theme.accent} />
-              </View>
-            ) : completedAchievements.length === 0 ? (
-              <ThemedText variant="muted" className="text-sm mb-2">
-                No completed achievements yet. Keep going!
-              </ThemedText>
-            ) : (
-              <View className="gap-2 mb-1">
-                {(achievementsExpanded
-                  ? completedAchievements
-                  : completedAchievements.slice(0, 3)
-                ).map((item) => {
-                  const selected = achievementIds.includes(item.id);
-                  return (
-                    <Pressable
-                      key={item.id}
-                      onPress={() => toggleAchievement(item.id)}
-                      className="flex-row items-center rounded-2xl px-3 py-3 border"
-                      style={
-                        selected
-                          ? { backgroundColor: "#fff7ed", borderColor: "#fdba74" }
-                          : cardStyle
-                      }
-                    >
-                      <Ionicons
-                        name={selected ? "checkbox" : "square-outline"}
-                        size={20}
-                        color={selected ? "#ea580c" : theme.iconMuted}
-                      />
-                      <View className="flex-1 ml-3">
-                        <Text
-                          className="text-sm font-extrabold"
-                          style={{ color: selected ? "#c2410c" : theme.textPrimary }}
+            {showAchievements ? (
+              <>
+                <Text className="text-base font-extrabold mt-5 mb-1" style={{ color: theme.textPrimary }}>
+                  Share achievements
+                </Text>
+                <ThemedText variant="muted" className="text-xs mb-2">
+                  Choose unlocked achievements to show on your post.
+                </ThemedText>
+                {loadingAchievements ? (
+                  <View className="py-3">
+                    <ActivityIndicator color={theme.accent} />
+                  </View>
+                ) : completedAchievements.length === 0 ? (
+                  <ThemedText variant="muted" className="text-sm mb-2">
+                    No completed achievements yet. Keep going!
+                  </ThemedText>
+                ) : (
+                  <View className="gap-2 mb-1">
+                    {(achievementsExpanded
+                      ? completedAchievements
+                      : completedAchievements.slice(0, 3)
+                    ).map((item) => {
+                      const selected = achievementIds.includes(item.id);
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => toggleAchievement(item.id)}
+                          className="flex-row items-center rounded-2xl px-3 py-3 border"
+                          style={
+                            selected
+                              ? { backgroundColor: "#fff7ed", borderColor: "#fdba74" }
+                              : cardStyle
+                          }
                         >
-                          {item.title}
-                        </Text>
-                        <Text
-                          className="text-xs mt-0.5"
-                          style={{ color: selected ? "#9a3412" : theme.textMuted }}
-                          numberOfLines={2}
-                        >
-                          {item.description}
-                        </Text>
-                      </View>
-                      <Ionicons name="trophy" size={16} color={selected ? "#ea580c" : theme.iconMuted} />
-                    </Pressable>
-                  );
-                })}
-                {completedAchievements.length > 3 ? (
-                  <Pressable
-                    onPress={() => setAchievementsExpanded((v) => !v)}
-                    className="flex-row items-center justify-center py-2 active:opacity-70"
-                  >
-                    <ThemedText variant="accent" className="text-sm font-extrabold">
-                      {achievementsExpanded
-                        ? "Show less"
-                        : `Show ${completedAchievements.length - 3} more`}
-                    </ThemedText>
-                    <Ionicons
-                      name={achievementsExpanded ? "chevron-up" : "chevron-down"}
-                      size={16}
-                      color={theme.accentText}
-                      style={{ marginLeft: 4 }}
-                    />
-                  </Pressable>
+                          <Ionicons
+                            name={selected ? "checkbox" : "square-outline"}
+                            size={20}
+                            color={selected ? "#ea580c" : theme.iconMuted}
+                          />
+                          <View className="flex-1 ml-3">
+                            <Text
+                              className="text-sm font-extrabold"
+                              style={{ color: selected ? "#c2410c" : theme.textPrimary }}
+                            >
+                              {item.title}
+                            </Text>
+                            <Text
+                              className="text-xs mt-0.5"
+                              style={{ color: selected ? "#9a3412" : theme.textMuted }}
+                              numberOfLines={2}
+                            >
+                              {item.description}
+                            </Text>
+                          </View>
+                          <Ionicons name="trophy" size={16} color={selected ? "#ea580c" : theme.iconMuted} />
+                        </Pressable>
+                      );
+                    })}
+                    {completedAchievements.length > 3 ? (
+                      <Pressable
+                        onPress={() => setAchievementsExpanded((v) => !v)}
+                        className="flex-row items-center justify-center py-2 active:opacity-70"
+                      >
+                        <ThemedText variant="accent" className="text-sm font-extrabold">
+                          {achievementsExpanded
+                            ? "Show less"
+                            : `Show ${completedAchievements.length - 3} more`}
+                        </ThemedText>
+                        <Ionicons
+                          name={achievementsExpanded ? "chevron-up" : "chevron-down"}
+                          size={16}
+                          color={theme.accentText}
+                          style={{ marginLeft: 4 }}
+                        />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                )}
+                {achievementIds.length > 0 ? (
+                  <ThemedText variant="muted" className="text-xs mt-1 mb-2">
+                    {achievementIds.length} selected
+                  </ThemedText>
                 ) : null}
-              </View>
-            )}
-            {achievementIds.length > 0 ? (
-              <ThemedText variant="muted" className="text-xs mt-1 mb-2">
-                {achievementIds.length} selected
-              </ThemedText>
+              </>
             ) : null}
 
             <ThemedText className="text-sm font-extrabold mt-5 mb-2">Tags</ThemedText>

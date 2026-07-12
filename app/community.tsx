@@ -1,9 +1,11 @@
 import { AddFriendModal } from "@/components/community/AddFriendModal";
+import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { FriendsSection } from "@/components/community/FriendsSection";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
-import { PostCommentsPreview } from "@/components/community/PostCommentsPreview";
+import { PostCommentsPreview, useLiveCommentCount } from "@/components/community/PostCommentsPreview";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
+import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostLikesModal } from "@/components/community/PostLikesModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
@@ -17,6 +19,7 @@ import {
     prefetchCommunityScreen,
     prependCommunityPost,
     patchCommunityPost,
+    removeCommunityPost,
     resetCommunityBootstrapCache,
     subscribeCommunityPosts,
 } from "@/lib/communityBootstrap";
@@ -36,6 +39,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
@@ -49,7 +53,7 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { auth } from "../firebaseConfig";
+import { auth, db } from "../firebaseConfig";
 import {
     buildChatListWithSupportAdmin,
     acceptFriendRequest,
@@ -58,11 +62,11 @@ import {
     chatPreviewForUser,
     createPost,
     deletePost,
-    displayCommunityUserName,
     ensureChatsForFriends,
     ensureDirectChat,
     ensureSupportChatWithAdmin,
     fetchPostIdsCommentedByUser,
+    subscribePostIdsCommentedByUser,
     filterPostsByKeyword,
     filterPostsByTag,
     getPendingIncomingFriendRequest,
@@ -111,6 +115,26 @@ function friendLabel(relation: FriendRelation): string {
   if (relation === "pending_outgoing") return "Pending";
   if (relation === "pending_incoming") return "Friend request";
   return "Add friend";
+}
+
+function FeedCommentCountButton({
+  postId,
+  fallbackCount,
+  onPress,
+}: {
+  postId: string;
+  fallbackCount: number;
+  onPress: () => void;
+}) {
+  const count = useLiveCommentCount(postId, fallbackCount);
+  return (
+    <Pressable onPress={onPress} className="flex-row items-center mr-4">
+      <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
+      <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+        {count} {count === 1 ? "comment" : "comments"}
+      </Text>
+    </Pressable>
+  );
 }
 
 type ReportModalProps = {
@@ -319,6 +343,8 @@ export default function CommunityScreen() {
     [chats, currentUserId, adminUid, adminProfileImage]
   );
 
+  const friendIdSet = useMemo(() => new Set(friendIds), [friendIds]);
+
   const filteredPosts = useMemo(() => {
     let list = filterPostsByTag(posts, tagFilterView ? activeTagFilter : null);
 
@@ -366,7 +392,6 @@ export default function CommunityScreen() {
       const snap = getCommunityBootstrapSnapshot();
       if (snap.adminUidLoaded) setAdminUid(snap.adminUid);
       setAdminProfileImage(snap.adminProfileImage);
-      setMyProfileImage(snap.myProfileImage);
       if (snap.postsHydrated) {
         setPosts(snap.posts);
         setPostsHydrated(true);
@@ -382,7 +407,6 @@ export default function CommunityScreen() {
           const snap = getCommunityBootstrapSnapshot();
           if (snap.adminUidLoaded) setAdminUid(snap.adminUid);
           setAdminProfileImage(snap.adminProfileImage);
-          setMyProfileImage(snap.myProfileImage);
         });
       } else {
         resetCommunityBootstrapCache();
@@ -395,6 +419,31 @@ export default function CommunityScreen() {
     });
     return unsubAuth;
   }, []);
+
+  /** Always show the signed-in user's avatar in the header (never another account's cached image). */
+  useEffect(() => {
+    if (!currentUserId) {
+      setMyProfileImage(null);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "users", currentUserId),
+      (snap) => {
+        if (!snap.exists() || snap.id !== currentUserId) {
+          setMyProfileImage(null);
+          return;
+        }
+        const data = snap.data() as { profileImage?: unknown };
+        setMyProfileImage(
+          typeof data.profileImage === "string" && data.profileImage.length > 0
+            ? data.profileImage
+            : null
+        );
+      },
+      () => setMyProfileImage(null)
+    );
+    return unsub;
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -425,14 +474,28 @@ export default function CommunityScreen() {
       setFriendIds([]);
       return;
     }
-    void fetchPostIdsCommentedByUser(currentUserId)
-      .then(setCommentedPostIds)
-      .catch(() => setCommentedPostIds([]));
-    return subscribeFriendsList(
+    const unsubCommented = subscribePostIdsCommentedByUser(
+      currentUserId,
+      setCommentedPostIds,
+      () => setCommentedPostIds([])
+    );
+    const unsubFriends = subscribeFriendsList(
       (friends) => setFriendIds(friends.map((f) => f.id)),
       () => setFriendIds([])
     );
+    return () => {
+      unsubCommented();
+      unsubFriends();
+    };
   }, [currentUserId]);
+
+  // Refresh commented-post IDs when opening the "My comment" filter.
+  useEffect(() => {
+    if (!currentUserId || manageFilter !== "commented") return;
+    void fetchPostIdsCommentedByUser(currentUserId)
+      .then(setCommentedPostIds)
+      .catch(() => {});
+  }, [currentUserId, manageFilter]);
 
   useEffect(() => {
     if (activeTab !== "feed") setManageFilter(null);
@@ -464,7 +527,9 @@ export default function CommunityScreen() {
         const reported = items
           .filter(
             (n: CommunityNotification) =>
-              n.type === "post_reported" && typeof n.postId === "string" && n.postId.length > 0
+              (n.type === "post_reported" || n.type === "comment_reported") &&
+              typeof n.postId === "string" &&
+              n.postId.length > 0
           )
           .map((n) => n.postId as string);
         setReportedPostIds([...new Set(reported)]);
@@ -497,13 +562,13 @@ export default function CommunityScreen() {
     const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
     const name = chatDisplayName(chat, currentUserId, adminUid);
     const image = chat.participantImages[otherUid] ?? null;
-    const isSupport = adminUid != null && otherUid === adminUid;
+    const isSupport =
+      chat.isSupportChat === true ||
+      isSupportAdminPlaceholder(chat.id) ||
+      (adminUid != null && otherUid === adminUid);
 
     let chatId = chat.id;
     if (isSupport && adminUid) {
-      chatId = chatIdForUsers(currentUserId, adminUid);
-      void ensureSupportChatWithAdmin().catch(() => {});
-    } else if (isSupportAdminPlaceholder(chatId) && adminUid) {
       chatId = chatIdForUsers(currentUserId, adminUid);
       void ensureSupportChatWithAdmin().catch(() => {});
     }
@@ -565,22 +630,31 @@ export default function CommunityScreen() {
   };
 
   const handleDeletePost = (post: CommunityPost) => {
-    Alert.alert("Delete post", "Are you sure you want to delete this post? This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            try {
-              await deletePost(post.id);
-            } catch (e: unknown) {
-              Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
-            }
-          })();
+    const pendingReview = post.underReview || post.blocked;
+    Alert.alert(
+      "Delete post",
+      pendingReview
+        ? "This post is under Support Admin review. Delete it permanently? It will be removed for everyone and cleared from the admin review queue."
+        : "Are you sure you want to delete this post? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                removeCommunityPost(post.id);
+                setPosts((prev) => prev.filter((item) => item.id !== post.id));
+                await deletePost(post.id);
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
+              }
+            })();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const openUserProfile = async (userId: string) => {
@@ -614,7 +688,6 @@ export default function CommunityScreen() {
   };
 
   const openLikesModal = async (post: CommunityPost) => {
-    if (post.likeCount === 0) return;
     setLikesPost(post);
     setLikersLoading(true);
     setLikers([]);
@@ -844,14 +917,14 @@ export default function CommunityScreen() {
                     </View>
                   ) : null}
                 </Pressable>
-                <Pressable
+          <Pressable
                   onPress={() => {
                     router.push("/community-my-posts" as any);
                   }}
                   className="w-12 h-12 rounded-full items-center justify-center"
                 >
                   <ProfileAvatar uri={myProfileImage} size={36} />
-                </Pressable>
+          </Pressable>
               </View>
             }
           />
@@ -924,12 +997,12 @@ export default function CommunityScreen() {
                   >
                     {totalUnreadChats > 9 ? "9+" : totalUnreadChats}
                   </Text>
-                </View>
+              </View>
               ) : null}
             </Pressable>
-        </View>
+          </View>
 
-        {activeTab === "feed" ? (
+          {activeTab === "feed" ? (
           tagFilterView && activeTagFilter ? (
             <View className="flex-row items-center mb-4 px-4">
               <ThemedBackButton onPress={exitTagView} className="mr-3" />
@@ -938,7 +1011,7 @@ export default function CommunityScreen() {
           ) : (
             <>
               <View className="flex-row items-center gap-2 mx-4 mb-4">
-                <View className="flex-1">
+                  <View className="flex-1">
                   <CommunitySearchBar
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -974,11 +1047,11 @@ export default function CommunityScreen() {
                     <Ionicons name="close" size={20} color={theme.textPrimary} />
                   </Pressable>
                 ) : null}
-              </View>
+                </View>
             </>
           )
         ) : null}
-      </View>
+                  </View>
 
       <ScrollView
         className="flex-1"
@@ -1014,19 +1087,24 @@ export default function CommunityScreen() {
                   const liked = currentUserId ? post.likedBy.includes(currentUserId) : false;
                   const relation = friendRelations[post.authorId] ?? "none";
                   const isOwnPost = post.authorId === currentUserId;
-                  const hasAuthorReportReminder =
-                    isOwnPost && reportedPostIds.includes(post.id) && !post.underReview;
-                  const hasPublicReviewTip =
-                    post.underReview || pendingReviewPostIds.includes(post.id);
+                  const isUnderReview =
+                    !post.blocked &&
+                    (post.underReview || pendingReviewPostIds.includes(post.id));
+                  const authorWasReported =
+                    isOwnPost && reportedPostIds.includes(post.id);
+                  // Author sees one combined tip; others see a public under-review notice.
+                  // Reported posts stay on the feed until Support Admin blocks them.
+                  const showAuthorReviewTip =
+                    isOwnPost && (authorWasReported || isUnderReview);
+                  const showPublicReviewTip = !isOwnPost && isUnderReview;
 
                   return (
-                    <Pressable
+                    <View
                       key={post.id}
-                      onPress={() => openPostDetail(post.id)}
                       className="px-4 py-4 rounded-2xl"
                       style={cardStyle}
                     >
-                      <View className="flex-row items-center">
+                    <View className="flex-row items-center">
                         <Pressable onPress={() => void openUserProfile(post.authorId)}>
                           <ProfileAvatar uri={post.authorProfileImage} />
                         </Pressable>
@@ -1034,12 +1112,20 @@ export default function CommunityScreen() {
                           onPress={() => void openUserProfile(post.authorId)}
                           className="flex-1 ml-3"
                         >
-                          <Text className="text-base font-extrabold" style={textPrimary}>
-                            {displayCommunityUserName(post.authorId, post.authorName, adminUid)}
-                            {isOwnPost ? (
-                              <Text className="text-sm font-bold" style={{ color: theme.accentText }}> · me</Text>
-                            ) : null}
-                          </Text>
+                          <CommunityAuthorName
+                            authorId={post.authorId}
+                            authorName={post.authorName}
+                            adminUid={adminUid}
+                            textStyle={textPrimary}
+                            ownSuffix={
+                              isOwnPost ? (
+                                <Text className="text-sm font-bold" style={{ color: theme.accentText }}>
+                                  {" "}
+                                  · me
+                                </Text>
+                              ) : null
+                            }
+                          />
                           <Text className="text-[10px] mt-0.5" style={textMuted}>
                             {formatPostDisplayTime(post.createdAt)}
                           </Text>
@@ -1052,30 +1138,19 @@ export default function CommunityScreen() {
                         </Pressable>
                       </View>
 
-                      {hasPublicReviewTip ? (
-                        <View
-                          className="mt-3 rounded-xl px-3 py-2 border"
-                          style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
-                        >
-                          <Text className="text-xs font-semibold text-[#c2410c]">
-                            Notice: This post is under review by Support Admin. Please be respectful
-                            and follow community guidelines.
-                          </Text>
+                      {showAuthorReviewTip ? (
+                        <View className="mt-2">
+                          <PostPendingReviewTip variant="author" />
                         </View>
                       ) : null}
 
-                      {hasAuthorReportReminder ? (
-                        <View
-                          className="mt-3 rounded-xl px-3 py-2 border"
-                          style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
-                        >
-                          <Text className="text-xs font-semibold text-[#c2410c]">
-                            Reminder: Your post has been reported by another user. Please pay attention to
-                            community guidelines while Support Admin reviews it.
-                          </Text>
+                      {showPublicReviewTip ? (
+                        <View className="mt-2">
+                          <PostPendingReviewTip variant="public" />
                         </View>
                       ) : null}
 
+                      <Pressable onPress={() => openPostDetail(post.id)}>
                       {post.content ? (
                         <Text className="text-base mt-3 leading-7" style={textSecondary}>{post.content}</Text>
                       ) : null}
@@ -1089,6 +1164,7 @@ export default function CommunityScreen() {
                           contentFit="cover"
                         />
                       ) : null}
+                      </Pressable>
 
                       {post.tags.length > 0 ? (
                         <View className="flex-row flex-wrap gap-2 mt-3">
@@ -1118,23 +1194,21 @@ export default function CommunityScreen() {
                               color={liked ? "#ef4444" : "#52B69A"}
                             />
                           </Pressable>
-                          <Pressable onPress={() => void openLikesModal(post)}>
+                          <Pressable
+                            onPress={() => void openLikesModal(post)}
+                            hitSlop={{ top: 10, bottom: 10, left: 4, right: 8 }}
+                          >
                             <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
                               {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                             </Text>
                           </Pressable>
                         </View>
 
-                        <Pressable
+                        <FeedCommentCountButton
+                          postId={post.id}
+                          fallbackCount={post.commentCount}
                           onPress={() => openPostDetail(post.id)}
-                          className="flex-row items-center mr-4"
-                        >
-                          <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
-                          <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
-                            {post.commentCount}{" "}
-                            {post.commentCount === 1 ? "comment" : "comments"}
-                          </Text>
-                        </Pressable>
+                        />
 
                         {!isOwnPost && post.authorId !== adminUid ? (
                           <Pressable
@@ -1168,9 +1242,12 @@ export default function CommunityScreen() {
                       <PostCommentsPreview
                         postId={post.id}
                         commentCount={post.commentCount}
+                        currentUserId={currentUserId}
+                        friendIds={friendIdSet}
                         onSeeMore={() => openPostDetail(post.id)}
+                        onOpenProfile={(userId) => void openUserProfile(userId)}
                       />
-                    </Pressable>
+                    </View>
                   );
                 })}
               </View>
@@ -1210,8 +1287,8 @@ export default function CommunityScreen() {
                       onPress={() => openChat(chat)}
                       className="flex-1 ml-3 flex-row items-center"
                     >
-                      <View className="flex-1">
-                        <View className="flex-row items-center">
+                    <View className="flex-1">
+                      <View className="flex-row items-center">
                           <Text className="text-base font-extrabold" style={textPrimary}>{name}</Text>
                           {isSupport ? (
                             <View className="ml-2 w-6 h-6 rounded-full bg-[#dbeafe] items-center justify-center">
@@ -1219,10 +1296,10 @@ export default function CommunityScreen() {
                             </View>
                           ) : null}
                           {unread > 0 ? (
-                            <View className="ml-2 min-w-[20px] h-5 px-1 rounded-full bg-[#ef4444] items-center justify-center">
+                          <View className="ml-2 min-w-[20px] h-5 px-1 rounded-full bg-[#ef4444] items-center justify-center">
                               <Text className="text-[10px] font-extrabold text-white">{unread}</Text>
-                            </View>
-                          ) : null}
+                          </View>
+                        ) : null}
                         </View>
                         <Text className="text-sm mt-1" style={textMuted} numberOfLines={1}>
                           {chatPreviewForUser(chat, currentUserId ?? "") ||
@@ -1231,10 +1308,10 @@ export default function CommunityScreen() {
                       </View>
                       <Ionicons name="chevron-forward" size={20} color={theme.accent} />
                     </Pressable>
-                  </View>
+                    </View>
                 );
               })}
-            </View>
+              </View>
           )}
       </ScrollView>
 
@@ -1305,6 +1382,7 @@ export default function CommunityScreen() {
         isSelf={profileUserId === currentUserId}
         isSupportAdmin={profileUserId === adminUid}
         canAddFriend={profileUserId !== adminUid && profileUserId !== currentUserId}
+        pendingReviewPostIds={pendingReviewPostIds}
         onClose={() => {
           setProfileUserId(null);
           setProfileData(null);
@@ -1335,7 +1413,13 @@ export default function CommunityScreen() {
         visible={menuPost !== null}
         post={menuPost}
         isOwnPost={menuPost?.authorId === currentUserId}
-        canReport={menuPost != null && menuPost.authorId !== adminUid}
+        canReport={
+          menuPost != null &&
+          menuPost.authorId !== adminUid &&
+          !menuPost.underReview &&
+          !menuPost.blocked &&
+          !pendingReviewPostIds.includes(menuPost.id)
+        }
         onClose={() => setMenuPost(null)}
         onEdit={() => {
           if (!menuPost) return;
@@ -1371,6 +1455,8 @@ export default function CommunityScreen() {
         visible={likesPost !== null}
         likers={likers}
         loading={likersLoading}
+        currentUserId={currentUserId}
+        friendIds={friendIds}
         onClose={() => {
           setLikesPost(null);
           setLikers([]);
@@ -1395,14 +1481,29 @@ export default function CommunityScreen() {
         onClose={() => setReportTarget(null)}
         onSubmit={async (reason) => {
           if (!reportTarget) return;
+          const postId = reportTarget.postId;
           await submitReport({
             targetType: reportTarget.type,
             targetId: reportTarget.targetId,
-            postId: reportTarget.postId,
+            postId,
             reason,
             targetContent: reportTarget.targetContent,
             targetAuthorId: reportTarget.targetAuthorId,
             targetAuthorName: reportTarget.targetAuthorName,
+          });
+          // Keep the post visible and show the under-review tip right away.
+          setPendingReviewPostIds((prev) =>
+            prev.includes(postId) ? prev : [...prev, postId]
+          );
+          setPosts((prev) => {
+            const next = prev.map((item) =>
+              item.id === postId
+                ? { ...item, underReview: true, blocked: false }
+                : item
+            );
+            const updated = next.find((item) => item.id === postId);
+            if (updated) patchCommunityPost(updated);
+            return next;
           });
         }}
       />

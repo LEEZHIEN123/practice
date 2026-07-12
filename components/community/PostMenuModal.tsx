@@ -60,10 +60,11 @@ export function PostMenuModal({
               },
             ]
           : []),
-        ...(!post.blocked
+        // Pending review / blocked: author may still delete, but not edit or share.
+        ...(!post.blocked && !post.underReview
           ? [{ label: "Edit Post", icon: "create-outline" as const, onPress: onEdit }]
           : []),
-        ...(onShare && !post.blocked
+        ...(onShare && !post.blocked && !post.underReview
           ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }]
           : []),
         { label: "Delete Post", icon: "trash-outline", onPress: onDelete, danger: true },

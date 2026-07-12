@@ -33,7 +33,7 @@ export function CommunitySearchBar({
         <Text className="text-sm font-extrabold mb-2" style={textPrimary}>{label}</Text>
       ) : null}
       <View ref={wrapRef} className="flex-row items-center rounded-2xl px-3.5 py-2" style={cardStyle}>
-        <Ionicons name="search" size={16} color={theme.iconMuted} />
+        <Ionicons name="search" size={16} color={theme.iconMuted} style={{ marginLeft: 8 }} />
         <TextInput
           value={value}
           onChangeText={onChangeText}

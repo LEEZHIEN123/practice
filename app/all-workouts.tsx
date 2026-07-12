@@ -118,12 +118,12 @@ export default function AllWorkoutsScreen() {
                     `/free-workout?type=${encodeURIComponent(selected)}&name=${encodeURIComponent(item)}` as any
                   )
                 }
-                className="bg-[#bdeccf] rounded-[28px] p-6 mb-3 flex-row items-center justify-between active:opacity-90"
+                className="bg-[#bdeccf] rounded-2xl px-4 py-3.5 mb-2.5 flex-row items-center justify-between active:opacity-90"
               >
                 <View className="flex-1 pr-3 min-w-0">
                   <View className="flex-row items-start gap-1">
                     <Text
-                      className="text-xl font-extrabold text-gray-900 flex-1 min-w-0"
+                      className="text-lg font-extrabold text-gray-900 flex-1 min-w-0"
                       numberOfLines={4}
                     >
                       {item}
@@ -132,11 +132,11 @@ export default function AllWorkoutsScreen() {
                       <FavouriteButton compact item={favouriteItem} />
                     </View>
                   </View>
-                  <Text className="text-base font-semibold text-gray-600 mt-1">
+                  <Text className="text-sm font-semibold text-gray-600 mt-0.5">
                     MET: {WORKOUT_DETAILS[selected][item].met}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={28} color="#76C893" />
+                <Ionicons name="chevron-forward" size={24} color="#76C893" />
               </Pressable>
             );
           }}

@@ -73,10 +73,53 @@ export function ProfileScreenHeader({
       : null;
   return (
     <View
-      className={`flex-row items-center ${headerHeightClassName} ${className}`}
+      className={`relative flex-row items-center ${headerHeightClassName} ${className}`}
       pointerEvents="box-none"
     >
-      <View className="shrink-0 z-10 justify-center">
+        {centerSlot ? (
+          <View
+            pointerEvents="box-none"
+            className="absolute left-0 right-0 top-0 bottom-0 items-center justify-center px-16"
+          >
+            <View pointerEvents="box-none" className="w-full flex-row items-center justify-center">
+              {centerSlot}
+            </View>
+          </View>
+        ) : (
+          <View
+            pointerEvents="none"
+            className="absolute left-0 right-0 top-0 bottom-0 items-center justify-center px-16"
+          >
+            <View className="w-full flex-row items-center justify-center">
+              <Text
+                numberOfLines={3}
+                className={`text-center font-extrabold ${titleClassName}`}
+                style={[textPrimary, { flexShrink: 1, maxWidth: "100%" }]}
+              >
+                {title}
+              </Text>
+              {badgeLabel ? (
+                <View
+                  style={{
+                    marginLeft: 8,
+                    minWidth: 20,
+                    height: 20,
+                    paddingHorizontal: 5,
+                    borderRadius: 10,
+                    backgroundColor: "#ef4444",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#ffffff" }}>{badgeLabel}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
+
+      <View className="shrink-0 justify-center" style={{ zIndex: 2, elevation: 2 }}>
         <ThemedBackButton
           onPress={onBack}
           className={backButtonClassName}
@@ -84,41 +127,13 @@ export function ProfileScreenHeader({
           size={backIconSize}
         />
       </View>
-      <View className="flex-1 min-w-0 px-2 items-center justify-center self-stretch">
-        {centerSlot ? (
-          <View pointerEvents="box-none" className="w-full flex-row items-center">
-            {centerSlot}
-          </View>
-        ) : (
-          <View pointerEvents="none" className="w-full flex-row items-center justify-center">
-            <Text
-              numberOfLines={3}
-              className={`text-center font-extrabold ${titleClassName}`}
-              style={[textPrimary, { flexShrink: 1, maxWidth: "100%" }]}
-            >
-              {title}
-            </Text>
-            {badgeLabel ? (
-              <View
-                style={{
-                  marginLeft: 8,
-                  minWidth: 20,
-                  height: 20,
-                  paddingHorizontal: 5,
-                  borderRadius: 10,
-                  backgroundColor: "#ef4444",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Text style={{ fontSize: 11, fontWeight: "800", color: "#ffffff" }}>{badgeLabel}</Text>
-              </View>
-            ) : null}
-          </View>
-        )}
-      </View>
-      <View className="shrink-0 z-10 justify-center items-end" style={{ minWidth: 48 }}>
+
+      <View className="flex-1" pointerEvents="none" />
+      <View
+        className="shrink-0 justify-center items-end"
+        style={{ minWidth: 48, zIndex: 2, elevation: 2 }}
+        pointerEvents="box-none"
+      >
         {rightSlot ?? null}
       </View>
     </View>

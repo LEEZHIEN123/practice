@@ -187,6 +187,10 @@ def slugify(name: str, index: int) -> str:
     return f"recipe-{index}-{slug[:48]}"
 
 
+def recipe_dedupe_key(name: str, serving: str) -> str:
+    return f"{name.strip().lower()}|{serving.strip().lower()}"
+
+
 def serving_size(row: dict) -> str | None:
     yield_text = (row.get("yield") or "").strip()
     servings = (row.get("servings") or "").strip()
@@ -211,6 +215,8 @@ def resolve_csv_path() -> Path:
 def export_recipes(csv_path: Path) -> list[dict]:
     items: list[dict] = []
     skipped_no_serving = 0
+    skipped_duplicate = 0
+    seen_keys: set[str] = set()
     with csv_path.open(encoding="latin-1", newline="") as handle:
         for index, row in enumerate(csv.DictReader(handle), start=1):
             name = (row.get("recipe_name") or "").strip()
@@ -221,6 +227,12 @@ def export_recipes(csv_path: Path) -> list[dict]:
             if not serving:
                 skipped_no_serving += 1
                 continue
+
+            dedupe_key = recipe_dedupe_key(name, serving)
+            if dedupe_key in seen_keys:
+                skipped_duplicate += 1
+                continue
+            seen_keys.add(dedupe_key)
 
             nutrition = parse_nutrition(row.get("nutrition") or "")
             fiber_g = nutrition.pop("fiberG")
@@ -249,6 +261,8 @@ def export_recipes(csv_path: Path) -> list[dict]:
 
     if skipped_no_serving:
         print(f"Skipped {skipped_no_serving} recipes with blank serving size")
+    if skipped_duplicate:
+        print(f"Skipped {skipped_duplicate} duplicate recipes (same name + serving)")
 
     return items
 

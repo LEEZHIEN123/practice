@@ -33,9 +33,25 @@ export const MEAL_CATEGORY_LABELS: Record<MealCategory, string> = {
   snack: "Snack",
 };
 
-export const FOOD_INDEX: FoodListItem[] = (recipeFoodIndex as FoodListItem[]).filter((item) =>
-  Boolean(item.servingSize?.trim())
-);
+function foodDedupeKey(item: Pick<FoodListItem, "name" | "servingSize">): string {
+  return `${item.name.trim().toLowerCase()}|${(item.servingSize ?? "").trim().toLowerCase()}`;
+}
+
+/** Keep first occurrence of each name + serving (CSV source has repeated recipes). */
+function dedupeFoodsByNameServing<T extends Pick<FoodListItem, "name" | "servingSize">>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (!item.servingSize?.trim()) continue;
+    const key = foodDedupeKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+export const FOOD_INDEX: FoodListItem[] = dedupeFoodsByNameServing(recipeFoodIndex as FoodListItem[]);
 
 let fullDataset: FoodItem[] | null = null;
 let foodById: Map<string, FoodItem> | null = null;
@@ -53,7 +69,7 @@ export function prefetchFoodDataset(): Promise<FoodItem[]> {
   if (fullDataset) return Promise.resolve(fullDataset);
   if (!loadPromise) {
     loadPromise = import("./recipeFoodDataset.json").then((mod) => {
-      fullDataset = (mod.default as FoodItem[]).filter((item) => Boolean(item.servingSize?.trim()));
+      fullDataset = dedupeFoodsByNameServing(mod.default as FoodItem[]);
       buildFoodById(fullDataset);
       return fullDataset;
     });

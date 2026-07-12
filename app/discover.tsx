@@ -1,8 +1,10 @@
 import { DiscoverCard } from "@/components/discover/DiscoverCard";
 import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
+import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
 import { prefetchCommunityScreen } from "@/lib/communityBootstrap";
 import { prefetchFoodDataset } from "@/lib/foodDataset";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -16,6 +18,7 @@ export default function DiscoverScreen() {
   useAdminRedirect();
   const { screenStyle, textPrimary, iconButtonStyle } = useThemedScreen();
   const tabBarPadding = useBottomTabBarScrollPadding();
+  const { totalUnread } = useCommunityUnread();
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +51,10 @@ export default function DiscoverScreen() {
               Discover
             </Text>
             <Pressable
-              onPress={() => router.push("/profile")}
+              onPress={() => {
+                rememberBottomTabRoute("/discover");
+                router.push("/profile");
+              }}
               className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
               style={iconButtonStyle}
             >
@@ -104,6 +110,15 @@ export default function DiscoverScreen() {
               onPressIn={() => void prefetchCommunityScreen()}
               onPress={() => router.push("/community" as any)}
               className="flex-1"
+              icon={
+                totalUnread > 0 ? (
+                  <View className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#ef4444] items-center justify-center border-2 border-white">
+                    <Text className="text-[10px] font-extrabold text-white">
+                      {totalUnread > 9 ? "9+" : totalUnread}
+                    </Text>
+                  </View>
+                ) : undefined
+              }
             />
 
             <DiscoverCard

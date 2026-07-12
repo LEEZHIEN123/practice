@@ -43,6 +43,8 @@ type UserProfileModalProps = {
   isSelf: boolean;
   canAddFriend?: boolean;
   isSupportAdmin?: boolean;
+  /** Post IDs currently pending Support Admin review (optional fallback). */
+  pendingReviewPostIds?: string[];
   onClose: () => void;
   onAddFriend: () => void;
   onAcceptFriend?: () => void;
@@ -61,6 +63,7 @@ export function UserProfileModal({
   isSelf,
   canAddFriend = true,
   isSupportAdmin = false,
+  pendingReviewPostIds = [],
   onClose,
   onAddFriend,
   onAcceptFriend,
@@ -72,6 +75,7 @@ export function UserProfileModal({
   const insets = useSafeAreaInsets();
   const { screenStyle, cardStyle, theme, iconButtonStyle } = useThemedScreen();
   const showAddFriend = canAddFriend && !isSupportAdmin && relation === "none";
+  const pendingSet = new Set(pendingReviewPostIds);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -108,9 +112,20 @@ export function UserProfileModal({
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
             <View className="items-center mb-5">
               <ProfileAvatar uri={profile.profileImage} />
-              <ThemedText className="text-2xl font-extrabold mt-3">
-                {isSupportAdmin ? "Support Admin" : profile.name}
-              </ThemedText>
+              <View className="flex-row items-center justify-center mt-3">
+                <ThemedText className="text-2xl font-extrabold">
+                  {isSupportAdmin ? "Support Admin" : profile.name}
+                </ThemedText>
+                {isSupportAdmin ? (
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={20}
+                    color="#2563eb"
+                    style={{ marginLeft: 6 }}
+                    accessibilityLabel="Support Admin"
+                  />
+                ) : null}
+              </View>
               {!isSelf && isSupportAdmin && onChat ? (
                 <Pressable
                   onPress={onChat}
@@ -225,13 +240,39 @@ export function UserProfileModal({
                 {isSelf ? "You have not posted yet." : "No posts yet."}
               </ThemedText>
             ) : (
-              posts.map((post) => (
+              posts.map((post) => {
+                const isPendingReview =
+                  !post.blocked && (post.underReview || pendingSet.has(post.id));
+                return (
                 <Pressable
                   key={post.id}
                   onPress={() => onOpenPost?.(post.id)}
                   disabled={!onOpenPost}
                 >
                   <ThemedCard rounded="2xl" className="p-4 mb-3">
+                    {post.blocked && isSelf ? (
+                      <View
+                        className="mb-2 rounded-lg px-2.5 py-1.5 border"
+                        style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca" }}
+                      >
+                        <ThemedText className="text-[11px] font-semibold" style={{ color: "#b91c1c" }}>
+                          {post.underReview
+                            ? "Hidden while Support Admin reviews your request."
+                            : "Hidden by Support Admin. Only you can see this here."}
+                        </ThemedText>
+                      </View>
+                    ) : isPendingReview ? (
+                      <View
+                        className="mb-2 rounded-lg px-2.5 py-1.5 border"
+                        style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
+                      >
+                        <ThemedText className="text-[11px] font-semibold" style={{ color: "#c2410c" }}>
+                          {isSelf
+                            ? "Reported and under review by Support Admin. Please follow community guidelines."
+                            : "This post is under review by Support Admin."}
+                        </ThemedText>
+                      </View>
+                    ) : null}
                     <ThemedText variant="secondary" className="text-sm leading-6">
                       {post.content}
                     </ThemedText>
@@ -254,7 +295,11 @@ export function UserProfileModal({
                     ) : null}
                     <View className="flex-row items-center mt-3 gap-4">
                       <View className="flex-row items-center">
-                        <Ionicons name="heart" size={16} color="#ef4444" />
+                        <Ionicons
+                          name={post.likeCount > 0 ? "heart" : "heart-outline"}
+                          size={16}
+                          color={post.likeCount > 0 ? "#ef4444" : "#52B69A"}
+                        />
                         <ThemedText variant="accent" className="text-xs font-bold ml-1.5">
                           {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                         </ThemedText>
@@ -272,7 +317,8 @@ export function UserProfileModal({
                     </ThemedText>
                   </ThemedCard>
                 </Pressable>
-              ))
+                );
+              })
             )}
           </ScrollView>
         )}

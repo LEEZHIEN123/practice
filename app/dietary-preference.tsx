@@ -17,6 +17,7 @@ import {
   type ActivityKey,
   type DietaryPreference,
 } from "../context/registrationContext";
+import { ensureSupportChatWithAdmin } from "@/lib/communityService";
 import { auth, db } from "../firebaseConfig";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -169,6 +170,9 @@ export default function DietaryPreferenceScreen() {
         },
         { merge: true }
       );
+
+      // Support Admin welcome chat (non-blocking).
+      void ensureSupportChatWithAdmin();
 
       setOnboardingInProgress(false);
       reset();

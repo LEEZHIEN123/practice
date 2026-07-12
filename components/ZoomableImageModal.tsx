@@ -1,21 +1,32 @@
 import { Pressable } from "@/components/Pressable";
 import { Image } from "expo-image";
 import { useEffect } from "react";
-import { Dimensions, Modal, StatusBar, Text, View } from "react-native";
+import {
+  Dimensions,
+  Modal,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+} from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ZoomableImageModalProps = {
   visible: boolean;
-  uri: string;
+  /** Remote URL — used when `source` is not provided. */
+  uri?: string;
+  /** Local or remote image source (preferred when set). */
+  source?: ImageSourcePropType;
   onClose: () => void;
 };
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const IMAGE_H = SCREEN_H * 0.72;
 
-export function ZoomableImageModal({ visible, uri, onClose }: ZoomableImageModalProps) {
+export function ZoomableImageModal({ visible, uri, source, onClose }: ZoomableImageModalProps) {
   const insets = useSafeAreaInsets();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -23,6 +34,8 @@ export function ZoomableImageModal({ visible, uri, onClose }: ZoomableImageModal
   const translateY = useSharedValue(0);
   const savedX = useSharedValue(0);
   const savedY = useSharedValue(0);
+
+  const imageSource = source ?? (uri ? { uri } : null);
 
   useEffect(() => {
     if (!visible) {
@@ -89,14 +102,24 @@ export function ZoomableImageModal({ visible, uri, onClose }: ZoomableImageModal
     ],
   }));
 
+  if (!imageSource) return null;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView style={styles.root}>
         <StatusBar barStyle="light-content" />
-        <Pressable className="flex-1 bg-black" onPress={onClose}>
+
+        {/* Full-screen backdrop — tap anywhere empty to close */}
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
+          onPress={onClose}
+          accessibilityLabel="Close profile photo"
+        />
+
+        <View pointerEvents="box-none" style={styles.content}>
           <View
-            className="z-10 flex-row justify-end px-4"
-            style={{ paddingTop: insets.top + 8, paddingBottom: 12 }}
+            pointerEvents="box-none"
+            style={[styles.header, { paddingTop: insets.top + 8 }]}
           >
             <Pressable
               onPress={onClose}
@@ -106,21 +129,41 @@ export function ZoomableImageModal({ visible, uri, onClose }: ZoomableImageModal
             </Pressable>
           </View>
 
-          <View className="flex-1 items-center justify-center">
-            <Pressable onPress={() => {}}>
-              <GestureDetector gesture={composed}>
-                <Animated.View style={[{ width: SCREEN_W, height: IMAGE_H, alignItems: "center", justifyContent: "center" }, imageStyle]}>
-                  <Image
-                    source={{ uri }}
-                    style={{ width: SCREEN_W, height: IMAGE_H }}
-                    contentFit="contain"
-                  />
-                </Animated.View>
-              </GestureDetector>
-            </Pressable>
+          <View pointerEvents="box-none" style={styles.imageWrap}>
+            <GestureDetector gesture={composed}>
+              <Animated.View style={[{ width: SCREEN_W, height: IMAGE_H }, imageStyle]}>
+                <Image
+                  source={imageSource}
+                  style={{ width: SCREEN_W, height: IMAGE_H }}
+                  contentFit="contain"
+                />
+              </Animated.View>
+            </GestureDetector>
           </View>
-        </Pressable>
+        </View>
       </GestureHandlerRootView>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  content: {
+    flex: 1,
+  },
+  header: {
+    zIndex: 10,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  imageWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

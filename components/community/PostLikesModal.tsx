@@ -1,7 +1,8 @@
 import { Pressable } from "@/components/Pressable";
+import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { useProfileCardStyles } from "@/components/themed/ThemedUi";
-import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { LikerProfile } from "@/lib/communityService";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
@@ -11,6 +12,8 @@ type PostLikesModalProps = {
   visible: boolean;
   likers: LikerProfile[];
   loading: boolean;
+  currentUserId?: string | null;
+  friendIds?: Set<string> | string[];
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
 };
@@ -19,12 +22,16 @@ export function PostLikesModal({
   visible,
   likers,
   loading,
+  currentUserId = null,
+  friendIds,
   onClose,
   onOpenProfile,
 }: PostLikesModalProps) {
   const insets = useSafeAreaInsets();
   const { textPrimary, textSecondary, theme } = useThemedScreen();
   const { modalCardStyle, rowStyle } = useProfileCardStyles();
+  const friendSet =
+    friendIds instanceof Set ? friendIds : new Set(Array.isArray(friendIds) ? friendIds : []);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -49,38 +56,49 @@ export function PostLikesModal({
                   No likes yet.
                 </Text>
               ) : (
-                likers.map((liker) => (
-                  <Pressable
-                    key={liker.id}
-                    onPress={() => onOpenProfile(liker.id)}
-                    className="flex-row items-center rounded-2xl px-4 py-3 mb-2"
-                    style={rowStyle}
-                  >
-                    <View className="w-10 h-10 rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden">
-                      {liker.profileImage ? (
-                        <Image
-                          source={{ uri: liker.profileImage }}
-                          style={{ width: 40, height: 40 }}
-                          contentFit="cover"
+                likers.map((liker) => {
+                  const isMe = Boolean(currentUserId && liker.id === currentUserId);
+                  const isFriend = !isMe && friendSet.has(liker.id);
+                  return (
+                    <Pressable
+                      key={liker.id}
+                      onPress={() => onOpenProfile(liker.id)}
+                      className="flex-row items-center rounded-2xl px-4 py-3 mb-2"
+                      style={rowStyle}
+                    >
+                      <View className="w-10 h-10 rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden">
+                        {liker.profileImage ? (
+                          <Image
+                            source={{ uri: liker.profileImage }}
+                            style={{ width: 40, height: 40 }}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <Ionicons name="person" size={18} color="white" />
+                        )}
+                      </View>
+                      <View className="flex-1 ml-3 flex-row items-center flex-wrap">
+                        <Text className="text-base font-extrabold" style={textPrimary}>
+                          {liker.name}
+                        </Text>
+                        <PersonNameSuffix
+                          isMe={isMe}
+                          isFriend={isFriend}
+                          accentColor={theme.accentText}
                         />
-                      ) : (
-                        <Ionicons name="person" size={18} color="white" />
-                      )}
-                    </View>
-                    <Text className="ml-3 text-base font-extrabold" style={textPrimary}>
-                      {liker.name}
-                    </Text>
-                  </Pressable>
-                ))
+                      </View>
+                    </Pressable>
+                  );
+                })
               )}
             </ScrollView>
           )}
           <Pressable
             onPress={onClose}
-            className="mx-5 mt-2 rounded-full py-3.5 items-center"
-            style={rowStyle}
+            className="mx-5 mt-2 rounded-full py-4 items-center border-2"
+            style={[rowStyle, { borderColor: theme.cardBorder }]}
           >
-            <Text className="text-sm font-extrabold" style={textSecondary}>
+            <Text className="text-base font-extrabold tracking-wide" style={textSecondary}>
               Close
             </Text>
           </Pressable>

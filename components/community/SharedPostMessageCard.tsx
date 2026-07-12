@@ -1,7 +1,9 @@
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import type { ChatMessage, CommunityPost } from "@/lib/communityTypes";
+import { SUPPORT_ADMIN_NAME } from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
+import { SupportAdminBadge } from "@/components/community/CommunityAuthorName";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
@@ -83,9 +85,12 @@ export function SharedPostMessageCard({ data, onPress }: SharedPostMessageCardPr
         <View className="flex-row items-center">
           <ProfileAvatar uri={data.authorProfileImage} />
           <View className="flex-1 ml-3">
-            <Text className="text-sm font-extrabold" style={textPrimary} numberOfLines={1}>
-              {data.authorName}
-            </Text>
+            <View className="flex-row items-center">
+              <Text className="text-sm font-extrabold" style={textPrimary} numberOfLines={1}>
+                {data.authorName}
+              </Text>
+              {data.authorName === SUPPORT_ADMIN_NAME ? <SupportAdminBadge size={14} /> : null}
+            </View>
             {data.createdAt ? (
               <Text className="text-[10px] mt-0.5" style={textMuted}>
                 {formatPostDisplayTime(data.createdAt)}

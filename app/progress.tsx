@@ -8,6 +8,7 @@ import {
   ProgressMetricValue,
 } from "@/components/progress/ProgressMetricCard";
 import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
+import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
@@ -19,6 +20,7 @@ import {
   buildLatestWeightByDay,
   buildWeightBucketSeries,
   buildWeightSeriesForDays,
+  resyncAutoFilledWeightsAfterDay,
   syncWeightAutoFillAtMidnight,
   weightBarHeight,
   weightLogDayKey,
@@ -628,15 +630,16 @@ export default function ProgressScreen() {
       q,
       (snap) => {
         const rows = snap.docs
-          .map((d) => d.data() as any)
-          .map((row) => ({
-            weight: typeof row.weight === "number" ? row.weight : null,
-            createdAt: getCreatedAtDate(row.logDate ?? row.createdAt),
-          }))
-          .filter((r) => typeof r.weight === "number" && r.createdAt instanceof Date) as {
-            weight: number;
-            createdAt: Date;
-          }[];
+          .map((d) => {
+            const row = d.data() as any;
+            return {
+              id: d.id,
+              weight: typeof row.weight === "number" ? row.weight : null,
+              createdAt: getCreatedAtDate(row.logDate ?? row.createdAt),
+              autoFilled: row.autoFilled === true,
+            };
+          })
+          .filter((r) => typeof r.weight === "number" && r.createdAt instanceof Date) as WeightLogRow[];
         setWeightProgressLogRows(rows);
       },
       (e) => {
@@ -707,6 +710,7 @@ export default function ProgressScreen() {
           const buckets = [0, 0, 0, 0];
           const counts = [0, 0, 0, 0];
           for (const r of rows) {
+            if (r.autoFilled) continue;
             if (r.createdAt < monthStart) continue;
             if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear())
               continue;
@@ -725,6 +729,7 @@ export default function ProgressScreen() {
         const sums = Array.from({ length: 12 }, () => 0);
         const counts = Array.from({ length: 12 }, () => 0);
         for (const r of rows) {
+          if (r.autoFilled) continue;
           if (r.createdAt.getFullYear() !== year) continue;
           const m = r.createdAt.getMonth(); // 0..11
           sums[m] += r.weight;
@@ -1220,6 +1225,15 @@ export default function ProgressScreen() {
         logDate: Timestamp.fromDate(startOfDay(logDate)),
       });
 
+      const editedDayKey = formatCalendarDayKey(startOfDay(logDate), calendarTz);
+      await resyncAutoFilledWeightsAfterDay({
+        uid: user.uid,
+        editedDayKey,
+        newWeightKg: nextW,
+        calendarTz,
+        existingRows: weightProgressLogRows,
+      }).catch((e) => console.log("weight auto-fill resync failed:", e));
+
       setWeightKg(nextW);
       setHasWeightLogs(true);
       // Reflect the just-saved log immediately in the headline metric.
@@ -1246,7 +1260,10 @@ export default function ProgressScreen() {
             Progress
           </Text>
           <Pressable
-            onPress={() => router.push("/profile")}
+            onPress={() => {
+              rememberBottomTabRoute("/progress");
+              router.push("/profile");
+            }}
             className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
             style={iconButtonStyle}
           >
@@ -1453,12 +1470,9 @@ export default function ProgressScreen() {
                 <View className="flex-1 flex-row items-end px-4 pb-2">
                   {(() => {
                     const padded = workoutSeries.length ? workoutSeries : chartLabels.map(() => 0);
-                    const min = Math.min(...padded);
-                    const max = Math.max(...padded);
-                    const span = max - min || 1;
 
                     return padded.map((v, idx) => {
-                      const h = 10 + Math.round(((v - min) / span) * 50);
+                      const h = weightBarHeight(v, padded);
                       const active = hoverIdx === idx;
                       return (
                         <View key={`wbar-${idx}`} className="flex-1 items-center justify-end">
@@ -1487,12 +1501,9 @@ export default function ProgressScreen() {
                 <View className="flex-1 flex-row items-end px-4 pb-2">
                   {(() => {
                     const padded = mealSeries.length ? mealSeries : chartLabels.map(() => 0);
-                    const min = Math.min(...padded);
-                    const max = Math.max(...padded);
-                    const span = max - min || 1;
 
                     return padded.map((v, idx) => {
-                      const h = v === 0 ? 10 : 10 + Math.round(((v - min) / span) * 50);
+                      const h = weightBarHeight(v, padded);
                       const active = hoverIdx === idx;
                       return (
                         <View key={`mbar-${idx}`} className="flex-1 items-center justify-end">
@@ -1564,14 +1575,16 @@ export default function ProgressScreen() {
               ) : waterSuggestedMl != null ? (
                 <ProgressMetricDetail>
                   Today&apos;s water intake suggestion:{" "}
-                  <Text className="font-extrabold text-amber-200">
+                  <Text className="font-extrabold" style={{ color: "#fde68a" }}>
                     {waterSuggestedMl.toLocaleString()} ml
                   </Text>
                 </ProgressMetricDetail>
               ) : (
                 <ProgressMetricDetail>
                   Today suggestion:{" "}
-                  <Text className="font-extrabold text-amber-200">unavailable</Text>
+                  <Text className="font-extrabold" style={{ color: "#fde68a" }}>
+                    unavailable
+                  </Text>
                 </ProgressMetricDetail>
               )}
               <ProgressMetricLink bright>Tap to record</ProgressMetricLink>

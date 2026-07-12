@@ -22,6 +22,7 @@ import {
     resolveFriendRequestNotification,
     subscribeNotifications,
     subscribePosts,
+    SUPPORT_ADMIN_NAME,
 } from "@/lib/communityService";
 import type { CommunityNotification, CommunityPost, FriendRelation, PublicUserProfile } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -35,17 +36,33 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { db } from "../firebaseConfig";
 import type { FriendRequest } from "../lib/communityTypes";
 
-function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
+function ProfileAvatar({
+  uri,
+  size = 48,
+  isSupportAdmin = false,
+}: {
+  uri: string | null;
+  size?: number;
+  isSupportAdmin?: boolean;
+}) {
   const { theme } = useThemedScreen();
   return (
     <View
       className="rounded-full items-center justify-center overflow-hidden"
-      style={{ width: size, height: size, backgroundColor: theme.accent }}
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: isSupportAdmin ? "#dbeafe" : theme.accent,
+      }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
       ) : (
-        <Ionicons name="person" size={size * 0.42} color="white" />
+        <Ionicons
+          name={isSupportAdmin ? "shield-checkmark" : "person"}
+          size={size * 0.42}
+          color={isSupportAdmin ? "#2563eb" : "white"}
+        />
       )}
     </View>
   );
@@ -308,7 +325,10 @@ export default function CommunityNotificationsScreen() {
     }
 
     if (
-      (notification.type === "post_like" || notification.type === "post_comment") &&
+      (notification.type === "post_like" ||
+        notification.type === "post_comment" ||
+        notification.type === "post_reported" ||
+        notification.type === "comment_reported") &&
       notification.postId
     ) {
       if (!notification.read) {
@@ -324,6 +344,9 @@ export default function CommunityNotificationsScreen() {
       });
     }
   };
+
+  const isReportNotice = (notification: CommunityNotification) =>
+    notification.type === "post_reported" || notification.type === "comment_reported";
 
   const notificationMessage = (notification: CommunityNotification) => {
     switch (notification.type) {
@@ -342,10 +365,17 @@ export default function CommunityNotificationsScreen() {
       case "post_comment":
         return "commented on your post";
       case "post_reported":
-        return "reported your post. Support Admin will review it";
+        return "Your post is hidden and pending Support Admin review";
+      case "comment_reported":
+        return "Your comment is hidden and pending Support Admin review";
       default:
         return "sent you a notification";
     }
+  };
+
+  const notificationTitle = (notification: CommunityNotification) => {
+    if (isReportNotice(notification)) return SUPPORT_ADMIN_NAME;
+    return notification.fromUserName;
   };
 
   const isPendingFriendRequest = (notification: CommunityNotification) =>
@@ -477,11 +507,15 @@ export default function CommunityNotificationsScreen() {
                         />
                       </View>
                     ) : null}
-                    <ProfileAvatar uri={notification.fromUserProfileImage} size={44} />
+                    <ProfileAvatar
+                      uri={notification.fromUserProfileImage}
+                      size={44}
+                      isSupportAdmin={isReportNotice(notification)}
+                    />
                     <View className="flex-1 ml-3" style={unread && !manageMode ? { paddingRight: 14 } : undefined}>
                       <View className="flex-row items-start justify-between gap-2">
                         <ThemedText className="text-sm font-extrabold flex-1">
-                          {notification.fromUserName}
+                          {notificationTitle(notification)}
                         </ThemedText>
                         <ThemedText variant="muted" className="text-[10px]">
                           {formatChatMessageTime(notification.createdAt)}

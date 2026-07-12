@@ -75,12 +75,13 @@ export function ChatFormattedText({
   text,
   className = "text-base leading-6 text-left",
   boldClassName = "font-extrabold",
+  style,
   ...textProps
 }: ChatFormattedTextProps) {
   const lines = text.split("\n");
 
   return (
-    <Text className={className} {...textProps}>
+    <Text className={className} style={[{ flexShrink: 1 }, style]} {...textProps}>
       {lines.map((line, lineIndex) => {
         const segments = parseInlineSegments(formatLine(line));
         return (
@@ -91,7 +92,7 @@ export function ChatFormattedText({
                   {segment.value}
                 </Text>
               ) : (
-                segment.value
+                <Text key={`s-${lineIndex}-${segmentIndex}`}>{segment.value}</Text>
               )
             )}
             {lineIndex < lines.length - 1 ? "\n" : null}

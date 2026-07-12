@@ -15,7 +15,9 @@ import {
   getPublicUserProfile,
   requestBlockedPostReReview,
   subscribeMyAuthoredPosts,
+  subscribePendingCommunityPostIds,
 } from "@/lib/communityService";
+import { removeCommunityPost } from "@/lib/communityBootstrap";
 import type { CommunityPost, PublicUserProfile } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -69,9 +71,15 @@ export default function CommunityMyPostsScreen() {
   const [menuPost, setMenuPost] = useState<CommunityPost | null>(null);
   const [reReviewPost, setReReviewPost] = useState<CommunityPost | null>(null);
   const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
+  const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setUid(user?.uid ?? null));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribePendingCommunityPostIds(setPendingReviewPostIds);
     return unsub;
   }, []);
 
@@ -137,24 +145,44 @@ export default function CommunityMyPostsScreen() {
   };
 
   const handleDelete = (post: CommunityPost) => {
-    Alert.alert("Delete post", "Delete this post permanently?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          void deletePost(post.id).catch((e: unknown) => {
-            Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
-          });
+    const pendingReview = post.underReview || post.blocked;
+    Alert.alert(
+      "Delete post",
+      pendingReview
+        ? "This post is under Support Admin review. Delete it permanently? It will be removed for everyone and cleared from the admin review queue."
+        : "Delete this post permanently?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            // Remove from Community feed immediately; Firestore delete follows.
+            removeCommunityPost(post.id);
+            setAuthoredPosts((prev) => prev.filter((item) => item.id !== post.id));
+            setMenuPost(null);
+            void deletePost(post.id).catch((e: unknown) => {
+              Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
+            });
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   return (
     <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 12 }} className="px-4">
-        <ProfileScreenHeader title="My Profile" onBack={() => router.back()} />
+        <ProfileScreenHeader
+          title="My Profile"
+          onBack={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/community" as any);
+            }
+          }}
+        />
       </View>
 
       <ScrollView
@@ -356,13 +384,23 @@ export default function CommunityMyPostsScreen() {
 
                   {post.blocked ? (
                     <View
-                      className="mt-3 rounded-xl px-3 py-2 border"
+                      className="mt-2.5 rounded-lg px-2.5 py-1.5 border"
                       style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca" }}
                     >
-                      <Text className="text-xs font-semibold text-[#b91c1c]">
+                      <Text className="text-[11px] font-semibold text-[#b91c1c]">
                         {post.underReview
-                          ? "Still hidden · Support Admin is checking your request again."
-                          : "Hidden by Support Admin · Only you can see this."}
+                          ? "Hidden while Support Admin reviews your request."
+                          : "Hidden by Support Admin. Only you can see this here."}
+                      </Text>
+                    </View>
+                  ) : post.underReview || pendingReviewPostIds.includes(post.id) ? (
+                    <View
+                      className="mt-2.5 rounded-lg px-2.5 py-1.5 border"
+                      style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
+                    >
+                      <Text className="text-[11px] font-semibold text-[#c2410c]">
+                        Reported and under review by Support Admin. Please follow community
+                        guidelines.
                       </Text>
                     </View>
                   ) : null}
@@ -395,7 +433,11 @@ export default function CommunityMyPostsScreen() {
                   ) : null}
                   <View className="flex-row items-center mt-3 gap-4">
                     <View className="flex-row items-center">
-                      <Ionicons name="heart" size={16} color="#ef4444" />
+                      <Ionicons
+                        name={uid && post.likedBy.includes(uid) ? "heart" : "heart-outline"}
+                        size={16}
+                        color={uid && post.likedBy.includes(uid) ? "#ef4444" : "#52B69A"}
+                      />
                       <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accentText }}>
                         {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                       </Text>
@@ -448,6 +490,12 @@ export default function CommunityMyPostsScreen() {
         onSubmit={async (reason) => {
           if (!reReviewPost) return;
           await requestBlockedPostReReview(reReviewPost.id, reason);
+          setPosts((prev) =>
+            prev.map((item) =>
+              item.id === reReviewPost.id ? { ...item, underReview: true } : item
+            )
+          );
+          setReReviewPost(null);
         }}
       />
 

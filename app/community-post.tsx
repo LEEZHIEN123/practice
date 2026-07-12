@@ -1,8 +1,17 @@
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { CommentReviewTip } from "@/components/community/CommentReviewTip";
+import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
+import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
+import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
+import { PostComposerModal } from "@/components/community/PostComposerModal";
+import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostLikesModal } from "@/components/community/PostLikesModal";
+import { PostMenuModal } from "@/components/community/PostMenuModal";
+import { ReportReasonModal } from "@/components/community/ReportReasonModal";
+import { ReReviewReasonModal } from "@/components/community/ReReviewReasonModal";
+import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { Pressable } from "@/components/Pressable";
 import { ProfileScreenHeader, ThemedText } from "@/components/themed/ThemedUi";
@@ -11,21 +20,32 @@ import {
   addComment,
   adminBlockComment,
   deleteComment,
-  displayCommunityUserName,
+  deletePost,
   getPostsByAuthor,
   getPublicUserProfile,
   isCommunityAdminUserId,
   loadLikerProfiles,
+  requestBlockedPostReReview,
   resolveAdminUid,
+  submitReport,
+  subscribeChats,
   subscribeComments,
+  subscribeFriendsList,
   subscribePendingCommunityCommentIds,
+  subscribePendingCommunityPostIds,
   subscribePostById,
   subscribePosts,
   threadedComments,
   togglePostLike,
+  updatePost,
   type LikerProfile,
 } from "@/lib/communityService";
-import type { CommunityComment, CommunityPost } from "@/lib/communityTypes";
+import type {
+  ChatConversation,
+  CommunityComment,
+  CommunityPost,
+  FriendListEntry,
+} from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -35,6 +55,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -44,6 +65,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
+import { removeCommunityPost } from "@/lib/communityBootstrap";
 
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
   return (
@@ -87,6 +109,18 @@ export default function CommunityPostScreen() {
   const [likesPost, setLikesPost] = useState<CommunityPost | null>(null);
   const [likers, setLikers] = useState<LikerProfile[]>([]);
   const [likersLoading, setLikersLoading] = useState(false);
+  const [friends, setFriends] = useState<FriendListEntry[]>([]);
+  const [menuPostVisible, setMenuPostVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
+  const [composerVisible, setComposerVisible] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [reReviewVisible, setReReviewVisible] = useState(false);
+  const [chats, setChats] = useState<ChatConversation[]>([]);
+  const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
+
+  const friendIds = useMemo(() => new Set(friends.map((f) => f.id)), [friends]);
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -100,6 +134,24 @@ export default function CommunityPostScreen() {
     () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId) : []),
     [profileUserId, allPosts]
   );
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setFriends([]);
+      return;
+    }
+    const unsub = subscribeFriendsList(setFriends);
+    return unsub;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setChats([]);
+      return;
+    }
+    const unsub = subscribeChats(setChats);
+    return unsub;
+  }, [currentUserId]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setCurrentUserId(user?.uid ?? null));
@@ -122,6 +174,11 @@ export default function CommunityPostScreen() {
 
   useEffect(() => {
     const unsub = subscribePosts(setAllPosts);
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribePendingCommunityPostIds(setPendingReviewPostIds);
     return unsub;
   }, []);
 
@@ -228,6 +285,8 @@ export default function CommunityPostScreen() {
       });
       setCommentText("");
       setReplyingTo(null);
+      Keyboard.dismiss();
+      Alert.alert("Comment sent", "Your comment has been posted.");
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not add comment.");
     } finally {
@@ -237,7 +296,13 @@ export default function CommunityPostScreen() {
 
   const handleDeleteComment = (comment: CommunityComment) => {
     if (!post) return;
-    Alert.alert("Delete comment", "Delete your comment?", [
+    const isOwnComment = comment.authorId === currentUserId;
+    const message = isOwnComment
+      ? "Delete your comment?"
+      : isAdmin
+        ? "Delete this comment? It will be removed for everyone."
+        : "Delete this comment from your post?";
+    Alert.alert("Delete comment", message, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -293,9 +358,70 @@ export default function CommunityPostScreen() {
     );
   };
 
+  const handleDeletePost = () => {
+    if (!post) return;
+    const pendingReview = post.underReview || post.blocked;
+    Alert.alert(
+      "Delete post",
+      pendingReview
+        ? "This post is under Support Admin review. Delete it permanently? It will be removed for everyone and cleared from the admin review queue."
+        : "Are you sure you want to delete this post? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                removeCommunityPost(post.id);
+                await deletePost(post.id);
+                router.back();
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUpdatePost = async (values: {
+    content: string;
+    tags: string[];
+    achievementIds: string[];
+  }) => {
+    if (!post) return;
+    try {
+      setPosting(true);
+      await updatePost(post, {
+        content: values.content,
+        imageUrl: post.imageUrl,
+        tags: values.tags,
+        achievementIds: values.achievementIds,
+      });
+      setComposerVisible(false);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not save post.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
   const liked = currentUserId && post ? post.likedBy.includes(currentUserId) : false;
   const isOwnPost = post?.authorId === currentUserId;
   const menuCommentBusy = menuComment != null && deletingCommentId === menuComment.id;
+  const isUnderReview =
+    post != null &&
+    !post.blocked &&
+    (post.underReview || pendingReviewPostIds.includes(post.id));
+  const canReportPost =
+    post != null &&
+    !isOwnPost &&
+    post.authorId !== adminUid &&
+    !isUnderReview &&
+    !post.blocked;
 
   return (
     <View className="flex-1" style={screenStyle}>
@@ -334,19 +460,32 @@ export default function CommunityPostScreen() {
                   onPress={() => void openUserProfile(post.authorId)}
                   className="flex-1 ml-3"
                 >
-                  <Text className="text-base font-extrabold" style={textPrimary}>
-                    {displayCommunityUserName(post.authorId, post.authorName, adminUid)}
-                    {isOwnPost ? (
-                      <Text className="text-sm font-bold" style={{ color: theme.accentText }}>
-                        {" "}
-                        · me
-                      </Text>
-                    ) : null}
-                  </Text>
+                  <CommunityAuthorName
+                    authorId={post.authorId}
+                    authorName={post.authorName}
+                    adminUid={adminUid}
+                    textStyle={textPrimary}
+                    ownSuffix={
+                      isOwnPost ? (
+                        <Text className="text-sm font-bold" style={{ color: theme.accentText }}>
+                          {" "}
+                          · me
+                        </Text>
+                      ) : null
+                    }
+                  />
                   <Text className="text-[10px] mt-0.5" style={textMuted}>
                     {formatPostDisplayTime(post.createdAt)}
                   </Text>
                 </Pressable>
+                {currentUserId ? (
+                  <Pressable
+                    onPress={() => setMenuPostVisible(true)}
+                    className="w-9 h-9 rounded-full items-center justify-center"
+                  >
+                    <Ionicons name="ellipsis-vertical" size={20} color={theme.iconMuted} />
+                  </Pressable>
+                ) : null}
               </View>
 
               {post.blocked ? (
@@ -356,19 +495,13 @@ export default function CommunityPostScreen() {
                 >
                   <Text className="text-xs font-semibold text-[#b91c1c]">
                     {post.underReview
-                      ? "Still hidden · Support Admin is checking your request again."
-                      : "Hidden by Support Admin · Only you can see this."}
+                      ? "This post is still hidden while Support Admin reviews your request to check it again."
+                      : "This post was reported and has been hidden by Support Admin. Only you can see it here."}
                   </Text>
                 </View>
-              ) : post.underReview ? (
-                <View
-                  className="mt-3 rounded-xl px-3 py-2 border"
-                  style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
-                >
-                  <Text className="text-xs font-semibold text-[#c2410c]">
-                    Notice: This post is under review by Support Admin. Please be respectful and
-                    follow community guidelines.
-                  </Text>
+              ) : isUnderReview ? (
+                <View className="mt-2">
+                  <PostPendingReviewTip variant={isOwnPost ? "author" : "public"} />
                 </View>
               ) : null}
 
@@ -463,6 +596,15 @@ export default function CommunityPostScreen() {
                         >
                           <Text className="text-sm font-extrabold" style={textPrimary}>
                             {comment.authorName}
+                            <PersonNameSuffix
+                              isMe={comment.authorId === currentUserId}
+                              isFriend={
+                                comment.authorId !== currentUserId &&
+                                friendIds.has(comment.authorId)
+                              }
+                              accentColor={theme.accentText}
+                              textClassName="text-sm font-bold"
+                            />
                           </Text>
                         </Pressable>
                         <Text className="text-[10px]" style={textMuted}>
@@ -471,8 +613,9 @@ export default function CommunityPostScreen() {
                       </View>
                     </View>
                     {currentUserId &&
-                    (comment.authorId === currentUserId ||
-                      (comment.authorId !== currentUserId && comment.authorId !== adminUid)) ? (
+                    (isAdmin ||
+                      comment.authorId === currentUserId ||
+                      post.authorId === currentUserId) ? (
                       <Pressable
                         onPress={() => setMenuComment(comment)}
                         className="w-8 h-8 rounded-full items-center justify-center"
@@ -568,12 +711,11 @@ export default function CommunityPostScreen() {
       <CommentMenuModal
         visible={menuComment !== null}
         comment={menuComment}
-        canDelete={menuComment != null && menuComment.authorId === currentUserId}
-        canReport={
-          !isAdmin &&
+        canDelete={
           menuComment != null &&
-          menuComment.authorId !== currentUserId &&
-          menuComment.authorId !== adminUid
+          (isAdmin ||
+            menuComment.authorId === currentUserId ||
+            post?.authorId === currentUserId)
         }
         isAdmin={isAdmin}
         canBlock={
@@ -585,10 +727,6 @@ export default function CommunityPostScreen() {
         onClose={() => setMenuComment(null)}
         onDelete={() => {
           if (menuComment) handleDeleteComment(menuComment);
-        }}
-        onReport={() => {
-          setMenuComment(null);
-          Alert.alert("Report", "Open this post from Community to report comments.");
         }}
         onBlock={() => {
           if (menuComment) requestBlockComment(menuComment);
@@ -607,6 +745,8 @@ export default function CommunityPostScreen() {
         visible={likesPost !== null}
         likers={likers}
         loading={likersLoading}
+        currentUserId={currentUserId}
+        friendIds={friendIds}
         onClose={() => {
           setLikesPost(null);
           setLikers([]);
@@ -627,11 +767,99 @@ export default function CommunityPostScreen() {
         isSelf={profileUserId === currentUserId}
         isSupportAdmin={profileUserId === adminUid}
         canAddFriend={false}
+        pendingReviewPostIds={pendingReviewPostIds}
         onClose={() => {
           setProfileUserId(null);
           setProfileData(null);
         }}
         onAddFriend={() => {}}
+        onOpenPost={(openedPostId) => {
+          setProfileUserId(null);
+          setProfileData(null);
+          if (openedPostId === postId) return;
+          router.push({
+            pathname: "/community-post" as any,
+            params: { postId: openedPostId },
+          });
+        }}
+      />
+
+      <PostMenuModal
+        visible={menuPostVisible && post != null}
+        post={post}
+        isOwnPost={Boolean(isOwnPost)}
+        isAdmin={isAdmin}
+        canReport={canReportPost}
+        onClose={() => setMenuPostVisible(false)}
+        onEdit={() => setComposerVisible(true)}
+        onDelete={handleDeletePost}
+        onEditHistory={() => setHistoryVisible(true)}
+        onReport={() => setReportVisible(true)}
+        onShare={() => setShareVisible(true)}
+        onRequestReReview={
+          post?.blocked && !post.underReview ? () => setReReviewVisible(true) : undefined
+        }
+      />
+
+      <PostComposerModal
+        visible={composerVisible}
+        title="Edit post"
+        submitting={posting}
+        initial={
+          post
+            ? {
+                content: post.content,
+                tags: post.tags,
+                achievementIds: post.achievementIds ?? [],
+              }
+            : undefined
+        }
+        onClose={() => setComposerVisible(false)}
+        onSubmit={handleUpdatePost}
+      />
+
+      <PostEditHistoryModal
+        visible={historyVisible}
+        authorName={post?.authorName ?? ""}
+        history={post?.editHistory ?? []}
+        onClose={() => setHistoryVisible(false)}
+      />
+
+      <ReportReasonModal
+        visible={reportVisible}
+        title="Report Post"
+        onClose={() => setReportVisible(false)}
+        onSubmit={async (reason) => {
+          if (!post) return;
+          await submitReport({
+            targetType: "post",
+            targetId: post.id,
+            postId: post.id,
+            reason,
+            targetContent: post.content,
+            targetAuthorId: post.authorId,
+            targetAuthorName: post.authorName,
+          });
+        }}
+      />
+
+      <SharePostToChatModal
+        visible={shareVisible}
+        post={post}
+        chats={chats}
+        currentUserId={currentUserId}
+        adminUid={adminUid}
+        onClose={() => setShareVisible(false)}
+      />
+
+      <ReReviewReasonModal
+        visible={reReviewVisible}
+        onClose={() => setReReviewVisible(false)}
+        onSubmit={async (reason) => {
+          if (!post) return;
+          await requestBlockedPostReReview(post.id, reason);
+          setPost((prev) => (prev ? { ...prev, underReview: true } : prev));
+        }}
       />
     </View>
   );

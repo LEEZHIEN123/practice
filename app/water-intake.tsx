@@ -624,7 +624,7 @@ export default function WaterIntakeScreen() {
         </ThemedCard>
 
         <ThemedCard className="mt-6 p-5 pt-8 pb-10">
-          <ThemedText className="text-sm tracking-[0.12em] font-extrabold">WATER INTAKE RECORD</ThemedText>
+          <ThemedText className="text-base tracking-[0.12em] font-extrabold">WATER INTAKE RECORD</ThemedText>
           <ThemedText variant="muted" className="text-xs mt-1">
             History includes today and previous days. Filter by day or pick a date.
           </ThemedText>
@@ -718,17 +718,34 @@ export default function WaterIntakeScreen() {
                 No water recorded for this day. Try &quot;All days&quot; or another date.
               </ThemedText>
             ) : (
-              filteredGroupedWater.map((g) => (
+              filteredGroupedWater.map((g) => {
+                const isCurrentDay = g.dateKey === todayDayKey;
+                return (
                 <View
                   key={g.dateKey}
                   className="rounded-2xl overflow-hidden border-2"
-                  style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
+                  style={{
+                    borderColor: isCurrentDay ? theme.danger : theme.cardBorder,
+                    backgroundColor: theme.cardBg,
+                  }}
                 >
                   <View
                     className="border-b-2 px-4 py-3"
-                    style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                    style={{
+                      backgroundColor: theme.accentSoft,
+                      borderBottomColor: isCurrentDay ? theme.danger : theme.accent,
+                    }}
                   >
-                    <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
+                    <View className="flex-row items-center">
+                      <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">
+                        DAY
+                      </ThemedText>
+                      {isCurrentDay ? (
+                        <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
+                          Current
+                        </ThemedText>
+                      ) : null}
+                    </View>
                     <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
                   </View>
                   <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
@@ -777,7 +794,8 @@ export default function WaterIntakeScreen() {
                     </ThemedText>
                   </View>
                 </View>
-              ))
+                );
+              })
             )}
           </View>
         </ThemedCard>

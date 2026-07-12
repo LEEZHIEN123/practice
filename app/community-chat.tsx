@@ -150,6 +150,32 @@ export default function CommunityChatScreen() {
   const { cardStyle, textSecondary, theme } = useThemedScreen();
   const { inputStyle, placeholderColor, rowBorderStyle } = useProfileCardStyles();
   const scrollRef = useRef<ScrollView>(null);
+  const initialScrollDoneForChat = useRef<string | null>(null);
+  const stickToBottomRef = useRef(true);
+  const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [messagesHydrated, setMessagesHydrated] = useState(false);
+
+  const clearScrollTimers = useCallback(() => {
+    scrollTimersRef.current.forEach(clearTimeout);
+    scrollTimersRef.current = [];
+  }, []);
+
+  const scrollToBottom = useCallback(
+    (animated = false) => {
+      stickToBottomRef.current = true;
+      clearScrollTimers();
+      const run = () => {
+        scrollRef.current?.scrollToEnd({ animated });
+      };
+      run();
+      requestAnimationFrame(run);
+      // Long Support Admin auto-messages need a short follow-up after layout.
+      scrollTimersRef.current.push(setTimeout(run, 100));
+      scrollTimersRef.current.push(setTimeout(run, 320));
+    },
+    [clearScrollTimers]
+  );
+
   const params = useLocalSearchParams<{
     chatId?: string;
     name?: string;
@@ -197,7 +223,10 @@ export default function CommunityChatScreen() {
     () => messages.some((message) => message.text === SUPPORT_CHAT_WELCOME_MESSAGE),
     [messages]
   );
-  const showSupportWelcome = isSupportAdminUser && !hasPersistedWelcome;
+  // Only show the local welcome bubble while the thread is still empty.
+  // After a report auto-message exists, do not stack a fake welcome on top.
+  const showSupportWelcome =
+    isSupportAdminUser && messagesHydrated && messages.length === 0 && !hasPersistedWelcome;
 
   const profilePosts = useMemo(
     () => (otherUserId ? getPostsByAuthor(allPosts, otherUserId) : []),
@@ -244,14 +273,14 @@ export default function CommunityChatScreen() {
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const showSub = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(event.endCoordinates.height);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      scrollToBottom(true);
     });
     const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [scrollToBottom]);
 
   useEffect(() => {
     if (keyboardHeight > 0) setStickerPickerVisible(false);
@@ -259,10 +288,24 @@ export default function CommunityChatScreen() {
 
   useEffect(() => {
     if (!chatId) return;
-    const unsub = subscribeMessages(chatId, setMessages, currentUserId);
+    initialScrollDoneForChat.current = null;
+    stickToBottomRef.current = true;
+    setMessages([]);
+    setMessagesHydrated(false);
+    const unsub = subscribeMessages(
+      chatId,
+      (next) => {
+        setMessages(next);
+        setMessagesHydrated(true);
+      },
+      currentUserId
+    );
     void markChatRead(chatId).catch(() => {});
-    return unsub;
-  }, [chatId, currentUserId]);
+    return () => {
+      clearScrollTimers();
+      unsub();
+    };
+  }, [chatId, currentUserId, clearScrollTimers]);
 
   useEffect(() => {
     if (!isSupportAdminUser || !chatId || isAdminUser) return;
@@ -286,7 +329,7 @@ export default function CommunityChatScreen() {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (isSupport || isAdminUser) {
+    if (isSupportAdminUser || isAdminUser) {
       setCanSendMessages(true);
       return;
     }
@@ -302,18 +345,30 @@ export default function CommunityChatScreen() {
       () => setCanSendMessages(false)
     );
     return unsub;
-  }, [currentUserId, otherUserId, isSupport, isAdminUser]);
+  }, [currentUserId, otherUserId, isSupportAdminUser, isAdminUser]);
 
   useEffect(() => {
-    if (!otherUserId || !currentUserId || isSupport) return;
+    if (!otherUserId || !currentUserId || isSupportAdminUser) return;
     void loadFriendRelations([otherUserId]).then((relations) => {
       setProfileRelation(relations[otherUserId] ?? "none");
     });
-  }, [canSendMessages, otherUserId, currentUserId, isSupport]);
+  }, [canSendMessages, otherUserId, currentUserId, isSupportAdminUser]);
 
   useEffect(() => {
-    scrollRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+    if (!chatId || !messagesHydrated) return;
+    if (messages.length === 0 && !showSupportWelcome) return;
+
+    const isFirstPaint = initialScrollDoneForChat.current !== chatId;
+    if (isFirstPaint) {
+      initialScrollDoneForChat.current = chatId;
+      // Jump instantly to the latest message when opening the chat (e.g. Support Admin auto-reply).
+      scrollToBottom(false);
+      return;
+    }
+    if (stickToBottomRef.current) {
+      scrollToBottom(true);
+    }
+  }, [chatId, messages, messagesHydrated, showSupportWelcome, scrollToBottom]);
 
   const senderImage = (senderId: string) => {
     if (senderId === currentUserId) return myProfileImage;
@@ -454,7 +509,7 @@ export default function CommunityChatScreen() {
       await sendChatMessage(chatId, { stickerId: sticker.id, quote });
       setQuotingMessage(null);
       setStickerPickerVisible(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => scrollToBottom(true), 100);
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not send sticker.");
     } finally {
@@ -470,14 +525,14 @@ export default function CommunityChatScreen() {
     }
     Keyboard.dismiss();
     setStickerPickerVisible(true);
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => scrollToBottom(true), 100);
   };
 
   const startQuote = (message: ChatMessage) => {
     setQuotingMessage(message);
     setEditingMessage(null);
     setStickerPickerVisible(false);
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => scrollToBottom(true), 100);
   };
 
   const startEdit = (message: ChatMessage) => {
@@ -518,7 +573,15 @@ export default function CommunityChatScreen() {
     ]);
   };
 
-  const inputBottomPadding = keyboardHeight > 0 ? keyboardHeight + 8 : insets.bottom + 8;
+  // Android already resizes the window (`softwareKeyboardLayoutMode: "resize"`).
+  // Adding keyboardHeight again leaves a large empty gap above the keyboard.
+  // iOS does not resize the same way, so lift the composer by the keyboard height.
+  const inputBottomPadding =
+    keyboardHeight > 0
+      ? Platform.OS === "ios"
+        ? keyboardHeight + 8
+        : 8
+      : insets.bottom + 8;
 
   if (!chatId) {
     return (
@@ -542,21 +605,21 @@ export default function CommunityChatScreen() {
               onPress={() => (isAdminUser ? router.replace("/admin" as any) : router.back())}
               className="w-12 h-12 shrink-0"
             />
-          <Pressable
+            <Pressable
               onPress={() => void openOtherProfile()}
               disabled={!otherUserId || otherUserId === currentUserId}
               className="flex-1 flex-row items-center ml-2 mr-2 min-w-0"
-          >
+            >
               <ProfileAvatar uri={chatImage} size={40} />
               <ThemedText className="text-xl font-extrabold flex-1 ml-3" numberOfLines={1}>
                 {displayChatName}
               </ThemedText>
-          </Pressable>
+            </Pressable>
             <View className="flex-row items-center shrink-0">
-              {isSupport ? (
+              {isSupportAdminUser ? (
                 <View className="w-8 h-8 rounded-full bg-[#dbeafe] items-center justify-center mr-1">
                   <Ionicons name="shield-checkmark" size={18} color="#2563eb" />
-        </View>
+                </View>
               ) : null}
               <Pressable
                 onPress={() => setMenuVisible(true)}
@@ -571,19 +634,37 @@ export default function CommunityChatScreen() {
         <ScrollView
           ref={scrollRef}
           className="flex-1 px-3"
-          contentContainerStyle={{ paddingVertical: 12, gap: 12, paddingBottom: 8 }}
+          contentContainerStyle={{ paddingVertical: 12, gap: 12, paddingBottom: 20 }}
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          onScrollBeginDrag={() => {
+            stickToBottomRef.current = false;
+          }}
+          onContentSizeChange={() => {
+            if (!stickToBottomRef.current) return;
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }}
+          onLayout={() => {
+            if (!stickToBottomRef.current) return;
+            if (messages.length > 0 || showSupportWelcome) {
+              scrollRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
         >
-          {showSupportWelcome ? (
-            <SupportWelcomeMessage avatar={senderImage(otherUserId || "")} />
-          ) : null}
-          {messages.length === 0 && !showSupportWelcome ? (
-            <ThemedText variant="muted" className="text-sm text-center py-8">
-              No messages yet. Say hello!
-            </ThemedText>
-          ) : null}
-          {messages.map((message) => {
+          {!messagesHydrated ? (
+            <View className="py-8 items-center">
+              <ActivityIndicator color={theme.accent} />
+            </View>
+          ) : (
+            <>
+              {showSupportWelcome ? (
+                <SupportWelcomeMessage avatar={senderImage(otherUserId || "")} />
+              ) : null}
+              {messages.length === 0 && !showSupportWelcome ? (
+                <ThemedText variant="muted" className="text-sm text-center py-8">
+                  No messages yet. Say hello!
+                </ThemedText>
+              ) : null}
+              {messages.map((message) => {
             const isMe = message.senderId === currentUserId;
             const isAuto = message.isAutoReply === true;
             const avatar = senderImage(message.senderId);
@@ -659,14 +740,17 @@ export default function CommunityChatScreen() {
                         {isAuto ? (
                           <Text className="text-[10px] font-bold mb-1" style={{ color: "#2563eb" }}>
                             Support Admin
-                </Text>
+                          </Text>
                         ) : null}
                         {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
                         {displayText ? (
                           <ChatFormattedText
                             text={displayText}
                             className={isMe ? "text-white text-sm leading-6" : "text-sm leading-6"}
-                            style={isMe ? undefined : textSecondary}
+                            style={[
+                              { flexShrink: 1 },
+                              isMe ? undefined : textSecondary,
+                            ]}
                             boldClassName={isMe ? "font-extrabold text-white" : "font-extrabold"}
                           />
                         ) : null}
@@ -681,10 +765,12 @@ export default function CommunityChatScreen() {
                 {isMe ? <ProfileAvatar uri={avatar} size={32} /> : null}
               </View>
             );
-          })}
+              })}
+            </>
+          )}
         </ScrollView>
 
-        {canSendMessages || isSupport ? (
+        {canSendMessages || isSupportAdminUser ? (
         <View
           className="px-3 border-t"
           style={{
@@ -760,7 +846,7 @@ export default function CommunityChatScreen() {
               multiline
               onFocus={() => {
                 setStickerPickerVisible(false);
-                setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+                setTimeout(() => scrollToBottom(true), 300);
               }}
               className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
               style={inputStyle}
@@ -868,6 +954,14 @@ export default function CommunityChatScreen() {
         }}
         onAddFriend={handleAddFriend}
         onChat={isSupportAdminUser ? () => setProfileVisible(false) : undefined}
+        onOpenPost={(postId) => {
+          setProfileVisible(false);
+          setProfileData(null);
+          router.push({
+            pathname: "/community-post" as any,
+            params: { postId },
+          });
+        }}
       />
     </ThemedScreen>
   );

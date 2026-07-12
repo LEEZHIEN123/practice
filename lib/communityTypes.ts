@@ -92,7 +92,8 @@ export type CommunityNotificationType =
   | "friend_accepted"
   | "post_like"
   | "post_comment"
-  | "post_reported";
+  | "post_reported"
+  | "comment_reported";
 
 export type FriendRequestNotificationStatus = "pending" | "accepted" | "rejected";
 
@@ -208,7 +209,7 @@ export const ADMIN_AUTO_REPLY =
   "We received your message and will respond as soon as possible. Thank you for reaching out!";
 
 export const SUPPORT_CHAT_WELCOME_MESSAGE =
-  "Hello! Welcome to Support Admin. Send us a message anytime and our team will respond as soon as possible.";
+  "Welcome! We're glad you joined. If you have any questions, feel free to message Support Admin anytime — we're here to help.";
 
 export const DEFAULT_POST_TAGS = [
   "Fitness",

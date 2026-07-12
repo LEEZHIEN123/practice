@@ -1,5 +1,5 @@
-import { checkIsAdmin } from "@/lib/communityService";
 import { Pressable } from "@/components/Pressable";
+import { checkIsAdmin } from "@/lib/communityService";
 import { isOnboardingGate } from "@/lib/onboardingGate";
 import { isOnboardingPath, resolvePostAuthRoute } from "@/lib/onboardingRoute";
 import { LinearGradient } from "expo-linear-gradient";

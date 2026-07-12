@@ -12,8 +12,9 @@ import {
   buildLatestWeightByDay,
   buildWeightBucketSeries,
   buildWeightSeriesForDays,
+  progressBarHeight,
+  resyncAutoFilledWeightsAfterDay,
   syncWeightAutoFillAtMidnight,
-  weightBarHeight,
   type WeightLogRow,
 } from "@/lib/weightAutoFill";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -106,6 +107,190 @@ const formatDurationMinSec = (durationMin: number) => {
   const s = totalSec % 60;
   return `${m} min ${s} sec`;
 };
+
+function isDateInSelectedPeriod(dayDate: Date, period: PeriodKey, anchor: Date): boolean {
+  const day = startOfDay(dayDate);
+  if (period === "week") {
+    const weekStart = startOfWeekMon(anchor);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    return day.getTime() >= weekStart.getTime() && day.getTime() <= weekEnd.getTime();
+  }
+  if (period === "month") {
+    return day.getFullYear() === anchor.getFullYear() && day.getMonth() === anchor.getMonth();
+  }
+  return day.getFullYear() === anchor.getFullYear();
+}
+
+/** Month chart slots: days 1–7, 8–14, 15–21, 22–end. */
+function monthWeekSlotIndex(day: Date): number {
+  return Math.min(3, Math.floor((day.getDate() - 1) / 7));
+}
+
+function monthWeekRangeLabel(anchor: Date, slot: number): string {
+  const y = anchor.getFullYear();
+  const m = anchor.getMonth();
+  const monthLastDay = new Date(y, m + 1, 0).getDate();
+  const ranges: [number, number][] = [
+    [1, Math.min(7, monthLastDay)],
+    [8, Math.min(14, monthLastDay)],
+    [15, Math.min(21, monthLastDay)],
+    [22, monthLastDay],
+  ];
+  const [s, e] = ranges[slot] ?? [1, monthLastDay];
+  return `W${slot + 1} ${s}-${e}`;
+}
+
+function yearMonthLabel(year: number, monthIndex: number): string {
+  try {
+    return new Date(year, monthIndex, 1).toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return `${monthIndex + 1}/${year}`;
+  }
+}
+
+/** Week → that day; month → week-of-month for that day; year → month of that day. */
+function matchesPickedPeriodFilter(
+  dayDate: Date,
+  period: PeriodKey,
+  picked: Date | null,
+  calendarTz: string | null
+): boolean {
+  if (!picked) return true;
+  if (period === "week") {
+    return formatCalendarDayKey(dayDate, calendarTz) === formatCalendarDayKey(picked, calendarTz);
+  }
+  if (period === "month") {
+    return (
+      dayDate.getFullYear() === picked.getFullYear() &&
+      dayDate.getMonth() === picked.getMonth() &&
+      monthWeekSlotIndex(dayDate) === monthWeekSlotIndex(picked)
+    );
+  }
+  return dayDate.getFullYear() === picked.getFullYear() && dayDate.getMonth() === picked.getMonth();
+}
+
+function periodRecordHint(period: PeriodKey): string {
+  if (period === "week") return "Records by day for the selected week. Pick a day to filter.";
+  if (period === "month")
+    return "Records by week of the month (same as the chart). Pick a day to see that week.";
+  return "Records by month for the selected year. Pick a day to see that month.";
+}
+
+function periodPickChipLabel(period: PeriodKey): string {
+  if (period === "week") return "Pick a day";
+  if (period === "month") return "Pick a week";
+  return "Pick a month";
+}
+
+function periodAllChipLabel(period: PeriodKey): string {
+  if (period === "week") return "All days";
+  if (period === "month") return "All weeks";
+  return "All months";
+}
+
+type DayRecordGroup<T> = {
+  dateKey: string;
+  dayDate: Date;
+  entries: T[];
+  total: number;
+};
+
+type PeriodRecordSection<T> = {
+  key: string;
+  eyebrow: string;
+  title: string;
+  isCurrent: boolean;
+  dayGroups: DayRecordGroup<T>[];
+  total: number;
+};
+
+function orderSlotIndexes(slots: number[], currentSlot: number | null): number[] {
+  if (currentSlot == null || !slots.includes(currentSlot)) {
+    return [...slots].sort((a, b) => b - a);
+  }
+  return [
+    currentSlot,
+    ...slots.filter((s) => s < currentSlot).sort((a, b) => b - a),
+    ...slots.filter((s) => s > currentSlot).sort((a, b) => a - b),
+  ];
+}
+
+function buildPeriodRecordSections<T>(
+  dayGroups: DayRecordGroup<T>[],
+  period: PeriodKey,
+  anchor: Date,
+  picked: Date | null,
+  calendarTz: string | null,
+  todayKey: string,
+  currentSlot: number | null
+): PeriodRecordSection<T>[] {
+  const inPeriod = dayGroups.filter((g) => isDateInSelectedPeriod(g.dayDate, period, anchor));
+  const filtered = inPeriod.filter((g) =>
+    matchesPickedPeriodFilter(g.dayDate, period, picked, calendarTz)
+  );
+
+  if (period === "week") {
+    return filtered.map((g) => ({
+      key: g.dateKey,
+      eyebrow: "DAY",
+      title: formatLongDate(g.dayDate),
+      isCurrent: g.dateKey === todayKey,
+      dayGroups: [g],
+      total: g.total,
+    }));
+  }
+
+  if (period === "month") {
+    const bySlot = new Map<number, DayRecordGroup<T>[]>();
+    for (const g of filtered) {
+      const slot = monthWeekSlotIndex(g.dayDate);
+      const list = bySlot.get(slot);
+      if (list) list.push(g);
+      else bySlot.set(slot, [g]);
+    }
+    return orderSlotIndexes([...bySlot.keys()], currentSlot).map((slot) => {
+      const days = (bySlot.get(slot) ?? []).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+      return {
+        key: `month-w${slot}`,
+        eyebrow: "WEEK",
+        title: monthWeekRangeLabel(anchor, slot),
+        isCurrent: currentSlot === slot,
+        dayGroups: days,
+        total: days.reduce((s, d) => s + d.total, 0),
+      };
+    });
+  }
+
+  const year = anchor.getFullYear();
+  const byMonth = new Map<number, DayRecordGroup<T>[]>();
+  for (const g of filtered) {
+    const m = g.dayDate.getMonth();
+    const list = byMonth.get(m);
+    if (list) list.push(g);
+    else byMonth.set(m, [g]);
+  }
+  return orderSlotIndexes([...byMonth.keys()], currentSlot).map((monthIdx) => {
+    const days = (byMonth.get(monthIdx) ?? []).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+    return {
+      key: `year-m${monthIdx}`,
+      eyebrow: "MONTH",
+      title: yearMonthLabel(year, monthIdx),
+      isCurrent: currentSlot === monthIdx,
+      dayGroups: days,
+      total: days.reduce((s, d) => s + d.total, 0),
+    };
+  });
+}
+
+function pickedPeriodFilterLabel(period: PeriodKey, picked: Date, anchor: Date): string {
+  if (period === "week") return formatLongDate(picked);
+  if (period === "month") return monthWeekRangeLabel(anchor, monthWeekSlotIndex(picked));
+  return yearMonthLabel(picked.getFullYear(), picked.getMonth());
+}
 
 export default function ProgressDetailsScreen() {
   const router = useRouter();
@@ -200,11 +385,15 @@ export default function ProgressDetailsScreen() {
       q,
       (snap) => {
         const rows = snap.docs
-          .map((d) => d.data() as any)
-          .map((row) => ({
-            weight: typeof row.weight === "number" ? row.weight : null,
-            createdAt: getCreatedAtDate(row.logDate ?? row.createdAt),
-          }))
+          .map((d) => {
+            const row = d.data() as any;
+            return {
+              id: d.id,
+              weight: typeof row.weight === "number" ? row.weight : null,
+              createdAt: getCreatedAtDate(row.logDate ?? row.createdAt),
+              autoFilled: row.autoFilled === true,
+            };
+          })
           .filter((r) => typeof r.weight === "number" && r.createdAt instanceof Date) as WeightRow[];
         setAllWeightRows(rows);
       },
@@ -353,6 +542,7 @@ export default function ProgressDetailsScreen() {
       const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
       const latestByWeek = new Map<number, { weight: number; createdAt: Date }>();
       for (const r of rows) {
+        if (r.autoFilled) continue;
         if (r.createdAt < monthStart) continue;
         if (r.createdAt.getMonth() !== anchor.getMonth() || r.createdAt.getFullYear() !== anchor.getFullYear()) continue;
         const dom = r.createdAt.getDate();
@@ -387,6 +577,7 @@ export default function ProgressDetailsScreen() {
     const sums = Array.from({ length: 12 }, () => 0);
     const counts = Array.from({ length: 12 }, () => 0);
     for (const r of rows) {
+      if (r.autoFilled) continue;
       if (r.createdAt.getFullYear() !== year) continue;
       const m = r.createdAt.getMonth();
       sums[m] += r.weight;
@@ -469,21 +660,31 @@ export default function ProgressDetailsScreen() {
   }, [allWorkoutRows]);
 
   const filteredGroupedWorkouts = useMemo(() => {
-    if (!workoutRecentDay) return groupedWorkouts;
-    const k = formatCalendarDayKey(workoutRecentDay, calendarTz);
-    return groupedWorkouts.filter((g) => g.dateKey === k);
-  }, [calendarTz, groupedWorkouts, workoutRecentDay]);
+    return buildPeriodRecordSections(
+      groupedWorkouts,
+      period,
+      anchor,
+      workoutRecentDay,
+      calendarTz,
+      formatCalendarDayKey(new Date(), calendarTz),
+      getCurrentPeriodSlotIndex(period, anchor)
+    );
+  }, [anchor, calendarTz, dayTick, groupedWorkouts, period, workoutRecentDay]);
 
   const workoutRecentFilterLabel = useMemo(() => {
     if (!workoutRecentDay) return null;
-    return formatLongDate(workoutRecentDay);
-  }, [workoutRecentDay]);
+    return pickedPeriodFilterLabel(period, workoutRecentDay, anchor);
+  }, [anchor, period, workoutRecentDay]);
 
   /** Align bar count with chart period (avoids length mismatch before effects run). */
   const workoutBarsForChart = useMemo(() => {
     const len = period === "week" ? 7 : period === "month" ? 4 : 12;
     return Array.from({ length: len }, (_, i) => workoutSeries[i] ?? 0);
   }, [workoutSeries, period]);
+
+  useEffect(() => {
+    setWorkoutRecentDay(null);
+  }, [period, anchor]);
 
   useEffect(() => {
     if (tab !== "meal") return;
@@ -547,15 +748,25 @@ export default function ProgressDetailsScreen() {
   }, [allMealRows]);
 
   const filteredGroupedMeals = useMemo(() => {
-    if (!mealRecentDay) return groupedMeals;
-    const k = formatCalendarDayKey(mealRecentDay, calendarTz);
-    return groupedMeals.filter((g) => g.dateKey === k);
-  }, [calendarTz, groupedMeals, mealRecentDay]);
+    return buildPeriodRecordSections(
+      groupedMeals,
+      period,
+      anchor,
+      mealRecentDay,
+      calendarTz,
+      formatCalendarDayKey(new Date(), calendarTz),
+      getCurrentPeriodSlotIndex(period, anchor)
+    );
+  }, [anchor, calendarTz, dayTick, groupedMeals, mealRecentDay, period]);
 
   const mealRecentFilterLabel = useMemo(() => {
     if (!mealRecentDay) return null;
-    return formatLongDate(mealRecentDay);
-  }, [mealRecentDay]);
+    return pickedPeriodFilterLabel(period, mealRecentDay, anchor);
+  }, [anchor, mealRecentDay, period]);
+
+  useEffect(() => {
+    setMealRecentDay(null);
+  }, [period, anchor]);
 
   const mealBarsForChart = useMemo(() => {
     const len = period === "week" ? 7 : period === "month" ? 4 : 12;
@@ -596,6 +807,33 @@ export default function ProgressDetailsScreen() {
   }, [anchor, period]);
 
   const currentPeriodSlotIndex = useMemo(() => getCurrentPeriodSlotIndex(period, anchor), [period, anchor]);
+
+  const periodPickerBounds = useMemo(() => {
+    const today = startOfDay(new Date());
+    if (period === "week") {
+      const minimumDate = startOfWeekMon(anchor);
+      const weekEnd = new Date(minimumDate);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      return {
+        minimumDate,
+        maximumDate: weekEnd.getTime() > today.getTime() ? today : weekEnd,
+      };
+    }
+    if (period === "month") {
+      const minimumDate = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+      return {
+        minimumDate,
+        maximumDate: monthEnd.getTime() > today.getTime() ? today : monthEnd,
+      };
+    }
+    const minimumDate = new Date(anchor.getFullYear(), 0, 1);
+    const yearEnd = new Date(anchor.getFullYear(), 11, 31);
+    return {
+      minimumDate,
+      maximumDate: yearEnd.getTime() > today.getTime() ? today : yearEnd,
+    };
+  }, [anchor, period]);
 
   useEffect(() => {
     setWorkoutHoverIdx(null);
@@ -686,6 +924,15 @@ export default function ProgressDetailsScreen() {
         createdAt: serverTimestamp(),
         logDate: Timestamp.fromDate(startOfDay(logDate)),
       });
+
+      const editedDayKey = formatCalendarDayKey(startOfDay(logDate), calendarTz);
+      await resyncAutoFilledWeightsAfterDay({
+        uid: user.uid,
+        editedDayKey,
+        newWeightKg: nextW,
+        calendarTz,
+        existingRows: allWeightRows,
+      }).catch((e) => console.log("weight auto-fill resync failed:", e));
 
       setLogVisible(false);
     } catch (e) {
@@ -827,15 +1074,15 @@ export default function ProgressDetailsScreen() {
               </View>
 
               <View className="mt-4 flex-row items-center">
-                <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                <Pressable onPress={goPrev} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                   <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                     <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
-                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
+                  <View className="h-40 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-16 opacity-10" style={{ backgroundColor: theme.accent }} />
                     {weightBarTooltip ? (
                       <View className="absolute top-2 left-2 right-2 items-center">
                         <View
@@ -848,9 +1095,9 @@ export default function ProgressDetailsScreen() {
                         </View>
                       </View>
                     ) : null}
-                    <View className="flex-1 flex-row items-end px-3 pb-5">
+                    <View className="flex-1 flex-row items-end px-3 pb-3">
                       {weightSeries.map((v, idx) => {
-                        const h = weightBarHeight(v, weightSeries, 14, 144);
+                        const h = progressBarHeight(v, weightSeries, 12, 96);
                         return (
                           <Pressable
                             key={`wb-${idx}`}
@@ -901,13 +1148,13 @@ export default function ProgressDetailsScreen() {
                 </View>
 
                 {canGoNext ? (
-                  <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                  <Pressable onPress={goNext} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                     <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                       <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
-                  <View className="w-8 h-52" />
+                  <View className="w-8 h-40" />
                 )}
               </View>
             </ThemedCard>
@@ -918,7 +1165,17 @@ export default function ProgressDetailsScreen() {
                 {windowWeights.length === 0 ? (
                   <ThemedText variant="muted">No weight logs yet.</ThemedText>
                 ) : (
-                  windowWeights.map((r, idx) => {
+                  (() => {
+                    const entries = windowWeights.map((r, idx) => ({ r, idx }));
+                    const ordered =
+                      currentPeriodSlotIndex == null
+                        ? entries.slice().reverse()
+                        : [
+                            ...entries.filter((e) => e.idx === currentPeriodSlotIndex),
+                            ...entries.filter((e) => e.idx < currentPeriodSlotIndex).reverse(),
+                            ...entries.filter((e) => e.idx > currentPeriodSlotIndex),
+                          ];
+                    return ordered.map(({ r, idx }) => {
                     const isCurrentRow =
                       currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
                     return (
@@ -957,7 +1214,8 @@ export default function ProgressDetailsScreen() {
                       </View>
                     </View>
                     );
-                  })
+                  });
+                  })()
                 )}
               </View>
             </ThemedCard>
@@ -994,15 +1252,15 @@ export default function ProgressDetailsScreen() {
               </View>
 
               <View className="mt-4 flex-row items-center">
-                <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                <Pressable onPress={goPrev} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                   <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                     <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
-                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
+                  <View className="h-40 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-16 opacity-10" style={{ backgroundColor: theme.accent }} />
                     {workoutBarTooltip ? (
                       <View className="absolute top-2 left-2 right-2 items-center px-1">
                         <View
@@ -1015,12 +1273,10 @@ export default function ProgressDetailsScreen() {
                         </View>
                       </View>
                     ) : null}
-                    <View className="flex-1 flex-row items-end px-3 pb-5">
+                    <View className="flex-1 flex-row items-end px-3 pb-3">
                       {(() => {
-                        const max = Math.max(...workoutBarsForChart, 1);
-                        const span = max || 1;
                         return workoutBarsForChart.map((v, idx) => {
-                          const h = 14 + Math.round((v / span) * 130);
+                          const h = progressBarHeight(v, workoutBarsForChart, 12, 96);
                           const active = workoutHoverIdx === idx;
                           return (
                             <Pressable
@@ -1045,22 +1301,36 @@ export default function ProgressDetailsScreen() {
                   </View>
 
                   <View className="flex-row mt-3 px-3">
-                    {chartLabels.map((d, idx) => (
-                      <View key={`${d}-${idx}`} className="flex-1 items-center">
-                        <ThemedText variant="muted" className="text-[10px] font-bold">{d}</ThemedText>
-                      </View>
-                    ))}
+                    {chartLabels.map((d, idx) => {
+                      const isCurrentLabel =
+                        currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                      return (
+                        <View key={`${d}-${idx}`} className="flex-1 items-center">
+                          <ThemedText
+                            className="text-[10px] font-bold"
+                            style={{ color: isCurrentLabel ? theme.danger : theme.textMuted }}
+                          >
+                            {d}
+                          </ThemedText>
+                          {isCurrentLabel ? (
+                            <ThemedText className="text-[9px] font-extrabold mt-0.5" style={{ color: theme.danger }}>
+                              Current
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                      );
+                    })}
                   </View>
                 </View>
 
                 {canGoNext ? (
-                  <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                  <Pressable onPress={goNext} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                     <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                       <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
-                  <View className="w-8 h-52" />
+                  <View className="w-8 h-40" />
                 )}
               </View>
             </ThemedCard>
@@ -1069,6 +1339,7 @@ export default function ProgressDetailsScreen() {
               <View className="flex-row items-center justify-between gap-3">
                 <View className="flex-1 pr-2">
                   <ThemedText className="text-base tracking-[0.12em] font-extrabold">WORKOUT RECORD</ThemedText>
+                  <ThemedText variant="muted" className="text-xs font-bold mt-1">{title}</ThemedText>
                   {manageMode ? (
                     <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
                       Tap trash to delete
@@ -1088,7 +1359,7 @@ export default function ProgressDetailsScreen() {
                 </Pressable>
               </View>
               <ThemedText variant="muted" className="text-xs mt-1">
-                History includes today and previous days. Filter by day or pick a date.
+                {periodRecordHint(period)}
               </ThemedText>
 
               <ScrollView
@@ -1110,7 +1381,7 @@ export default function ProgressDetailsScreen() {
                     className="font-extrabold text-sm"
                     style={{ color: workoutRecentDay === null ? "#ffffff" : theme.textPrimary }}
                   >
-                    All days
+                    {periodAllChipLabel(period)}
                   </ThemedText>
                 </Pressable>
                 <Pressable
@@ -1131,7 +1402,7 @@ export default function ProgressDetailsScreen() {
                     variant={workoutRecentDay !== null ? "accent" : "primary"}
                     className="font-extrabold text-sm ml-1.5"
                   >
-                    Pick a day
+                    {periodPickChipLabel(period)}
                   </ThemedText>
                 </Pressable>
               </ScrollView>
@@ -1153,7 +1424,8 @@ export default function ProgressDetailsScreen() {
                     value={workoutRecentDay ?? new Date()}
                     mode="date"
                     display={Platform.OS === "ios" ? "inline" : "default"}
-                    maximumDate={new Date()}
+                    minimumDate={periodPickerBounds.minimumDate}
+                    maximumDate={periodPickerBounds.maximumDate}
                     onChange={(event, date) => {
                       if (Platform.OS !== "ios") setWorkoutDayPickerOpen(false);
                       if (event.type === "dismissed") return;
@@ -1177,57 +1449,91 @@ export default function ProgressDetailsScreen() {
                   <ThemedText variant="muted" className="text-sm">No workouts yet.</ThemedText>
                 ) : filteredGroupedWorkouts.length === 0 ? (
                   <ThemedText variant="muted" className="text-sm">
-                    No workouts for this day. Try &quot;All days&quot; or another date.
+                    {workoutRecentDay
+                      ? period === "month"
+                        ? "No workouts for this week. Try another date or all weeks."
+                        : period === "year"
+                          ? "No workouts for this month. Try another date or all months."
+                          : "No workouts for this day. Try another date or the full period."
+                      : period === "month"
+                        ? "No workouts in this month."
+                        : period === "year"
+                          ? "No workouts in this year."
+                          : "No workouts in this week."}
                   </ThemedText>
                 ) : (
-                  filteredGroupedWorkouts.map((g) => (
+                  filteredGroupedWorkouts.map((section) => (
                     <View
-                      key={g.dateKey}
+                      key={section.key}
                       className="rounded-2xl overflow-hidden border-2"
-                      style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
+                      style={{
+                        borderColor: section.isCurrent ? theme.danger : theme.cardBorder,
+                        backgroundColor: theme.cardBg,
+                      }}
                     >
                       <View
                         className="border-b-2 px-4 py-3"
-                        style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                        style={{
+                          backgroundColor: theme.accentSoft,
+                          borderBottomColor: section.isCurrent ? theme.danger : theme.accent,
+                        }}
                       >
-                        <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
-                        <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
+                        <View className="flex-row items-center">
+                          <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">
+                            {section.eyebrow}
+                          </ThemedText>
+                          {section.isCurrent ? (
+                            <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
+                              Current
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                        <ThemedText className="text-lg font-extrabold mt-1">{section.title}</ThemedText>
                       </View>
-                      <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
-                        {g.entries.map((w) => (
-                          <View
-                            key={w.id}
-                            className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
-                            style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
-                          >
-                            <View className="flex-1 pr-3">
-                              <ThemedText variant="secondary" className="text-sm font-semibold">
-                                {formatTimeHms(w.createdAt)}
+                      <View className="px-3 py-3 gap-3" style={{ backgroundColor: theme.rowBg }}>
+                        {section.dayGroups.map((day) => (
+                          <View key={day.dateKey} className="gap-2">
+                            {period !== "week" ? (
+                              <ThemedText variant="muted" className="text-xs font-extrabold tracking-wide px-1">
+                                {formatLongDate(day.dayDate)}
                               </ThemedText>
-                              <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
-                                {w.title} • {formatDurationMinSec(w.durationMin)}
-                              </ThemedText>
-                            </View>
-                            <View className="flex-row items-center">
-                              <ThemedText className="text-base font-extrabold">
-                                {Math.round(w.burnedKcal).toLocaleString()} kcal
-                              </ThemedText>
-                              {manageMode ? (
-                                <Pressable
-                                  onPress={() => confirmDeleteWorkout(w)}
-                                  disabled={deletingId === w.id}
-                                  hitSlop={10}
-                                  className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
-                                  style={{
-                                    backgroundColor: theme.dangerSoft,
-                                    borderColor: theme.danger,
-                                    opacity: deletingId === w.id ? 0.5 : 1,
-                                  }}
-                                >
-                                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                                </Pressable>
-                              ) : null}
-                            </View>
+                            ) : null}
+                            {day.entries.map((w) => (
+                              <View
+                                key={w.id}
+                                className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
+                                style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
+                              >
+                                <View className="flex-1 pr-3">
+                                  <ThemedText variant="secondary" className="text-sm font-semibold">
+                                    {formatTimeHms(w.createdAt)}
+                                  </ThemedText>
+                                  <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
+                                    {w.title} • {formatDurationMinSec(w.durationMin)}
+                                  </ThemedText>
+                                </View>
+                                <View className="flex-row items-center">
+                                  <ThemedText className="text-base font-extrabold">
+                                    {Math.round(w.burnedKcal).toLocaleString()} kcal
+                                  </ThemedText>
+                                  {manageMode ? (
+                                    <Pressable
+                                      onPress={() => confirmDeleteWorkout(w)}
+                                      disabled={deletingId === w.id}
+                                      hitSlop={10}
+                                      className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
+                                      style={{
+                                        backgroundColor: theme.dangerSoft,
+                                        borderColor: theme.danger,
+                                        opacity: deletingId === w.id ? 0.5 : 1,
+                                      }}
+                                    >
+                                      <Ionicons name="trash-outline" size={18} color={theme.danger} />
+                                    </Pressable>
+                                  ) : null}
+                                </View>
+                              </View>
+                            ))}
                           </View>
                         ))}
                       </View>
@@ -1235,9 +1541,11 @@ export default function ProgressDetailsScreen() {
                         className="flex-row items-center justify-between px-4 py-3 border-t-2"
                         style={{ backgroundColor: theme.cardBg, borderTopColor: theme.cardBorder }}
                       >
-                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">DAY TOTAL</ThemedText>
+                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">
+                          {period === "week" ? "DAY TOTAL" : period === "month" ? "WEEK TOTAL" : "MONTH TOTAL"}
+                        </ThemedText>
                         <ThemedText variant="accent" className="text-base font-extrabold">
-                          {Math.round(g.total).toLocaleString()} kcal
+                          {Math.round(section.total).toLocaleString()} kcal
                         </ThemedText>
                       </View>
                     </View>
@@ -1278,21 +1586,19 @@ export default function ProgressDetailsScreen() {
               </View>
 
               <View className="mt-4 flex-row items-center">
-                <Pressable onPress={goPrev} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                <Pressable onPress={goPrev} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                   <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                     <Ionicons name="chevron-back" size={18} color={theme.accent} />
                   </View>
                 </Pressable>
 
                 <View className="flex-1 mx-2">
-                  <View className="h-52 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
-                    <View className="absolute left-0 right-0 bottom-0 h-24 opacity-10" style={{ backgroundColor: theme.accent }} />
-                    <View className="flex-1 flex-row items-end px-3 pb-5">
+                  <View className="h-40 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
+                    <View className="absolute left-0 right-0 bottom-0 h-16 opacity-10" style={{ backgroundColor: theme.accent }} />
+                    <View className="flex-1 flex-row items-end px-3 pb-3">
                       {(() => {
-                        const max = Math.max(...mealBarsForChart, 1);
-                        const span = max || 1;
                         return mealBarsForChart.map((v, idx) => {
-                          const h = 14 + Math.round((v / span) * 130);
+                          const h = progressBarHeight(v, mealBarsForChart, 12, 96);
                           return (
                             <View key={`ml-${idx}`} className="flex-1 items-center">
                               <View
@@ -1311,22 +1617,36 @@ export default function ProgressDetailsScreen() {
                   </View>
 
                   <View className="flex-row mt-3 px-3">
-                    {chartLabels.map((d, idx) => (
-                      <View key={`${d}-${idx}`} className="flex-1 items-center">
-                        <ThemedText variant="muted" className="text-[10px] font-bold">{d}</ThemedText>
-                      </View>
-                    ))}
+                    {chartLabels.map((d, idx) => {
+                      const isCurrentLabel =
+                        currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                      return (
+                        <View key={`${d}-${idx}`} className="flex-1 items-center">
+                          <ThemedText
+                            className="text-[10px] font-bold"
+                            style={{ color: isCurrentLabel ? theme.danger : theme.textMuted }}
+                          >
+                            {d}
+                          </ThemedText>
+                          {isCurrentLabel ? (
+                            <ThemedText className="text-[9px] font-extrabold mt-0.5" style={{ color: theme.danger }}>
+                              Current
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                      );
+                    })}
                   </View>
                 </View>
 
                 {canGoNext ? (
-                  <Pressable onPress={goNext} className="w-8 h-52 items-center justify-center" hitSlop={12}>
+                  <Pressable onPress={goNext} className="w-8 h-40 items-center justify-center" hitSlop={12}>
                     <View className="w-8 h-8 rounded-full border items-center justify-center" style={cardStyle}>
                       <Ionicons name="chevron-forward" size={18} color={theme.accent} />
                     </View>
                   </Pressable>
                 ) : (
-                  <View className="w-8 h-52" />
+                  <View className="w-8 h-40" />
                 )}
               </View>
             </ThemedCard>
@@ -1335,6 +1655,7 @@ export default function ProgressDetailsScreen() {
               <View className="flex-row items-center justify-between gap-3">
                 <View className="flex-1 pr-2">
                   <ThemedText className="text-base tracking-[0.12em] font-extrabold">MEAL RECORD</ThemedText>
+                  <ThemedText variant="muted" className="text-xs font-bold mt-1">{title}</ThemedText>
                   {manageMode ? (
                     <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
                       Tap trash to delete
@@ -1354,7 +1675,7 @@ export default function ProgressDetailsScreen() {
                 </Pressable>
               </View>
               <ThemedText variant="muted" className="text-xs mt-1">
-                History includes today and previous days. Filter by day or pick a date.
+                {periodRecordHint(period)}
               </ThemedText>
 
               <ScrollView
@@ -1376,7 +1697,7 @@ export default function ProgressDetailsScreen() {
                     className="font-extrabold text-sm"
                     style={{ color: mealRecentDay === null ? "#ffffff" : theme.textPrimary }}
                   >
-                    All days
+                    {periodAllChipLabel(period)}
                   </ThemedText>
                 </Pressable>
                 <Pressable
@@ -1397,7 +1718,7 @@ export default function ProgressDetailsScreen() {
                     variant={mealRecentDay !== null ? "accent" : "primary"}
                     className="font-extrabold text-sm ml-1.5"
                   >
-                    Pick a day
+                    {periodPickChipLabel(period)}
                   </ThemedText>
                 </Pressable>
               </ScrollView>
@@ -1419,7 +1740,8 @@ export default function ProgressDetailsScreen() {
                     value={mealRecentDay ?? new Date()}
                     mode="date"
                     display={Platform.OS === "ios" ? "inline" : "default"}
-                    maximumDate={new Date()}
+                    minimumDate={periodPickerBounds.minimumDate}
+                    maximumDate={periodPickerBounds.maximumDate}
                     onChange={(event, date) => {
                       if (Platform.OS !== "ios") setMealDayPickerOpen(false);
                       if (event.type === "dismissed") return;
@@ -1443,57 +1765,91 @@ export default function ProgressDetailsScreen() {
                   <ThemedText variant="muted" className="text-sm">No meals yet.</ThemedText>
                 ) : filteredGroupedMeals.length === 0 ? (
                   <ThemedText variant="muted" className="text-sm">
-                    No meals for this day. Try &quot;All days&quot; or another date.
+                    {mealRecentDay
+                      ? period === "month"
+                        ? "No meals for this week. Try another date or all weeks."
+                        : period === "year"
+                          ? "No meals for this month. Try another date or all months."
+                          : "No meals for this day. Try another date or the full period."
+                      : period === "month"
+                        ? "No meals in this month."
+                        : period === "year"
+                          ? "No meals in this year."
+                          : "No meals in this week."}
                   </ThemedText>
                 ) : (
-                  filteredGroupedMeals.map((g) => (
+                  filteredGroupedMeals.map((section) => (
                     <View
-                      key={g.dateKey}
+                      key={section.key}
                       className="rounded-2xl overflow-hidden border-2"
-                      style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
+                      style={{
+                        borderColor: section.isCurrent ? theme.danger : theme.cardBorder,
+                        backgroundColor: theme.cardBg,
+                      }}
                     >
                       <View
                         className="border-b-2 px-4 py-3"
-                        style={{ backgroundColor: theme.accentSoft, borderBottomColor: theme.accent }}
+                        style={{
+                          backgroundColor: theme.accentSoft,
+                          borderBottomColor: section.isCurrent ? theme.danger : theme.accent,
+                        }}
                       >
-                        <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">DAY</ThemedText>
-                        <ThemedText className="text-lg font-extrabold mt-1">{formatLongDate(g.dayDate)}</ThemedText>
+                        <View className="flex-row items-center">
+                          <ThemedText variant="accent" className="text-[10px] font-extrabold tracking-[0.2em]">
+                            {section.eyebrow}
+                          </ThemedText>
+                          {section.isCurrent ? (
+                            <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
+                              Current
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                        <ThemedText className="text-lg font-extrabold mt-1">{section.title}</ThemedText>
                       </View>
-                      <View className="px-3 py-3 gap-2" style={{ backgroundColor: theme.rowBg }}>
-                        {g.entries.map((m) => (
-                          <View
-                            key={m.id}
-                            className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
-                            style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
-                          >
-                            <View className="flex-1 pr-3">
-                              <ThemedText variant="secondary" className="text-sm font-semibold">
-                                {formatTimeHms(m.createdAt)}
+                      <View className="px-3 py-3 gap-3" style={{ backgroundColor: theme.rowBg }}>
+                        {section.dayGroups.map((day) => (
+                          <View key={day.dateKey} className="gap-2">
+                            {period !== "week" ? (
+                              <ThemedText variant="muted" className="text-xs font-extrabold tracking-wide px-1">
+                                {formatLongDate(day.dayDate)}
                               </ThemedText>
-                              <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
-                                {m.title}
-                              </ThemedText>
-                            </View>
-                            <View className="flex-row items-center">
-                              <ThemedText className="text-base font-extrabold">
-                                {Math.round(m.calories).toLocaleString()} kcal
-                              </ThemedText>
-                              {manageMode ? (
-                                <Pressable
-                                  onPress={() => confirmDeleteMeal(m)}
-                                  disabled={deletingId === m.id}
-                                  hitSlop={10}
-                                  className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
-                                  style={{
-                                    backgroundColor: theme.dangerSoft,
-                                    borderColor: theme.danger,
-                                    opacity: deletingId === m.id ? 0.5 : 1,
-                                  }}
-                                >
-                                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                                </Pressable>
-                              ) : null}
-                            </View>
+                            ) : null}
+                            {day.entries.map((m) => (
+                              <View
+                                key={m.id}
+                                className="flex-row items-start justify-between rounded-xl px-3 py-3 border"
+                                style={{ backgroundColor: theme.cardBg, borderColor: theme.cardBorder }}
+                              >
+                                <View className="flex-1 pr-3">
+                                  <ThemedText variant="secondary" className="text-sm font-semibold">
+                                    {formatTimeHms(m.createdAt)}
+                                  </ThemedText>
+                                  <ThemedText variant="muted" className="text-xs mt-1" numberOfLines={2}>
+                                    {m.title}
+                                  </ThemedText>
+                                </View>
+                                <View className="flex-row items-center">
+                                  <ThemedText className="text-base font-extrabold">
+                                    {Math.round(m.calories).toLocaleString()} kcal
+                                  </ThemedText>
+                                  {manageMode ? (
+                                    <Pressable
+                                      onPress={() => confirmDeleteMeal(m)}
+                                      disabled={deletingId === m.id}
+                                      hitSlop={10}
+                                      className="ml-2 w-9 h-9 rounded-full border items-center justify-center"
+                                      style={{
+                                        backgroundColor: theme.dangerSoft,
+                                        borderColor: theme.danger,
+                                        opacity: deletingId === m.id ? 0.5 : 1,
+                                      }}
+                                    >
+                                      <Ionicons name="trash-outline" size={18} color={theme.danger} />
+                                    </Pressable>
+                                  ) : null}
+                                </View>
+                              </View>
+                            ))}
                           </View>
                         ))}
                       </View>
@@ -1501,9 +1857,11 @@ export default function ProgressDetailsScreen() {
                         className="flex-row items-center justify-between px-4 py-3 border-t-2"
                         style={{ backgroundColor: theme.cardBg, borderTopColor: theme.cardBorder }}
                       >
-                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">DAY TOTAL</ThemedText>
+                        <ThemedText variant="muted" className="text-xs font-extrabold tracking-widest">
+                          {period === "week" ? "DAY TOTAL" : period === "month" ? "WEEK TOTAL" : "MONTH TOTAL"}
+                        </ThemedText>
                         <ThemedText variant="accent" className="text-base font-extrabold">
-                          {Math.round(g.total).toLocaleString()} kcal
+                          {Math.round(section.total).toLocaleString()} kcal
                         </ThemedText>
                       </View>
                     </View>

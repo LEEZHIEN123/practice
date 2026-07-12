@@ -5,4 +5,3 @@ import type { FirebaseStorage } from "firebase/storage";
 export const auth: Auth;
 export const db: Firestore;
 export const storage: FirebaseStorage;
-

@@ -657,6 +657,20 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     }
   };
 
+  const resumeFromPause = () => {
+    setPauseMenuVisible(false);
+    startedAtRef.current = Date.now();
+    setRunning(true);
+    startTicker();
+    const u = auth.currentUser;
+    if (u && sessionId) {
+      void updateDoc(doc(db, "users", u.uid, "workoutSessions", sessionId), {
+        status: "running",
+        updatedAt: serverTimestamp(),
+      });
+    }
+  };
+
   const stopWorkout = async () => {
     const user = auth.currentUser;
     if (!user) return;
@@ -1289,40 +1303,42 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
       </Modal>
 
       {countdown != null ? (
-        <View
-          pointerEvents="auto"
-          className="absolute inset-0 items-center justify-center"
-          style={{ backgroundColor: theme.modalOverlay, zIndex: 10050, elevation: 20 }}
-        >
-          <View className="w-full px-10 items-center">
-            <ThemedText className="text-white text-lg font-extrabold mb-6 text-center">
-              Your workout will begin in
-            </ThemedText>
-            <View
-              className="w-40 h-40 rounded-full items-center justify-center border-2"
-              style={{ backgroundColor: theme.modalBg, borderColor: TIMER_RED }}
-            >
-              <ThemedText className="text-6xl font-extrabold" style={{ color: TIMER_RED }}>
-                {countdown}
+        <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
+          <View
+            pointerEvents="auto"
+            className="flex-1 items-center justify-center"
+            style={{ backgroundColor: theme.modalOverlay }}
+          >
+            <View className="w-full px-10 items-center">
+              <ThemedText className="text-white text-lg font-extrabold mb-6 text-center">
+                Your workout will begin in
               </ThemedText>
-            </View>
-            <Pressable
-              onPress={skipCountdownAndStart}
-              className="mt-14 px-8 py-3.5 rounded-full active:opacity-90"
-              style={{ backgroundColor: "#76C893" }}
-            >
-              <View className="flex-row items-center justify-center gap-2">
-                <Ionicons name="play" size={20} color="#ffffff" />
-                <ThemedText className="font-extrabold text-lg" style={{ color: "#ffffff" }}>
-                  Start now
+              <View
+                className="w-40 h-40 rounded-full items-center justify-center border-2"
+                style={{ backgroundColor: theme.modalBg, borderColor: TIMER_RED }}
+              >
+                <ThemedText className="text-6xl font-extrabold" style={{ color: TIMER_RED }}>
+                  {countdown}
                 </ThemedText>
               </View>
-            </Pressable>
+              <Pressable
+                onPress={skipCountdownAndStart}
+                className="mt-14 px-8 py-3.5 rounded-full active:opacity-90"
+                style={{ backgroundColor: "#76C893" }}
+              >
+                <View className="flex-row items-center justify-center gap-2">
+                  <Ionicons name="play" size={20} color="#ffffff" />
+                  <ThemedText className="font-extrabold text-lg" style={{ color: "#ffffff" }}>
+                    Start now
+                  </ThemedText>
+                </View>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </Modal>
       ) : null}
 
-      <Modal visible={pauseMenuVisible} transparent animationType="fade" onRequestClose={() => setPauseMenuVisible(false)}>
+      <Modal visible={pauseMenuVisible} transparent animationType="fade" onRequestClose={resumeFromPause}>
         <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
           <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
             <ThemedText className="text-2xl font-extrabold">Workout paused</ThemedText>
@@ -1332,19 +1348,7 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
 
             <View className="mt-5 gap-3">
               <Pressable
-                onPress={() => {
-                  setPauseMenuVisible(false);
-                  startedAtRef.current = Date.now();
-                  setRunning(true);
-                  startTicker();
-                  const u = auth.currentUser;
-                  if (u && sessionId) {
-                    void updateDoc(doc(db, "users", u.uid, "workoutSessions", sessionId), {
-                      status: "running",
-                      updatedAt: serverTimestamp(),
-                    });
-                  }
-                }}
+                onPress={resumeFromPause}
                 className="rounded-3xl p-5 active:opacity-90"
                 style={rowBorderStyle}
               >
@@ -1391,6 +1395,13 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
               </Pressable>
             </View>
 
+            <Pressable
+              onPress={resumeFromPause}
+              className="mt-5 py-3 rounded-full items-center border active:opacity-90"
+              style={cardStyle}
+            >
+              <ThemedText className="font-extrabold">Close</ThemedText>
+            </Pressable>
           </View>
         </View>
       </Modal>

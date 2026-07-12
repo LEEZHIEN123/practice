@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { AdminPendingReportTip } from "@/components/community/AdminPendingReportTip";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
+import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import {
@@ -17,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -45,9 +47,9 @@ type PostCommentsSheetProps = {
   visible: boolean;
   post: CommunityPost | null;
   currentUserId: string | null;
+  friendIds?: Set<string> | string[];
   onClose: () => void;
   onOpenProfile?: (userId: string) => void;
-  onReportComment?: (comment: CommunityComment) => void;
   isAdmin?: boolean;
   adminPendingCommentIds?: string[];
   onBlockComment?: (comment: CommunityComment) => void;
@@ -57,9 +59,9 @@ export function PostCommentsSheet({
   visible,
   post,
   currentUserId,
+  friendIds,
   onClose,
   onOpenProfile,
-  onReportComment,
   isAdmin = false,
   adminPendingCommentIds = [],
   onBlockComment,
@@ -75,7 +77,10 @@ export function PostCommentsSheet({
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   const displayComments = useMemo(() => threadedComments(comments), [comments]);
-  const canReport = Boolean(onReportComment);
+  const friendSet = useMemo(
+    () => (friendIds instanceof Set ? friendIds : new Set(Array.isArray(friendIds) ? friendIds : [])),
+    [friendIds]
+  );
 
   useEffect(() => {
     if (!visible || !post) return;
@@ -101,6 +106,8 @@ export function PostCommentsSheet({
       });
       setText("");
       setReplyingTo(null);
+      Keyboard.dismiss();
+      Alert.alert("Comment sent", "Your comment has been posted.");
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not add comment.");
     } finally {
@@ -110,7 +117,13 @@ export function PostCommentsSheet({
 
   const handleDeleteComment = (comment: CommunityComment) => {
     if (!post) return;
-    Alert.alert("Delete comment", "Delete your comment?", [
+    const isOwnComment = comment.authorId === currentUserId;
+    const message = isOwnComment
+      ? "Delete your comment?"
+      : isAdmin
+        ? "Delete this comment? It will be removed for everyone."
+        : "Delete this comment from your post?";
+    Alert.alert("Delete comment", message, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -211,11 +224,29 @@ export function PostCommentsSheet({
                           <Pressable onPress={() => onOpenProfile(comment.authorId)} className="flex-1">
                             <ThemedText className="text-sm font-extrabold">
                               {comment.authorName}
+                              <PersonNameSuffix
+                                isMe={comment.authorId === currentUserId}
+                                isFriend={
+                                  comment.authorId !== currentUserId &&
+                                  friendSet.has(comment.authorId)
+                                }
+                                accentColor={theme.accentText}
+                                textClassName="text-sm font-bold"
+                              />
                             </ThemedText>
                           </Pressable>
                         ) : (
                           <ThemedText className="text-sm font-extrabold flex-1">
                             {comment.authorName}
+                            <PersonNameSuffix
+                              isMe={comment.authorId === currentUserId}
+                              isFriend={
+                                comment.authorId !== currentUserId &&
+                                friendSet.has(comment.authorId)
+                              }
+                              accentColor={theme.accentText}
+                              textClassName="text-sm font-bold"
+                            />
                           </ThemedText>
                         )}
                         <ThemedText variant="muted" className="text-[10px]">
@@ -223,7 +254,10 @@ export function PostCommentsSheet({
                         </ThemedText>
                       </View>
                     </View>
-                    {currentUserId ? (
+                    {currentUserId &&
+                    (isAdmin ||
+                      comment.authorId === currentUserId ||
+                      post?.authorId === currentUserId) ? (
                       <Pressable
                         onPress={() => setMenuComment(comment)}
                         className="w-8 h-8 rounded-full items-center justify-center"
@@ -258,8 +292,12 @@ export function PostCommentsSheet({
           <CommentMenuModal
             visible={menuComment !== null}
             comment={menuComment}
-            canDelete={menuComment != null && menuComment.authorId === currentUserId}
-            canReport={!isAdmin && canReport && menuComment != null && menuComment.authorId !== currentUserId}
+            canDelete={
+              menuComment != null &&
+              (isAdmin ||
+                menuComment.authorId === currentUserId ||
+                post?.authorId === currentUserId)
+            }
             isAdmin={isAdmin}
             canBlock={
               isAdmin &&
@@ -271,13 +309,6 @@ export function PostCommentsSheet({
             onClose={() => setMenuComment(null)}
             onDelete={() => {
               if (menuComment) handleDeleteComment(menuComment);
-            }}
-            onReport={() => {
-              if (menuComment && onReportComment) {
-                const target = menuComment;
-                setMenuComment(null);
-                onReportComment(target);
-              }
             }}
             onBlock={() => {
               if (menuComment && onBlockComment) {

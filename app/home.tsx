@@ -1,5 +1,6 @@
 import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
 import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
+import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { imageCardTintOverlay } from "@/lib/appearance";
@@ -399,7 +400,10 @@ export default function HomeScreen() {
             </View>
 
             <Pressable
-              onPress={() => router.push("/profile")}
+              onPress={() => {
+                rememberBottomTabRoute("/home");
+                router.push("/profile");
+              }}
               className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
               style={iconButtonStyle}
             >

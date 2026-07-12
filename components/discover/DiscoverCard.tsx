@@ -86,19 +86,37 @@ export function DiscoverCard({
           ]}
         />
 
+        {isStack && icon ? (
+          <View
+            pointerEvents="none"
+            style={{ position: "absolute", top: 12, right: 12, zIndex: 20 }}
+          >
+            {icon}
+          </View>
+        ) : null}
+
         {isStack ? (
           <View className="flex-1 justify-end px-4 pb-10 pt-14">
-            {icon ? <View className="absolute top-4 right-4 z-10">{icon}</View> : null}
             <Text
-              className="text-white text-2xl font-extrabold text-center"
-              style={{ textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
+              className="text-2xl font-extrabold text-center"
+              style={{
+                color: "#ffffff",
+                textShadowColor: "rgba(0,0,0,0.5)",
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 4,
+              }}
             >
               {title}
             </Text>
             {subtitle ? (
               <Text
-                className="text-white/90 text-lg font-bold tracking-[1px] mt-2 text-center leading-7"
-                style={{ textShadowColor: "rgba(0,0,0,0.45)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}
+                className="text-lg font-bold tracking-[1px] mt-2 text-center leading-7"
+                style={{
+                  color: "#ffffff",
+                  textShadowColor: "rgba(0,0,0,0.45)",
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3,
+                }}
               >
                 {subtitle}
               </Text>

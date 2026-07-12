@@ -143,8 +143,8 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
     achievementIds: Array.isArray(data.achievementIds) ? data.achievementIds.map(String) : [],
     editHistory,
     updatedAt: Number(data.updatedAt ?? data.createdAt ?? 0),
-    likeCount: Number(data.likeCount ?? 0),
-    commentCount: Number(data.commentCount ?? 0),
+    likeCount: Number(data.likeCount ?? 0) || 0,
+    commentCount: Number(data.commentCount ?? 0) || 0,
     likedBy: Array.isArray(data.likedBy) ? data.likedBy.map(String) : [],
     blocked: data.blocked === true,
     underReview: data.underReview === true,
@@ -157,9 +157,17 @@ async function mergePendingPosts(
   pendingIds: string[]
 ): Promise<CommunityPost[]> {
   const merged = new Map(posts.map((post) => [post.id, post]));
+
+  for (const id of pendingIds) {
+    const existing = merged.get(id);
+    if (existing && !existing.blocked) {
+      merged.set(id, { ...existing, underReview: true });
+    }
+  }
+
   const missing = pendingIds.filter((id) => !merged.has(id));
   if (missing.length === 0) {
-    return posts;
+    return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt);
   }
 
   const extras = await Promise.all(
@@ -176,20 +184,36 @@ async function mergePendingPosts(
   );
 
   for (const post of extras) {
-    if (post) merged.set(post.id, post);
+    if (post) merged.set(post.id, { ...post, underReview: true });
   }
 
   return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function markPostPendingReview(postId: string): Promise<void> {
-  await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
-    postId,
-    updatedAt: Date.now(),
-  });
+async function markPostPendingReview(postId: string, authorId?: string): Promise<void> {
+  let resolvedAuthorId = (authorId ?? "").trim();
+  if (!resolvedAuthorId) {
+    try {
+      const snap = await getDoc(doc(db, "communityPosts", postId));
+      if (snap.exists()) {
+        resolvedAuthorId = String((snap.data() as Record<string, unknown>).authorId ?? "");
+      }
+    } catch {
+      // Best-effort — pending flag still works without authorId.
+    }
+  }
+  await setDoc(
+    doc(db, PENDING_POSTS_COLLECTION, postId),
+    {
+      postId,
+      ...(resolvedAuthorId ? { authorId: resolvedAuthorId } : {}),
+      updatedAt: Date.now(),
+    },
+    { merge: true }
+  );
+  // Rules only allow flipping `underReview` (flagPostUnderReviewOnly). Do not touch `blocked`.
   await updateDoc(doc(db, "communityPosts", postId), {
     underReview: true,
-    blocked: false,
   });
 }
 
@@ -312,6 +336,7 @@ function mapNotificationType(value: unknown): CommunityNotification["type"] {
   if (value === "post_like") return "post_like";
   if (value === "post_comment") return "post_comment";
   if (value === "post_reported") return "post_reported";
+  if (value === "comment_reported") return "comment_reported";
   return "friend_request";
 }
 
@@ -595,24 +620,98 @@ export async function requestBlockedPostReReview(
   const authorName = String(data.authorName ?? profile.name ?? "User");
   const now = Date.now();
 
-  await updateDoc(postRef, { underReview: true });
-  await setDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
+  const reopenedCount = await reopenResolvedReportsForAuthorReReview({
     postId,
-    reReviewRequested: true,
-    reReviewReason: trimmedReason,
-    reReviewRequestedBy: user.uid,
-    reReviewRequestedByName: profile.name,
-    reReviewAuthorId: user.uid,
-    reReviewAuthorName: authorName,
-    reReviewContent: content,
-    reReviewRequestedAt: now,
-    updatedAt: now,
+    authorId: user.uid,
+    authorName: profile.name,
+    requestReason: trimmedReason,
   });
+
+  if (reopenedCount === 0) {
+    await addDoc(collection(db, "communityReports"), {
+      targetType: "post",
+      targetId: postId,
+      postId,
+      reporterId: user.uid,
+      reporterName: profile.name,
+      reason: trimmedReason,
+      requestReason: trimmedReason,
+      source: "re_review",
+      status: "pending",
+      createdAt: now,
+      createdAtServer: serverTimestamp(),
+      targetContent: content,
+      targetAuthorId: user.uid,
+      targetAuthorName: authorName,
+      read: false,
+    });
+  }
+
+  await updateDoc(postRef, { underReview: true });
+  await setDoc(
+    doc(db, PENDING_POSTS_COLLECTION, postId),
+    {
+      postId,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
 
   await sendAdminDirectMessage(
     user.uid,
     buildReReviewRequestReceivedMessage(content, trimmedReason)
   );
+}
+
+async function reopenResolvedReportsForAuthorReReview(params: {
+  postId: string;
+  authorId: string;
+  authorName: string;
+  requestReason: string;
+}): Promise<number> {
+  const { postId, authorId, authorName, requestReason } = params;
+  const now = Date.now();
+
+  const snap = await getDocs(query(collection(db, "communityReports"), where("postId", "==", postId)));
+  const resolved = snap.docs.filter(
+    (reportDoc) => (reportDoc.data() as Record<string, unknown>).status === "resolved"
+  );
+  if (resolved.length === 0) return 0;
+
+  const batch = writeBatch(db);
+  for (const reportDoc of resolved) {
+    batch.update(reportDoc.ref, {
+      status: "pending",
+      read: false,
+      source: "re_review",
+      requestReason,
+      reporterId: authorId,
+      reporterName: authorName,
+      createdAt: now,
+    });
+  }
+  await batch.commit();
+  return resolved.length;
+}
+
+async function closePendingReportsForPost(
+  postId: string,
+  status: "resolved" | "dismissed",
+  reason?: string
+): Promise<void> {
+  const snap = await getDocs(query(collection(db, "communityReports"), where("postId", "==", postId)));
+  const pending = snap.docs.filter(
+    (reportDoc) => (reportDoc.data() as Record<string, unknown>).status === "pending"
+  );
+  if (pending.length === 0) return;
+
+  const batch = writeBatch(db);
+  for (const reportDoc of pending) {
+    const update: Record<string, unknown> = { status, read: true };
+    if (reason && status === "resolved") update.reason = reason;
+    batch.update(reportDoc.ref, update);
+  }
+  await batch.commit();
 }
 
 export function subscribePendingReReviewRequests(
@@ -693,6 +792,7 @@ export async function approveReReviewRequest(postId: string): Promise<void> {
 
   await updateDoc(postRef, { blocked: false, underReview: false });
   await clearPostPendingReview(postId);
+  await closePendingReportsForPost(postId, "dismissed");
 
   if (authorId) {
     await sendAdminDirectMessage(
@@ -717,35 +817,49 @@ export async function dismissReReviewRequest(postId: string, reason: string): Pr
   const authorName = String(data.authorName ?? "User");
   const content = String(data.content ?? "");
 
-  const pendingSnap = await getDoc(doc(db, PENDING_POSTS_COLLECTION, postId));
-  const pending = pendingSnap.exists() ? (pendingSnap.data() as Record<string, unknown>) : {};
-  const requestedBy = String(pending.reReviewRequestedBy ?? authorId);
-  const requestedByName = String(
-    pending.reReviewRequestedByName ?? pending.reReviewAuthorName ?? authorName
+  const reportsSnap = await getDocs(
+    query(collection(db, "communityReports"), where("postId", "==", postId))
   );
-  const requestReason = String(pending.reReviewReason ?? "");
+  const pendingReports = reportsSnap.docs.filter(
+    (reportDoc) => (reportDoc.data() as Record<string, unknown>).status === "pending"
+  );
+  const latestPending = pendingReports.sort(
+    (a, b) =>
+      Number((b.data() as Record<string, unknown>).createdAt ?? 0) -
+      Number((a.data() as Record<string, unknown>).createdAt ?? 0)
+  )[0];
+  const latestPendingData = latestPending
+    ? (latestPending.data() as Record<string, unknown>)
+    : null;
+  const requestedBy = String(latestPendingData?.reporterId ?? authorId);
+  const requestedByName = String(latestPendingData?.reporterName ?? authorName);
+  const requestReason = String(latestPendingData?.requestReason ?? latestPendingData?.reason ?? "");
 
   await updateDoc(postRef, { blocked: true, underReview: false });
   await clearPostPendingReview(postId);
 
-  // Move the keep-hidden decision into Reviewed (Blocked).
-  await addDoc(collection(db, "communityReports"), {
-    targetType: "post",
-    targetId: postId,
-    postId,
-    reporterId: requestedBy,
-    reporterName: requestedByName,
-    reason: trimmedReason,
-    requestReason,
-    source: "re_review",
-    status: "resolved",
-    createdAt: Date.now(),
-    createdAtServer: serverTimestamp(),
-    targetContent: content,
-    targetAuthorId: authorId,
-    targetAuthorName: authorName,
-    read: true,
-  });
+  if (pendingReports.length > 0) {
+    await closePendingReportsForPost(postId, "resolved", trimmedReason);
+  } else {
+    // Fallback for older re-review queue entries without a report card.
+    await addDoc(collection(db, "communityReports"), {
+      targetType: "post",
+      targetId: postId,
+      postId,
+      reporterId: requestedBy,
+      reporterName: requestedByName,
+      reason: trimmedReason,
+      requestReason,
+      source: "re_review",
+      status: "resolved",
+      createdAt: Date.now(),
+      createdAtServer: serverTimestamp(),
+      targetContent: content,
+      targetAuthorId: authorId,
+      targetAuthorName: authorName,
+      read: true,
+    });
+  }
 
   if (authorId) {
     await sendAdminDirectMessage(
@@ -755,20 +869,128 @@ export async function dismissReReviewRequest(postId: string, reason: string): Pr
   }
 }
 
-/** Post IDs the user has commented on (collection-group query). */
-export async function fetchPostIdsCommentedByUser(uid: string): Promise<string[]> {
+const COMMENTED_POSTS_SUBCOLLECTION = "commentedPosts";
+
+async function recordUserCommentedPost(uid: string, postId: string): Promise<void> {
+  if (!uid || !postId) return;
+  await setDoc(
+    doc(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION, postId),
+    { postId, updatedAt: Date.now() },
+    { merge: true }
+  );
+}
+
+async function clearUserCommentedPostIfNeeded(uid: string, postId: string): Promise<void> {
+  if (!uid || !postId) return;
+  try {
+    const remaining = await getDocs(
+      query(collection(db, "communityPosts", postId, "comments"), where("authorId", "==", uid))
+    );
+    if (!remaining.empty) return;
+    await deleteDoc(doc(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION, postId));
+  } catch {
+    // Best-effort index cleanup.
+  }
+}
+
+async function fetchCommentedPostIdsFromCollectionGroup(uid: string): Promise<string[]> {
   const snap = await getDocs(
     query(collectionGroup(db, "comments"), where("authorId", "==", uid))
   );
   const ids = new Set<string>();
   for (const d of snap.docs) {
     const data = d.data() as Record<string, unknown>;
+    // Include blocked comments — the user still commented on that post.
     const fromField = typeof data.postId === "string" ? data.postId : "";
     const fromPath = d.ref.parent.parent?.id ?? "";
     const postId = fromField || fromPath;
     if (postId) ids.add(postId);
   }
   return [...ids];
+}
+
+async function backfillCommentedPostsIndex(uid: string, postIds: string[]): Promise<void> {
+  await Promise.all(postIds.map((postId) => recordUserCommentedPost(uid, postId).catch(() => {})));
+}
+
+/** Post IDs the user has commented on (user index, with collection-group backfill). */
+export async function fetchPostIdsCommentedByUser(uid: string): Promise<string[]> {
+  if (!uid) return [];
+
+  const ids = new Set<string>();
+
+  try {
+    const indexSnap = await getDocs(collection(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION));
+    for (const d of indexSnap.docs) ids.add(d.id);
+  } catch {
+    // Continue with collection-group scan.
+  }
+
+  try {
+    const fromGroup = await fetchCommentedPostIdsFromCollectionGroup(uid);
+    for (const id of fromGroup) ids.add(id);
+    void backfillCommentedPostsIndex(uid, fromGroup);
+  } catch {
+    // Index-only result is still useful when collection-group is unavailable.
+  }
+
+  return [...ids];
+}
+
+/** Live list of post IDs the signed-in user has commented on. */
+export function subscribePostIdsCommentedByUser(
+  uid: string,
+  onData: (postIds: string[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  if (!uid) {
+    onData([]);
+    return () => {};
+  }
+
+  let indexIds: string[] = [];
+  let groupIds: string[] = [];
+  let unsubscribed = false;
+
+  const emit = () => {
+    if (!unsubscribed) onData([...new Set([...indexIds, ...groupIds])]);
+  };
+
+  // One-time scan so older comments appear before the denormalized index exists.
+  void fetchCommentedPostIdsFromCollectionGroup(uid)
+    .then((ids) => {
+      if (unsubscribed) return;
+      groupIds = ids;
+      emit();
+      return backfillCommentedPostsIndex(uid, ids);
+    })
+    .catch((error: unknown) => {
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+    });
+
+  const unsub = onSnapshot(
+    collection(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION),
+    (snap) => {
+      indexIds = snap.docs.map((d) => d.id);
+      emit();
+    },
+    (error) => {
+      onError?.(error);
+      if (indexIds.length === 0 && groupIds.length === 0) {
+        void fetchCommentedPostIdsFromCollectionGroup(uid)
+          .then((ids) => {
+            groupIds = ids;
+            emit();
+          })
+          .catch(() => emit());
+      }
+    }
+  );
+
+  return () => {
+    unsubscribed = true;
+    unsub();
+  };
 }
 
 export function subscribePendingCommunityPostIds(
@@ -955,10 +1177,116 @@ export async function deletePost(postId: string): Promise<void> {
   const snap = await getDoc(doc(db, "communityPosts", postId));
   if (!snap.exists()) throw new Error("Post not found");
   const data = snap.data() as Record<string, unknown>;
-  if (data.authorId !== user.uid && !(await checkIsAdmin())) {
+
+  let isAdminUser = false;
+  try {
+    isAdminUser = await checkIsAdmin();
+  } catch {
+    isAdminUser = false;
+  }
+
+  if (data.authorId !== user.uid && !isAdminUser) {
     throw new Error("Not allowed");
   }
+
+  const authorId = String(data.authorId ?? user.uid);
+
+  // Authors may delete even while the post is pending admin review / blocked.
+  // Remove related data so the post is gone from Community, profile, and admin queues.
+
+  try {
+    await deleteAllPostComments(postId);
+  } catch {
+    // Continue — post delete should still proceed.
+  }
+
+  // Delete the post document first so it disappears for everyone immediately.
   await deleteDoc(doc(db, "communityPosts", postId));
+
+  try {
+    await clearPostPendingReview(postId);
+  } catch {
+    // Ignore pending-flag cleanup failures.
+  }
+
+  try {
+    const pendingComments = await getDocs(
+      query(collection(db, PENDING_COMMENTS_COLLECTION), where("postId", "==", postId))
+    );
+    await Promise.all(pendingComments.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+  } catch {
+    // Ignore pending-comment cleanup failures.
+  }
+
+  try {
+    await deleteReportsForPost(postId, { asAdmin: isAdminUser, authorId });
+  } catch {
+    // Report cleanup is best-effort.
+  }
+
+  try {
+    await deleteNotificationsForPost(postId, authorId);
+  } catch {
+    // Notification cleanup is best-effort.
+  }
+}
+
+async function deleteNotificationsForPost(postId: string, authorId: string): Promise<void> {
+  // Authors can only delete their own notification docs under current rules.
+  const snap = await getDocs(
+    query(
+      collection(db, "communityNotifications"),
+      where("userId", "==", authorId),
+      where("postId", "==", postId)
+    )
+  );
+  let batch = writeBatch(db);
+  let ops = 0;
+  for (const notificationDoc of snap.docs) {
+    batch.delete(notificationDoc.ref);
+    ops += 1;
+    if (ops >= 450) {
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    }
+  }
+  if (ops > 0) await batch.commit();
+}
+
+/** Remove admin pending/reviewed report cards tied to a post. */
+async function deleteReportsForPost(
+  postId: string,
+  opts: { asAdmin: boolean; authorId: string }
+): Promise<void> {
+  try {
+    const reportsQuery = opts.asAdmin
+      ? query(collection(db, "communityReports"), where("postId", "==", postId))
+      : query(
+          collection(db, "communityReports"),
+          where("targetAuthorId", "==", opts.authorId)
+        );
+
+    const snap = await getDocs(reportsQuery);
+    const docs = opts.asAdmin
+      ? snap.docs
+      : snap.docs.filter((d) => String((d.data() as Record<string, unknown>).postId ?? "") === postId);
+
+    let batch = writeBatch(db);
+    let ops = 0;
+    for (const reportDoc of docs) {
+      batch.delete(reportDoc.ref);
+      ops += 1;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+  } catch {
+    // Report cleanup is best-effort; post deletion should not fail because of it.
+  }
 }
 
 export function filterPostsByTag(posts: CommunityPost[], tag: string | null): CommunityPost[] {
@@ -1253,6 +1581,7 @@ export async function addComment(
     authorId: uid,
     authorName: profile.name,
     authorProfileImage: profile.profileImage,
+    postId,
     text: trimmed,
     parentCommentId,
     replyToAuthorName,
@@ -1262,6 +1591,18 @@ export async function addComment(
   });
   batch.update(doc(db, "communityPosts", postId), { commentCount: increment(1) });
   await batch.commit();
+
+  void recordUserCommentedPost(uid, postId).catch(() => {});
+
+  // Repair denormalized count from the real comments subcollection.
+  // Fixes posts stuck at 0 when older writes skipped the counter.
+  try {
+    const commentsSnap = await getDocs(collection(db, "communityPosts", postId, "comments"));
+    const visibleCount = commentsSnap.docs.filter((d) => d.data()?.blocked !== true).length;
+    await updateDoc(doc(db, "communityPosts", postId), { commentCount: visibleCount });
+  } catch {
+    // Comment is already saved; feed can still show a live count from the subcollection.
+  }
 
   if (!parentCommentId) {
     await createCommunityNotification({
@@ -1323,6 +1664,24 @@ export async function deleteComment(postId: string, commentId: string): Promise<
     commentCount: increment(-toDelete.size),
   });
   await batch.commit();
+
+  try {
+    const remainingSnap = await getDocs(collection(db, "communityPosts", postId, "comments"));
+    const visibleCount = remainingSnap.docs.filter((d) => d.data()?.blocked !== true).length;
+    await updateDoc(doc(db, "communityPosts", postId), { commentCount: visibleCount });
+  } catch {
+    // Deletes already applied.
+  }
+
+  const affectedAuthors = new Set<string>();
+  for (const commentDoc of commentsSnap.docs) {
+    if (!toDelete.has(commentDoc.id)) continue;
+    const authorId = String((commentDoc.data() as Record<string, unknown>).authorId ?? "");
+    if (authorId) affectedAuthors.add(authorId);
+  }
+  await Promise.all(
+    [...affectedAuthors].map((authorId) => clearUserCommentedPostIfNeeded(authorId, postId))
+  );
 }
 
 /** Soft-hide a comment so admin can restore it later. */
@@ -1358,6 +1717,32 @@ export async function submitReport(params: {
     throw new Error("This content cannot be reported");
   }
 
+  // Already reported / under review — do not allow another report.
+  if (params.targetType === "post") {
+    const postSnap = await getDoc(doc(db, "communityPosts", params.postId));
+    if (!postSnap.exists()) throw new Error("Post not found");
+    const postData = postSnap.data() as Record<string, unknown>;
+    if (postData.underReview === true || postData.blocked === true) {
+      throw new Error("This post has already been reported and is under review.");
+    }
+    const pendingPost = await getDoc(doc(db, PENDING_POSTS_COLLECTION, params.postId));
+    if (pendingPost.exists()) {
+      throw new Error("This post has already been reported and is under review.");
+    }
+  } else {
+    const pendingComment = await getDoc(doc(db, PENDING_COMMENTS_COLLECTION, params.targetId));
+    if (pendingComment.exists()) {
+      throw new Error("This comment has already been reported and is under review.");
+    }
+    const postSnap = await getDoc(doc(db, "communityPosts", params.postId));
+    if (postSnap.exists()) {
+      const postData = postSnap.data() as Record<string, unknown>;
+      if (postData.blocked === true) {
+        throw new Error("This comment cannot be reported right now.");
+      }
+    }
+  }
+
   await addDoc(collection(db, "communityReports"), {
     targetType: params.targetType,
     targetId: params.targetId,
@@ -1374,25 +1759,53 @@ export async function submitReport(params: {
     read: false,
   });
 
-  await markPostPendingReview(params.postId);
+  await markPostPendingReview(params.postId, params.targetAuthorId);
   if (params.targetType === "comment") {
     await markCommentPendingReview(params.targetId, params.postId);
   }
 
-  if (params.targetType === "post") {
+  const notifyAuthor = params.targetAuthorId && params.targetAuthorId !== uid;
+
+  if (notifyAuthor) {
+    let adminProfileImage: string | null = null;
+    if (adminUid) {
+      try {
+        const adminProfile = await getUserProfile(adminUid);
+        adminProfileImage = adminProfile.profileImage;
+      } catch {
+        adminProfileImage = null;
+      }
+    }
+
+    // Never attach the reporter's identity — author must not learn who reported them.
     await createCommunityNotification({
       userId: params.targetAuthorId,
-      type: "post_reported",
-      fromUserId: uid,
-      fromUserName: profile.name,
-      fromUserProfileImage: profile.profileImage,
+      type: params.targetType === "comment" ? "comment_reported" : "post_reported",
+      fromUserId: adminUid ?? "support_admin",
+      fromUserName: SUPPORT_ADMIN_NAME,
+      fromUserProfileImage: adminProfileImage,
       postId: params.postId,
+      commentId: params.targetType === "comment" ? params.targetId : undefined,
       postPreview: params.targetContent.slice(0, 80),
     });
+  }
 
+  if (params.targetType === "post") {
     await sendAdminDirectMessage(
       uid,
       buildReportReceivedReporterMessage(params.targetAuthorName, params.targetContent)
+    );
+
+    if (notifyAuthor) {
+      await sendAdminDirectMessage(
+        params.targetAuthorId,
+        buildReportReceivedAuthorMessage(params.targetContent)
+      );
+    }
+  } else if (params.targetType === "comment" && notifyAuthor) {
+    await sendAdminDirectMessage(
+      params.targetAuthorId,
+      buildCommentReportReceivedAuthorMessage(params.targetContent)
     );
   }
 }
@@ -1551,6 +1964,7 @@ async function seedSupportWelcomeMessage(chatId: string): Promise<void> {
   batch.update(doc(db, "communityChats", chatId), {
     lastMessage: SUPPORT_CHAT_WELCOME_MESSAGE,
     lastMessageAt: createdAt,
+    [`unreadCount.${user.uid}`]: increment(1),
   });
   await batch.commit();
 }
@@ -2260,35 +2674,40 @@ async function sendAdminDirectMessage(recipientUserId: string, messageText: stri
   if (!adminUid) return;
   if (recipientUserId === adminUid) return;
 
-  const chatId = await ensureChat(adminUid, recipientUserId, { isSupportChat: true });
-  const chatRef = doc(db, "communityChats", chatId);
-  const createdAt = Date.now();
+  try {
+    const chatId = await ensureChat(adminUid, recipientUserId, { isSupportChat: true });
+    const chatRef = doc(db, "communityChats", chatId);
+    const createdAt = Date.now();
 
-  const batch = writeBatch(db);
-  const msgRef = doc(collection(db, "communityChats", chatId, "messages"));
-  batch.set(msgRef, {
-    senderId: adminUid,
-    text: messageText,
-    messageType: "text",
-    stickerId: null,
-    imageUrl: null,
-    audioUrl: null,
-    audioDurationMs: null,
-    quote: null,
-    editedAt: null,
-    recalled: false,
-    recalledAt: null,
-    recalledByName: null,
-    isAutoReply: true,
-    createdAt,
-    createdAtServer: serverTimestamp(),
-  });
-  batch.update(chatRef, {
-    lastMessage: messageText,
-    lastMessageAt: createdAt,
-    [`unreadCount.${recipientUserId}`]: increment(1),
-  });
-  await batch.commit();
+    const batch = writeBatch(db);
+    const msgRef = doc(collection(db, "communityChats", chatId, "messages"));
+    batch.set(msgRef, {
+      senderId: adminUid,
+      text: messageText,
+      messageType: "text",
+      stickerId: null,
+      imageUrl: null,
+      audioUrl: null,
+      audioDurationMs: null,
+      quote: null,
+      editedAt: null,
+      recalled: false,
+      recalledAt: null,
+      recalledByName: null,
+      isAutoReply: true,
+      createdAt,
+      createdAtServer: serverTimestamp(),
+    });
+    batch.update(chatRef, {
+      lastMessage: messageText,
+      lastMessageAt: createdAt,
+      [`unreadCount.${recipientUserId}`]: increment(1),
+    });
+    await batch.commit();
+  } catch (e) {
+    // Report / moderation flows must not fail if the Support Admin chat write is blocked.
+    console.warn("sendAdminDirectMessage failed:", e);
+  }
 }
 
 const POST_SNIPPET_MAX = 120;
@@ -2303,6 +2722,16 @@ export function formatPostContentSnippet(content: string): string {
 export function buildReportReceivedReporterMessage(authorName: string, content: string): string {
   const snippet = formatPostContentSnippet(content);
   return `Thank you for your report. We received your report about the following post and will **review it as soon as possible**.\n\n**Post by ${authorName}:**\n"${snippet}"\n\nWe will update you once the review is complete.`;
+}
+
+export function buildReportReceivedAuthorMessage(content: string): string {
+  const snippet = formatPostContentSnippet(content);
+  return `Your post has been **hidden** and is **pending review** by Support Admin.\n\n**Your post:**\n"${snippet}"\n\nPlease follow community guidelines while we review it. We will update you here once the review is complete.`;
+}
+
+export function buildCommentReportReceivedAuthorMessage(content: string): string {
+  const snippet = formatPostContentSnippet(content);
+  return `Your comment has been **hidden** and is **pending review** by Support Admin.\n\n**Your comment:**\n"${snippet}"\n\nPlease follow community guidelines while we review it. We will update you here once the review is complete.`;
 }
 
 export function buildReportDismissedReporterMessage(authorName: string, content: string): string {
@@ -2566,36 +2995,120 @@ export async function adminPermanentlyDeletePost(postId: string): Promise<void> 
   if (!(await checkIsAdmin())) throw new Error("Admin only");
 
   const postSnap = await getDoc(doc(db, "communityPosts", postId));
+  const authorId = postSnap.exists()
+    ? String((postSnap.data() as Record<string, unknown>).authorId ?? "")
+    : "";
   if (postSnap.exists()) {
     await deleteAllPostComments(postId);
     await deleteDoc(doc(db, "communityPosts", postId));
   }
   await clearPostPendingReview(postId);
+  try {
+    const pendingComments = await getDocs(
+      query(collection(db, PENDING_COMMENTS_COLLECTION), where("postId", "==", postId))
+    );
+    await Promise.all(pendingComments.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+  } catch {
+    // Ignore.
+  }
+  await deleteReportsForPost(postId, { asAdmin: true, authorId });
 }
 
+/**
+ * Admin safety net: drop pending/reviewed queue items whose post was already deleted
+ * (e.g. author deleted a reported post before cleanup rules were deployed).
+ */
+export async function purgeAdminQueueForMissingPosts(postIds: string[]): Promise<string[]> {
+  if (!(await checkIsAdmin())) return [];
+  const unique = [...new Set(postIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const missing: string[] = [];
+  await Promise.all(
+    unique.map(async (postId) => {
+      try {
+        const snap = await getDoc(doc(db, "communityPosts", postId));
+        if (snap.exists()) return;
+        missing.push(postId);
+        await clearPostPendingReview(postId);
+        try {
+          const pendingComments = await getDocs(
+            query(collection(db, PENDING_COMMENTS_COLLECTION), where("postId", "==", postId))
+          );
+          await Promise.all(pendingComments.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+        } catch {
+          // Ignore.
+        }
+        await deleteReportsForPost(postId, { asAdmin: true, authorId: "" });
+      } catch {
+        // Best-effort cleanup.
+      }
+    })
+  );
+  return missing;
+}
+
+/**
+ * Remove a report/review from the admin queue only.
+ * Does not delete the author's post or comment — they keep it on their profile
+ * (and can request another check if it is still blocked).
+ */
 export async function adminPermanentlyDeleteReportTarget(
   report: CommunityReport
 ): Promise<void> {
   if (!(await checkIsAdmin())) throw new Error("Admin only");
 
   if (report.targetType === "comment") {
-    try {
-      await deleteComment(report.postId, report.targetId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (!message.toLowerCase().includes("not found")) throw error;
-    }
     await clearCommentPendingReview(report.targetId);
     await clearPostPendingReview(report.postId);
-    const postSnap = await getDoc(doc(db, "communityPosts", report.postId));
-    if (postSnap.exists()) {
-      await updateDoc(doc(db, "communityPosts", report.postId), { underReview: false });
+    try {
+      const postSnap = await getDoc(doc(db, "communityPosts", report.postId));
+      if (postSnap.exists()) {
+        // Drop admin queue flags; keep the post/comment for the author.
+        await updateDoc(doc(db, "communityPosts", report.postId), { underReview: false });
+      }
+    } catch {
+      // Post may already be gone.
     }
   } else {
-    await adminPermanentlyDeletePost(report.postId);
+    await clearPostPendingReview(report.postId);
+    try {
+      const postRef = doc(db, "communityPosts", report.postId);
+      const postSnap = await getDoc(postRef);
+      if (postSnap.exists()) {
+        // Keep blocked posts visible to the author so they can request another check.
+        await updateDoc(postRef, { underReview: false });
+      }
+    } catch {
+      // Post may already be gone.
+    }
   }
 
-  await updateDoc(doc(db, "communityReports", report.id), { status: "resolved" });
+  // Remove every admin report card for this same post/comment.
+  try {
+    const siblingSnap = await getDocs(
+      query(
+        collection(db, "communityReports"),
+        where("targetType", "==", report.targetType),
+        where("targetId", "==", report.targetId)
+      )
+    );
+    let batch = writeBatch(db);
+    let ops = 0;
+    for (const sibling of siblingSnap.docs) {
+      batch.delete(sibling.ref);
+      ops += 1;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+  } catch {
+    // Fallback if the compound query fails (missing index, etc.).
+    await deleteDoc(doc(db, "communityReports", report.id));
+  }
 }
 
 export async function adminBlockPost(post: CommunityPost, reason: string): Promise<void> {

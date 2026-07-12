@@ -1,27 +1,27 @@
 import { Pressable } from "@/components/Pressable";
-import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { resolvePostAuthRoute } from "@/lib/onboardingRoute";
-import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useLightScreen } from "@/lib/useLightScreen";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
+    sendPasswordResetEmail,
+    signInWithEmailAndPassword,
 } from "firebase/auth";
 import { useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";

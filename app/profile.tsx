@@ -2,7 +2,9 @@ import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigat
 import { AppearanceModal } from "@/components/profile/AppearanceModal";
 import { ProfileStatsCards } from "@/components/profile/ProfileStatsCards";
 import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
+import { ZoomableImageModal } from "@/components/ZoomableImageModal";
 import { useAppearance } from "@/context/AppearanceContext";
+import { getLastMainTabRoute } from "@/lib/bottomTabHistory";
 import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
@@ -289,11 +291,6 @@ export default function ProfileScreen() {
       ? require("../assets/images/malefitnesspic.avif")
       : require("../assets/images/femalefitnesspic.avif");
 
-  const openEditProfile = () => {
-    setProfileViewerVisible(false);
-    router.push("/EditProfile");
-  };
-
   return (
     <View className="flex-1" style={{ backgroundColor: theme.screenBg }}>
       <ScrollView
@@ -303,7 +300,14 @@ export default function ProfileScreen() {
           paddingTop: insets.top + 12,
         }}
       >
-        <ProfileScreenHeader title="Profile" onBack={() => router.back()} />
+        <ProfileScreenHeader
+          title="Profile"
+          onBack={() => {
+            // Tab switches use replace(), so router.back() can leave the app
+            // (e.g. launch/login). Return to the previous main tab instead.
+            router.replace(getLastMainTabRoute());
+          }}
+        />
 
         <View>
           <View className="items-center mb-6">
@@ -706,42 +710,11 @@ export default function ProfileScreen() {
 
       <AppearanceModal visible={appearanceVisible} onClose={() => setAppearanceVisible(false)} />
 
-      <Modal
+      <ZoomableImageModal
         visible={profileViewerVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setProfileViewerVisible(false)}
-      >
-        <View className="flex-1 bg-black">
-          <Image source={profilePhotoSource} className="flex-1" resizeMode="contain" />
-
-          <View
-            className="absolute left-0 right-0 flex-row items-center justify-between px-4"
-            style={{ top: insets.top + 12 }}
-          >
-            <Pressable
-              onPress={() => setProfileViewerVisible(false)}
-              hitSlop={8}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-              accessibilityLabel="Close profile photo"
-            >
-              <Ionicons name="close" size={24} color="#ffffff" />
-            </Pressable>
-
-            <Pressable
-              onPress={openEditProfile}
-              hitSlop={8}
-              className="flex-row items-center px-3.5 py-2 rounded-full"
-              style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-              accessibilityLabel="Edit profile"
-            >
-              <Ionicons name="create-outline" size={20} color="#ffffff" />
-              <Text className="text-white text-sm font-extrabold ml-1.5">Edit</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        source={profilePhotoSource}
+        onClose={() => setProfileViewerVisible(false)}
+      />
 
       <BottomTabBar active="profile" />
     </View>

@@ -9,13 +9,12 @@ type CommentMenuModalProps = {
   visible: boolean;
   comment: CommunityComment | null;
   canDelete: boolean;
-  canReport: boolean;
+  /** Admin-only: hide/block a comment from the community. */
   isAdmin?: boolean;
   canBlock?: boolean;
   deleting: boolean;
   onClose: () => void;
   onDelete: () => void;
-  onReport: () => void;
   onBlock?: () => void;
 };
 
@@ -23,13 +22,11 @@ export function CommentMenuModal({
   visible,
   comment,
   canDelete,
-  canReport,
   isAdmin = false,
   canBlock = false,
   deleting,
   onClose,
   onDelete,
-  onReport,
   onBlock,
 }: CommentMenuModalProps) {
   const insets = useSafeAreaInsets();
@@ -40,9 +37,6 @@ export function CommentMenuModal({
   const options: { label: string; onPress: () => void; danger?: boolean }[] = [];
   if (canDelete) {
     options.push({ label: "Delete Comment", onPress: onDelete, danger: true });
-  }
-  if (canReport && !isAdmin) {
-    options.push({ label: "Report Comment", onPress: onReport, danger: true });
   }
   if (isAdmin && canBlock && onBlock) {
     options.push({ label: "Block Comment", onPress: onBlock, danger: true });

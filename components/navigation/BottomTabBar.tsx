@@ -1,8 +1,10 @@
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
 import { useAppearance } from "@/context/AppearanceContext";
+import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
 import { useCommunityUnread } from "@/lib/useCommunityUnread";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -61,6 +63,12 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
     { key: "profile", label: "PROFILE", route: "/profile", icon: "person-outline", iconActive: "person" },
   ];
 
+  useEffect(() => {
+    if (active === "home") rememberBottomTabRoute("/home");
+    else if (active === "discover") rememberBottomTabRoute("/discover");
+    else if (active === "progress") rememberBottomTabRoute("/progress");
+  }, [active]);
+
   return (
     <View
       className="absolute bottom-0 left-0 right-0 flex-row px-2 pt-2"
@@ -83,7 +91,10 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
           <Pressable
             key={item.key}
             onPress={() => {
-              if (!isActive) router.replace(item.route);
+              if (isActive) return;
+              const currentRoute = items.find((tab) => tab.key === active)?.route;
+              rememberBottomTabRoute(currentRoute);
+              router.replace(item.route);
             }}
             className="flex-1 items-center py-2"
           >

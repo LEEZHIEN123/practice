@@ -60,7 +60,10 @@ export function ProgressMetricCard({
         />
 
         <View className="flex-row items-center justify-between">
-          <Text className="text-lg font-extrabold text-white" style={textShadow}>
+          <Text
+            className="text-lg font-extrabold"
+            style={{ color: "#ffffff", ...textShadow }}
+          >
             {title}
           </Text>
           {icon}
@@ -107,8 +110,9 @@ export function ProgressMetricValue({ children }: { children: ReactNode }) {
 export function ProgressMetricDetail({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <Text
-      className={`text-sm mt-2 text-white/90 ${className}`}
+      className={`text-sm mt-2 ${className}`}
       style={{
+        color: "#ffffff",
         textShadowColor: "rgba(0,0,0,0.45)",
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 3,

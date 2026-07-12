@@ -23,11 +23,13 @@ export type CommunityBootstrapSnapshot = {
 let cachedPosts: CommunityPost[] = [];
 let cachedAdminUid: string | null | undefined;
 let cachedAdminProfileImage: string | null = null;
+let cachedMyProfileUid: string | null = null;
 let cachedMyProfileImage: string | null | undefined;
 let postsHydrated = false;
 let postsUnsub: Unsubscribe | null = null;
 const postListeners = new Set<PostsListener>();
 let prefetchInFlight: Promise<void> | null = null;
+let prefetchInFlightUid: string | null = null;
 
 function notifyPosts(posts: CommunityPost[]) {
   cachedPosts = posts;
@@ -41,6 +43,18 @@ export function prependCommunityPost(post: CommunityPost) {
     (a, b) => b.createdAt - a.createdAt
   );
   notifyPosts(merged);
+}
+
+/** Remove a deleted post from the shared community feed cache immediately. */
+export function removeCommunityPost(postId: string) {
+  if (!postId) return;
+  const next = cachedPosts.filter((item) => item.id !== postId);
+  if (next.length === cachedPosts.length) {
+    // Still notify so screens drop any local copy of this id.
+    notifyPosts(next);
+    return;
+  }
+  notifyPosts(next);
 }
 
 /** Patch a single post in the shared community feed cache. */
@@ -60,12 +74,15 @@ function ensurePostsListener() {
 }
 
 export function getCommunityBootstrapSnapshot(): CommunityBootstrapSnapshot {
+  const uid = auth.currentUser?.uid ?? null;
+  const myImage =
+    uid && cachedMyProfileUid === uid ? (cachedMyProfileImage ?? null) : null;
   return {
     posts: cachedPosts,
     adminUid: cachedAdminUid ?? null,
     adminUidLoaded: cachedAdminUid !== undefined,
     adminProfileImage: cachedAdminProfileImage,
-    myProfileImage: cachedMyProfileImage ?? null,
+    myProfileImage: myImage,
     postsHydrated,
   };
 }
@@ -74,6 +91,7 @@ export function resetCommunityBootstrapCache() {
   cachedPosts = [];
   cachedAdminUid = undefined;
   cachedAdminProfileImage = null;
+  cachedMyProfileUid = null;
   cachedMyProfileImage = undefined;
   postsHydrated = false;
   if (postsUnsub) {
@@ -82,6 +100,7 @@ export function resetCommunityBootstrapCache() {
   }
   postListeners.clear();
   prefetchInFlight = null;
+  prefetchInFlightUid = null;
 }
 
 /** Shared posts listener — keeps feed warm across Discover → Community navigation. */
@@ -101,8 +120,15 @@ export function subscribeCommunityPosts(
 export function prefetchCommunityScreen(): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) return Promise.resolve();
-  if (prefetchInFlight) return prefetchInFlight;
+  if (prefetchInFlight && prefetchInFlightUid === uid) return prefetchInFlight;
 
+  // Drop a previous user's in-flight prefetch so we never apply their profile image.
+  if (cachedMyProfileUid && cachedMyProfileUid !== uid) {
+    cachedMyProfileUid = null;
+    cachedMyProfileImage = undefined;
+  }
+
+  prefetchInFlightUid = uid;
   prefetchInFlight = (async () => {
     ensurePostsListener();
 
@@ -131,14 +157,19 @@ export function prefetchCommunityScreen(): Promise<void> {
       );
     }
 
-    if (cachedMyProfileImage === undefined) {
+    if (cachedMyProfileImage === undefined || cachedMyProfileUid !== uid) {
       jobs.push(
         getCurrentUserProfile()
-          .then(({ profile }) => {
+          .then(({ uid: profileUid, profile }) => {
+            if (auth.currentUser?.uid !== profileUid) return;
+            cachedMyProfileUid = profileUid;
             cachedMyProfileImage = profile.profileImage;
           })
           .catch(() => {
-            cachedMyProfileImage = null;
+            if (auth.currentUser?.uid === uid) {
+              cachedMyProfileUid = uid;
+              cachedMyProfileImage = null;
+            }
           })
       );
     }
@@ -146,7 +177,10 @@ export function prefetchCommunityScreen(): Promise<void> {
     await Promise.all(jobs);
     void ensureSupportChatWithAdmin().catch(() => null);
   })().finally(() => {
-    prefetchInFlight = null;
+    if (prefetchInFlightUid === uid) {
+      prefetchInFlight = null;
+      prefetchInFlightUid = null;
+    }
   });
 
   return prefetchInFlight;

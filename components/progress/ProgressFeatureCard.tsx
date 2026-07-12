@@ -73,15 +73,16 @@ export function ProgressFeatureCard({
 
           <View className="flex-1 min-w-0 ml-4 pr-2 justify-center">
             <Text
-              className={`${large ? "text-lg" : "text-xl"} font-extrabold text-white`}
-              style={textShadow}
+              className={`${large ? "text-lg" : "text-xl"} font-extrabold`}
+              style={{ color: "#ffffff", ...textShadow }}
               numberOfLines={1}
             >
               {title}
             </Text>
             <Text
-              className="text-sm mt-1 text-white/90 leading-[18px]"
+              className="text-sm mt-1 leading-[18px]"
               style={{
+                color: "#ffffff",
                 textShadowColor: "rgba(0,0,0,0.45)",
                 textShadowOffset: { width: 0, height: 1 },
                 textShadowRadius: 3,
