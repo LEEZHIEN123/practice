@@ -66,6 +66,7 @@ import {
     ensureDirectChat,
     ensureSupportChatWithAdmin,
     fetchPostIdsCommentedByUser,
+    fetchPostsByIds,
     subscribePostIdsCommentedByUser,
     filterPostsByKeyword,
     filterPostsByTag,
@@ -78,6 +79,7 @@ import {
     rejectFriendRequest,
     resolveFriendRequestNotificationByRequestId,
     sendFriendRequest,
+    setPostAuthorHidden,
     submitReport,
     subscribeChats,
     subscribeFriendsList,
@@ -293,6 +295,7 @@ export default function CommunityScreen() {
   const [manageMenuVisible, setManageMenuVisible] = useState(false);
   const [manageFilter, setManageFilter] = useState<"liked" | "commented" | "friends" | null>(null);
   const [commentedPostIds, setCommentedPostIds] = useState<string[]>([]);
+  const [commentedFilterPosts, setCommentedFilterPosts] = useState<CommunityPost[]>([]);
   const [friendIds, setFriendIds] = useState<string[]>([]);
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -346,14 +349,24 @@ export default function CommunityScreen() {
   const friendIdSet = useMemo(() => new Set(friendIds), [friendIds]);
 
   const filteredPosts = useMemo(() => {
-    let list = filterPostsByTag(posts, tagFilterView ? activeTagFilter : null);
+    // Author-hidden posts stay off the community feed (visible only on the author's profile).
+    let list = filterPostsByTag(
+      posts.filter((p) => !p.authorHidden),
+      tagFilterView ? activeTagFilter : null
+    );
 
     if (manageFilter && currentUserId) {
       if (manageFilter === "liked") {
         list = list.filter((p) => p.likedBy.includes(currentUserId));
       } else if (manageFilter === "commented") {
         const idSet = new Set(commentedPostIds);
-        list = list.filter((p) => idSet.has(p.id));
+        const byId = new Map(list.map((p) => [p.id, p]));
+        for (const post of commentedFilterPosts) {
+          if (!byId.has(post.id)) byId.set(post.id, post);
+        }
+        list = [...byId.values()]
+          .filter((p) => idSet.has(p.id))
+          .sort((a, b) => b.createdAt - a.createdAt);
       } else {
         const friends = new Set(friendIds);
         list = list.filter((p) => friends.has(p.authorId));
@@ -370,12 +383,13 @@ export default function CommunityScreen() {
     manageFilter,
     currentUserId,
     commentedPostIds,
+    commentedFilterPosts,
     friendIds,
   ]);
 
   const profilePosts = useMemo(
-    () => (profileUserId ? getPostsByAuthor(posts, profileUserId) : []),
-    [posts, profileUserId]
+    () => (profileUserId ? getPostsByAuthor(posts, profileUserId, currentUserId) : []),
+    [posts, profileUserId, currentUserId]
   );
 
   const totalUnreadChats = useMemo(
@@ -476,8 +490,7 @@ export default function CommunityScreen() {
     }
     const unsubCommented = subscribePostIdsCommentedByUser(
       currentUserId,
-      setCommentedPostIds,
-      () => setCommentedPostIds([])
+      setCommentedPostIds
     );
     const unsubFriends = subscribeFriendsList(
       (friends) => setFriendIds(friends.map((f) => f.id)),
@@ -491,11 +504,35 @@ export default function CommunityScreen() {
 
   // Refresh commented-post IDs when opening the "My comment" filter.
   useEffect(() => {
-    if (!currentUserId || manageFilter !== "commented") return;
+    if (!currentUserId || manageFilter !== "commented") {
+      if (manageFilter !== "commented") setCommentedFilterPosts([]);
+      return;
+    }
     void fetchPostIdsCommentedByUser(currentUserId)
       .then(setCommentedPostIds)
       .catch(() => {});
   }, [currentUserId, manageFilter]);
+
+  // Load any commented posts that are missing from the live feed.
+  useEffect(() => {
+    if (manageFilter !== "commented") return;
+    const missing = commentedPostIds.filter((id) => !posts.some((p) => p.id === id));
+    if (missing.length === 0) {
+      setCommentedFilterPosts([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchPostsByIds(missing)
+      .then((extras) => {
+        if (!cancelled) setCommentedFilterPosts(extras);
+      })
+      .catch(() => {
+        if (!cancelled) setCommentedFilterPosts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [manageFilter, commentedPostIds, posts]);
 
   useEffect(() => {
     if (activeTab !== "feed") setManageFilter(null);
@@ -649,6 +686,36 @@ export default function CommunityScreen() {
                 await deletePost(post.id);
               } catch (e: unknown) {
                 Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleAuthorHidden = (post: CommunityPost) => {
+    const nextHidden = !post.authorHidden;
+    Alert.alert(
+      nextHidden ? "Hide from everyone?" : "Show to community?",
+      nextHidden
+        ? "This post will be hidden from the community. Only you can see it on your profile."
+        : "This post will be visible in the community again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: nextHidden ? "Hide" : "Show",
+          onPress: () => {
+            void (async () => {
+              const optimistic = { ...post, authorHidden: nextHidden };
+              setPosts((prev) => prev.map((item) => (item.id === post.id ? optimistic : item)));
+              patchCommunityPost(optimistic);
+              try {
+                await setPostAuthorHidden(post, nextHidden);
+              } catch (e: unknown) {
+                setPosts((prev) => prev.map((item) => (item.id === post.id ? post : item)));
+                patchCommunityPost(post);
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not update post visibility.");
               }
             })();
           },
@@ -1243,6 +1310,7 @@ export default function CommunityScreen() {
                         postId={post.id}
                         commentCount={post.commentCount}
                         currentUserId={currentUserId}
+                        adminUid={adminUid}
                         friendIds={friendIdSet}
                         onSeeMore={() => openPostDetail(post.id)}
                         onOpenProfile={(userId) => void openUserProfile(userId)}
@@ -1439,6 +1507,9 @@ export default function CommunityScreen() {
           if (!menuPost) return;
           setSharePost(menuPost);
           setMenuPost(null);
+        }}
+        onToggleAuthorHidden={() => {
+          if (menuPost) handleToggleAuthorHidden(menuPost);
         }}
       />
 

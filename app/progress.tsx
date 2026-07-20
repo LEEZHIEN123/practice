@@ -46,7 +46,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
 type TabKey = "weight" | "workout" | "meal";
@@ -1570,15 +1570,25 @@ export default function ProgressScreen() {
                   {waterPreviousSuggestedMl.toLocaleString()} ml suggested
                 </ProgressMetricDetail>
               ) : null}
-              {waterSuggestionLoading ? (
-                <ProgressMetricDetail>Calculating today&apos;s suggestion…</ProgressMetricDetail>
+              {waterSuggestionLoading && waterSuggestedMl == null ? (
+                <View className="flex-row items-center mt-1">
+                  <ActivityIndicator color="#fde68a" size="small" />
+                  <ProgressMetricDetail className="ml-2">
+                    Calculating today&apos;s suggestion…
+                  </ProgressMetricDetail>
+                </View>
               ) : waterSuggestedMl != null ? (
-                <ProgressMetricDetail>
-                  Today&apos;s water intake suggestion:{" "}
-                  <Text className="font-extrabold" style={{ color: "#fde68a" }}>
-                    {waterSuggestedMl.toLocaleString()} ml
-                  </Text>
-                </ProgressMetricDetail>
+                <View className="flex-row items-center flex-wrap mt-0">
+                  <ProgressMetricDetail>
+                    Today&apos;s water intake suggestion:{" "}
+                    <Text className="font-extrabold" style={{ color: "#fde68a" }}>
+                      {waterSuggestedMl.toLocaleString()} ml
+                    </Text>
+                  </ProgressMetricDetail>
+                  {waterSuggestionLoading ? (
+                    <ActivityIndicator color="#fde68a" size="small" style={{ marginLeft: 8 }} />
+                  ) : null}
+                </View>
               ) : (
                 <ProgressMetricDetail>
                   Today suggestion:{" "}

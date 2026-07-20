@@ -27,6 +27,7 @@ type PostMenuModalProps = {
   onShare?: () => void;
   onBlock?: () => void;
   onRequestReReview?: () => void;
+  onToggleAuthorHidden?: () => void;
 };
 
 export function PostMenuModal({
@@ -43,6 +44,7 @@ export function PostMenuModal({
   onShare,
   onBlock,
   onRequestReReview,
+  onToggleAuthorHidden,
 }: PostMenuModalProps) {
   const insets = useSafeAreaInsets();
   const { textMuted, theme } = useThemedScreen();
@@ -64,7 +66,20 @@ export function PostMenuModal({
         ...(!post.blocked && !post.underReview
           ? [{ label: "Edit Post", icon: "create-outline" as const, onPress: onEdit }]
           : []),
-        ...(onShare && !post.blocked && !post.underReview
+        ...(!post.blocked && onToggleAuthorHidden
+          ? [
+              {
+                label: post.authorHidden
+                  ? "Show to community"
+                  : "Hide from everyone",
+                icon: post.authorHidden
+                  ? ("eye-outline" as const)
+                  : ("eye-off-outline" as const),
+                onPress: onToggleAuthorHidden,
+              },
+            ]
+          : []),
+        ...(onShare && !post.blocked && !post.underReview && !post.authorHidden
           ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }]
           : []),
         { label: "Delete Post", icon: "trash-outline", onPress: onDelete, danger: true },

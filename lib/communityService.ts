@@ -147,6 +147,7 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
     commentCount: Number(data.commentCount ?? 0) || 0,
     likedBy: Array.isArray(data.likedBy) ? data.likedBy.map(String) : [],
     blocked: data.blocked === true,
+    authorHidden: data.authorHidden === true,
     underReview: data.underReview === true,
     createdAt: Number(data.createdAt ?? 0),
   };
@@ -176,7 +177,9 @@ async function mergePendingPosts(
         const snap = await getDoc(doc(db, "communityPosts", id));
         if (!snap.exists()) return null;
         const post = mapPost(snap.id, snap.data() as Record<string, unknown>);
-        return post.blocked ? null : post;
+        if (post.blocked) return null;
+        if (post.authorHidden && post.authorId !== auth.currentUser?.uid) return null;
+        return post;
       } catch {
         return null;
       }
@@ -893,13 +896,12 @@ async function clearUserCommentedPostIfNeeded(uid: string, postId: string): Prom
   }
 }
 
-async function fetchCommentedPostIdsFromCollectionGroup(uid: string): Promise<string[]> {
-  const snap = await getDocs(
-    query(collectionGroup(db, "comments"), where("authorId", "==", uid))
-  );
+function postIdsFromCommentSnapshot(
+  docs: { data: () => Record<string, unknown>; ref: { parent: { parent: { id: string } | null } } }[]
+): string[] {
   const ids = new Set<string>();
-  for (const d of snap.docs) {
-    const data = d.data() as Record<string, unknown>;
+  for (const d of docs) {
+    const data = d.data();
     // Include blocked comments — the user still commented on that post.
     const fromField = typeof data.postId === "string" ? data.postId : "";
     const fromPath = d.ref.parent.parent?.id ?? "";
@@ -907,6 +909,13 @@ async function fetchCommentedPostIdsFromCollectionGroup(uid: string): Promise<st
     if (postId) ids.add(postId);
   }
   return [...ids];
+}
+
+async function fetchCommentedPostIdsFromCollectionGroup(uid: string): Promise<string[]> {
+  const snap = await getDocs(
+    query(collectionGroup(db, "comments"), where("authorId", "==", uid))
+  );
+  return postIdsFromCommentSnapshot(snap.docs);
 }
 
 async function backfillCommentedPostsIndex(uid: string, postIds: string[]): Promise<void> {
@@ -956,19 +965,28 @@ export function subscribePostIdsCommentedByUser(
     if (!unsubscribed) onData([...new Set([...indexIds, ...groupIds])]);
   };
 
-  // One-time scan so older comments appear before the denormalized index exists.
-  void fetchCommentedPostIdsFromCollectionGroup(uid)
-    .then((ids) => {
-      if (unsubscribed) return;
-      groupIds = ids;
+  // Live collection-group query is the source of truth for existing comments.
+  const unsubGroup = onSnapshot(
+    query(collectionGroup(db, "comments"), where("authorId", "==", uid)),
+    (snap) => {
+      groupIds = postIdsFromCommentSnapshot(snap.docs);
       emit();
-      return backfillCommentedPostsIndex(uid, ids);
-    })
-    .catch((error: unknown) => {
-      onError?.(error instanceof Error ? error : new Error(String(error)));
-    });
+      void backfillCommentedPostsIndex(uid, groupIds);
+    },
+    (error) => {
+      onError?.(error);
+      // Keep index IDs; try a one-shot fetch as fallback.
+      void fetchCommentedPostIdsFromCollectionGroup(uid)
+        .then((ids) => {
+          groupIds = ids;
+          emit();
+          void backfillCommentedPostsIndex(uid, ids);
+        })
+        .catch(() => emit());
+    }
+  );
 
-  const unsub = onSnapshot(
+  const unsubIndex = onSnapshot(
     collection(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION),
     (snap) => {
       indexIds = snap.docs.map((d) => d.id);
@@ -976,21 +994,35 @@ export function subscribePostIdsCommentedByUser(
     },
     (error) => {
       onError?.(error);
-      if (indexIds.length === 0 && groupIds.length === 0) {
-        void fetchCommentedPostIdsFromCollectionGroup(uid)
-          .then((ids) => {
-            groupIds = ids;
-            emit();
-          })
-          .catch(() => emit());
-      }
+      emit();
     }
   );
 
   return () => {
     unsubscribed = true;
-    unsub();
+    unsubGroup();
+    unsubIndex();
   };
+}
+
+/** Load posts by ID for manage filters (skips docs the viewer cannot read). */
+export async function fetchPostsByIds(postIds: string[]): Promise<CommunityPost[]> {
+  const unique = [...new Set(postIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const results = await Promise.all(
+    unique.map(async (id) => {
+      try {
+        return await fetchPostById(id);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results
+    .filter((post): post is CommunityPost => post != null && !post.blocked)
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function subscribePendingCommunityPostIds(
@@ -1074,6 +1106,7 @@ export async function createPost(params: {
     commentCount: 0,
     likedBy: [] as string[],
     blocked: false,
+    authorHidden: false,
     underReview: false,
     createdAt: now,
     createdAtServer: serverTimestamp(),
@@ -1097,6 +1130,7 @@ export async function createPost(params: {
       commentCount: 0,
       likedBy: [],
       blocked: false,
+      authorHidden: false,
       underReview: false,
       createdAt: now,
     };
@@ -1135,6 +1169,18 @@ export async function updatePost(
     tags,
     achievementIds,
     editHistory: [...post.editHistory, snapshot],
+    updatedAt: Date.now(),
+  });
+}
+
+/** Author hides a post from the community feed; it remains visible only on their profile. */
+export async function setPostAuthorHidden(post: CommunityPost, hidden: boolean): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || user.uid !== post.authorId) throw new Error("Not allowed");
+  if (post.blocked) throw new Error("This post is hidden by Support Admin");
+
+  await updateDoc(doc(db, "communityPosts", post.id), {
+    authorHidden: hidden,
     updatedAt: Date.now(),
   });
 }
@@ -1473,8 +1519,19 @@ export async function getPublicUserProfile(userId: string): Promise<PublicUserPr
   };
 }
 
-export function getPostsByAuthor(posts: CommunityPost[], authorId: string): CommunityPost[] {
-  return posts.filter((p) => p.authorId === authorId).sort((a, b) => b.createdAt - a.createdAt);
+export function getPostsByAuthor(
+  posts: CommunityPost[],
+  authorId: string,
+  viewerId?: string | null
+): CommunityPost[] {
+  return posts
+    .filter((p) => {
+      if (p.authorId !== authorId) return false;
+      // Author-hidden posts are only listed on the author's own profile.
+      if (p.authorHidden && viewerId !== authorId) return false;
+      return true;
+    })
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function subscribeChatMeta(
@@ -1590,9 +1647,13 @@ export async function addComment(
     blocked: false,
   });
   batch.update(doc(db, "communityPosts", postId), { commentCount: increment(1) });
+  // Keep "My comment" filter in sync in the same write.
+  batch.set(
+    doc(db, "users", uid, COMMENTED_POSTS_SUBCOLLECTION, postId),
+    { postId, updatedAt: Date.now() },
+    { merge: true }
+  );
   await batch.commit();
-
-  void recordUserCommentedPost(uid, postId).catch(() => {});
 
   // Repair denormalized count from the real comments subcollection.
   // Fixes posts stuck at 0 when older writes skipped the counter.

@@ -14,10 +14,11 @@ import {
   deletePost,
   getPublicUserProfile,
   requestBlockedPostReReview,
+  setPostAuthorHidden,
   subscribeMyAuthoredPosts,
   subscribePendingCommunityPostIds,
 } from "@/lib/communityService";
-import { removeCommunityPost } from "@/lib/communityBootstrap";
+import { patchCommunityPost, removeCommunityPost } from "@/lib/communityBootstrap";
 import type { CommunityPost, PublicUserProfile } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -163,6 +164,40 @@ export default function CommunityMyPostsScreen() {
             setMenuPost(null);
             void deletePost(post.id).catch((e: unknown) => {
               Alert.alert("Error", e instanceof Error ? e.message : "Could not delete post.");
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleAuthorHidden = (post: CommunityPost) => {
+    const nextHidden = !post.authorHidden;
+    Alert.alert(
+      nextHidden ? "Hide from everyone?" : "Show to community?",
+      nextHidden
+        ? "This post will be hidden from the community. Only you can see it on your profile."
+        : "This post will be visible in the community again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: nextHidden ? "Hide" : "Show",
+          onPress: () => {
+            const optimistic = { ...post, authorHidden: nextHidden };
+            setAuthoredPosts((prev) =>
+              prev.map((item) => (item.id === post.id ? optimistic : item))
+            );
+            patchCommunityPost(optimistic);
+            setMenuPost(null);
+            void setPostAuthorHidden(post, nextHidden).catch((e: unknown) => {
+              setAuthoredPosts((prev) =>
+                prev.map((item) => (item.id === post.id ? post : item))
+              );
+              patchCommunityPost(post);
+              Alert.alert(
+                "Error",
+                e instanceof Error ? e.message : "Could not update post visibility."
+              );
             });
           },
         },
@@ -393,14 +428,22 @@ export default function CommunityMyPostsScreen() {
                           : "Hidden by Support Admin. Only you can see this here."}
                       </Text>
                     </View>
+                  ) : post.authorHidden ? (
+                    <View
+                      className="mt-2.5 rounded-lg px-2.5 py-1.5 border"
+                      style={{ backgroundColor: "#f8fafc", borderColor: "#cbd5e1" }}
+                    >
+                      <Text className="text-[11px] font-semibold" style={{ color: "#475569" }}>
+                        Hidden from everyone. Only you can see this here.
+                      </Text>
+                    </View>
                   ) : post.underReview || pendingReviewPostIds.includes(post.id) ? (
                     <View
                       className="mt-2.5 rounded-lg px-2.5 py-1.5 border"
                       style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
                     >
                       <Text className="text-[11px] font-semibold text-[#c2410c]">
-                        Reported and under review by Support Admin. Please follow community
-                        guidelines.
+                        Under review. Please be careful with community guidelines.
                       </Text>
                     </View>
                   ) : null}
@@ -482,6 +525,15 @@ export default function CommunityMyPostsScreen() {
               }
             : undefined
         }
+        onToggleAuthorHidden={
+          menuPost && !menuPost.blocked
+            ? () => {
+                const post = menuPost;
+                setMenuPost(null);
+                if (post) handleToggleAuthorHidden(post);
+              }
+            : undefined
+        }
       />
 
       <ReReviewReasonModal
@@ -490,7 +542,7 @@ export default function CommunityMyPostsScreen() {
         onSubmit={async (reason) => {
           if (!reReviewPost) return;
           await requestBlockedPostReReview(reReviewPost.id, reason);
-          setPosts((prev) =>
+          setAuthoredPosts((prev) =>
             prev.map((item) =>
               item.id === reReviewPost.id ? { ...item, underReview: true } : item
             )

@@ -229,8 +229,8 @@ export default function CommunityChatScreen() {
     isSupportAdminUser && messagesHydrated && messages.length === 0 && !hasPersistedWelcome;
 
   const profilePosts = useMemo(
-    () => (otherUserId ? getPostsByAuthor(allPosts, otherUserId) : []),
-    [allPosts, otherUserId]
+    () => (otherUserId ? getPostsByAuthor(allPosts, otherUserId, currentUserId) : []),
+    [allPosts, otherUserId, currentUserId]
   );
 
   const resolveSenderName = useCallback(

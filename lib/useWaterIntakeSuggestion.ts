@@ -18,6 +18,230 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useState } from "react";
 
+type SharedWaterSuggestion = {
+  suggestedMl: number | null;
+  weather: WaterWeatherSnapshot | null;
+  previousLocation: PreviousLocationSuggestion | null;
+  loading: boolean;
+};
+
+const EMPTY_SHARED: SharedWaterSuggestion = {
+  suggestedMl: null,
+  weather: null,
+  previousLocation: null,
+  loading: false,
+};
+
+const sharedByDay = new Map<string, SharedWaterSuggestion>();
+const sharedListeners = new Set<() => void>();
+const inflightRefresh = new Map<string, Promise<void>>();
+
+function suggestionStoreKey(uid: string, dayKey: string) {
+  return `${uid}:${dayKey}`;
+}
+
+function getSharedSuggestion(uid: string, dayKey: string): SharedWaterSuggestion {
+  return sharedByDay.get(suggestionStoreKey(uid, dayKey)) ?? EMPTY_SHARED;
+}
+
+function patchSharedSuggestion(
+  uid: string,
+  dayKey: string,
+  patch: Partial<SharedWaterSuggestion>
+) {
+  const key = suggestionStoreKey(uid, dayKey);
+  const prev = sharedByDay.get(key) ?? { ...EMPTY_SHARED };
+  sharedByDay.set(key, { ...prev, ...patch });
+  sharedListeners.forEach((listener) => listener());
+}
+
+function subscribeSharedSuggestion(listener: () => void) {
+  sharedListeners.add(listener);
+  return () => {
+    sharedListeners.delete(listener);
+  };
+}
+
+async function runSharedWaterRefresh(params: {
+  uid: string;
+  dayKey: string;
+  calendarTz: string;
+  profile: ProfileSnapshot;
+  burnedKcalToday: number;
+  stepsToday: number;
+}) {
+  const { uid, dayKey, calendarTz, profile, burnedKcalToday, stepsToday } = params;
+  const storeKey = suggestionStoreKey(uid, dayKey);
+  const existing = inflightRefresh.get(storeKey);
+  if (existing) return existing;
+
+  const task = (async () => {
+    patchSharedSuggestion(uid, dayKey, { loading: true });
+    const now = new Date();
+    const beforeSixAm = isBeforeLocalSixAm(now, calendarTz, dayKey);
+
+    try {
+      const cached = await readCachedSuggestion(uid, dayKey);
+      if (cached) {
+        patchSharedSuggestion(uid, dayKey, {
+          suggestedMl: cached.suggestedMl,
+          weather: cachedToWeather(cached),
+          previousLocation: cached.previousLocation ?? null,
+        });
+      }
+
+      const age =
+        typeof profile.age === "number" && profile.age > 0 ? profile.age : 30;
+      const weight =
+        typeof profile.weight === "number" && profile.weight > 0 ? profile.weight : 70;
+      const height =
+        typeof profile.height === "number" && profile.height > 0 ? profile.height : 170;
+      const gender = profile.gender === "female" ? "Female" : "Male";
+      const activity_level = mapActivityLevel(profile.activityLevel);
+      const activity_duration = estimateActivityDurationMinutes(
+        burnedKcalToday,
+        stepsToday
+      );
+
+      let currentLat: number | null = cached?.latitude ?? null;
+      let currentLon: number | null = cached?.longitude ?? null;
+      let resolvedPlaceName: string | null = cached?.placeName ?? null;
+      let locationError: string | null = null;
+
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (!permission.granted) {
+          throw new Error("Location permission denied. Enable location to use morning weather.");
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        currentLat = position.coords.latitude;
+        currentLon = position.coords.longitude;
+        resolvedPlaceName =
+          (await resolvePlaceName(currentLat, currentLon)) ?? resolvedPlaceName;
+      } catch (error) {
+        locationError =
+          error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
+      }
+
+      const moved =
+        currentLat != null &&
+        currentLon != null &&
+        hasMovedToNewLocation(cached, currentLat, currentLon, resolvedPlaceName);
+
+      let previousLocationSnapshot: PreviousLocationSuggestion | null =
+        cached?.previousLocation ?? null;
+      if (moved && cached) {
+        previousLocationSnapshot = snapshotPreviousLocation(cached);
+      }
+
+      let weatherSnapshot: WaterWeatherSnapshot;
+      let weatherLocked = false;
+      let isForecast = false;
+
+      if (cached?.weatherLocked && !moved) {
+        weatherSnapshot = cachedToWeather(cached);
+        weatherLocked = true;
+        isForecast = cached.isForecast;
+        resolvedPlaceName = cached.placeName;
+        if (currentLat == null) currentLat = cached.latitude;
+        if (currentLon == null) currentLon = cached.longitude;
+      } else if (!beforeSixAm && cached?.isForecast && !cached.weatherLocked && !moved) {
+        weatherSnapshot = promoteForecastToSixAmWeather(cached);
+        weatherLocked = true;
+        isForecast = false;
+        resolvedPlaceName = cached.placeName;
+        if (currentLat == null) currentLat = cached.latitude;
+        if (currentLon == null) currentLon = cached.longitude;
+      } else if (currentLat != null && currentLon != null) {
+        try {
+          const morning = await resolveSixAmWeather(
+            currentLat,
+            currentLon,
+            dayKey,
+            calendarTz,
+            resolvedPlaceName
+          );
+          weatherSnapshot = morning.snapshot;
+          weatherLocked = morning.locked;
+          isForecast = morning.isForecast;
+          resolvedPlaceName = morning.snapshot.placeName ?? resolvedPlaceName;
+        } catch (error) {
+          const reason =
+            error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
+          weatherSnapshot = {
+            placeName: resolvedPlaceName,
+            ...DEFAULT_WEATHER,
+            isLive: false,
+            isForecast: false,
+            unavailableReason: reason,
+          };
+        }
+      } else if (cached) {
+        weatherSnapshot = cachedToWeather(cached);
+        weatherLocked = cached.weatherLocked;
+        isForecast = cached.isForecast;
+      } else {
+        weatherSnapshot = {
+          placeName: resolvedPlaceName,
+          ...DEFAULT_WEATHER,
+          isLive: false,
+          isForecast: false,
+          unavailableReason: locationError,
+        };
+      }
+
+      const nextSuggestion = predictWaterIntakeMl({
+        gender,
+        weather_condition: weatherSnapshot.condition,
+        activity_level,
+        age,
+        weight,
+        height,
+        BMI: calculateBmi(weight, height),
+        temperature: weatherSnapshot.temperature,
+        humidity: weatherSnapshot.humidity,
+        altitude: 0,
+        activity_duration,
+      });
+
+      const payload: CachedSuggestion = {
+        dayKey,
+        suggestedMl: nextSuggestion,
+        placeName: weatherSnapshot.placeName ?? resolvedPlaceName,
+        latitude: currentLat,
+        longitude: currentLon,
+        weatherCondition: weatherSnapshot.condition,
+        weatherDescription: weatherSnapshot.description,
+        temperature: weatherSnapshot.temperature,
+        humidity: weatherSnapshot.humidity,
+        isLive: weatherSnapshot.isLive,
+        isForecast,
+        unavailableReason: weatherSnapshot.unavailableReason,
+        weatherLocked,
+        previousLocation: previousLocationSnapshot,
+      };
+
+      await writeCachedSuggestion(uid, payload);
+      patchSharedSuggestion(uid, dayKey, {
+        suggestedMl: nextSuggestion,
+        weather: { ...weatherSnapshot, isForecast },
+        previousLocation: previousLocationSnapshot,
+        loading: false,
+      });
+    } catch {
+      patchSharedSuggestion(uid, dayKey, { loading: false });
+    }
+  })().finally(() => {
+    inflightRefresh.delete(storeKey);
+  });
+
+  inflightRefresh.set(storeKey, task);
+  return task;
+}
+
 type ProfileSnapshot = {
   age?: number;
   gender?: "male" | "female";
@@ -337,180 +561,44 @@ export function useWaterIntakeSuggestion(options: {
     stepsToday,
     enabled = true,
   } = options;
-  const [suggestedMl, setSuggestedMl] = useState<number | null>(null);
-  const [weather, setWeather] = useState<WaterWeatherSnapshot | null>(null);
-  const [previousLocation, setPreviousLocation] = useState<PreviousLocationSuggestion | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [, storeTick] = useState(0);
+
+  const dayKey =
+    calendarDayKey || formatCalendarDayKey(new Date(), calendarTz || getDeviceIanaTimezone());
+
+  useEffect(() => {
+    return subscribeSharedSuggestion(() => {
+      storeTick((n) => n + 1);
+    });
+  }, []);
+
+  const shared =
+    uid && enabled ? getSharedSuggestion(uid, dayKey) : EMPTY_SHARED;
 
   const refresh = useCallback(async () => {
     if (!uid || !enabled) {
-      setSuggestedMl(null);
-      setWeather(null);
-      setPreviousLocation(null);
+      if (uid) {
+        patchSharedSuggestion(uid, dayKey, {
+          suggestedMl: null,
+          weather: null,
+          previousLocation: null,
+          loading: false,
+        });
+      }
       return;
     }
-
-    const dayKey = calendarDayKey || formatCalendarDayKey(new Date(), calendarTz || getDeviceIanaTimezone());
-    const now = new Date();
-    const beforeSixAm = isBeforeLocalSixAm(now, calendarTz, dayKey);
-    setLoading(true);
-
-    try {
-      const cached = await readCachedSuggestion(uid, dayKey);
-      if (cached) {
-        setSuggestedMl(cached.suggestedMl);
-        setWeather(cachedToWeather(cached));
-        setPreviousLocation(cached.previousLocation ?? null);
-      }
-
-      const age =
-        typeof profile.age === "number" && profile.age > 0 ? profile.age : 30;
-      const weight =
-        typeof profile.weight === "number" && profile.weight > 0 ? profile.weight : 70;
-      const height =
-        typeof profile.height === "number" && profile.height > 0 ? profile.height : 170;
-      const gender = profile.gender === "female" ? "Female" : "Male";
-      const activity_level = mapActivityLevel(profile.activityLevel);
-      const activity_duration = estimateActivityDurationMinutes(
-        burnedKcalToday,
-        stepsToday
-      );
-
-      let currentLat: number | null = cached?.latitude ?? null;
-      let currentLon: number | null = cached?.longitude ?? null;
-      let resolvedPlaceName: string | null = cached?.placeName ?? null;
-      let locationError: string | null = null;
-
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (!permission.granted) {
-          throw new Error("Location permission denied. Enable location to use morning weather.");
-        }
-
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        currentLat = position.coords.latitude;
-        currentLon = position.coords.longitude;
-        resolvedPlaceName =
-          (await resolvePlaceName(currentLat, currentLon)) ?? resolvedPlaceName;
-      } catch (error) {
-        locationError =
-          error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
-      }
-
-      const moved =
-        currentLat != null &&
-        currentLon != null &&
-        hasMovedToNewLocation(cached, currentLat, currentLon, resolvedPlaceName);
-
-      let previousLocationSnapshot: PreviousLocationSuggestion | null =
-        cached?.previousLocation ?? null;
-      if (moved && cached) {
-        previousLocationSnapshot = snapshotPreviousLocation(cached);
-      }
-
-      let weatherSnapshot: WaterWeatherSnapshot;
-      let weatherLocked = false;
-      let isForecast = false;
-
-      if (cached?.weatherLocked && !moved) {
-        weatherSnapshot = cachedToWeather(cached);
-        weatherLocked = true;
-        isForecast = cached.isForecast;
-        resolvedPlaceName = cached.placeName;
-        if (currentLat == null) currentLat = cached.latitude;
-        if (currentLon == null) currentLon = cached.longitude;
-      } else if (!beforeSixAm && cached?.isForecast && !cached.weatherLocked && !moved) {
-        weatherSnapshot = promoteForecastToSixAmWeather(cached);
-        weatherLocked = true;
-        isForecast = false;
-        resolvedPlaceName = cached.placeName;
-        if (currentLat == null) currentLat = cached.latitude;
-        if (currentLon == null) currentLon = cached.longitude;
-      } else if (currentLat != null && currentLon != null) {
-        try {
-          const morning = await resolveSixAmWeather(
-            currentLat,
-            currentLon,
-            dayKey,
-            calendarTz,
-            resolvedPlaceName
-          );
-          weatherSnapshot = morning.snapshot;
-          weatherLocked = morning.locked;
-          isForecast = morning.isForecast;
-          resolvedPlaceName = morning.snapshot.placeName ?? resolvedPlaceName;
-        } catch (error) {
-          const reason =
-            error instanceof Error ? error.message : "Could not load 6:00 AM weather.";
-          weatherSnapshot = {
-            placeName: resolvedPlaceName,
-            ...DEFAULT_WEATHER,
-            isLive: false,
-            isForecast: false,
-            unavailableReason: reason,
-          };
-        }
-      } else if (cached) {
-        weatherSnapshot = cachedToWeather(cached);
-        weatherLocked = cached.weatherLocked;
-        isForecast = cached.isForecast;
-      } else {
-        weatherSnapshot = {
-          placeName: resolvedPlaceName,
-          ...DEFAULT_WEATHER,
-          isLive: false,
-          isForecast: false,
-          unavailableReason: locationError,
-        };
-      }
-
-      const nextSuggestion = predictWaterIntakeMl({
-        gender,
-        weather_condition: weatherSnapshot.condition,
-        activity_level,
-        age,
-        weight,
-        height,
-        BMI: calculateBmi(weight, height),
-        temperature: weatherSnapshot.temperature,
-        humidity: weatherSnapshot.humidity,
-        altitude: 0,
-        activity_duration,
-      });
-
-      const payload: CachedSuggestion = {
-        dayKey,
-        suggestedMl: nextSuggestion,
-        placeName: weatherSnapshot.placeName ?? resolvedPlaceName,
-        latitude: currentLat,
-        longitude: currentLon,
-        weatherCondition: weatherSnapshot.condition,
-        weatherDescription: weatherSnapshot.description,
-        temperature: weatherSnapshot.temperature,
-        humidity: weatherSnapshot.humidity,
-        isLive: weatherSnapshot.isLive,
-        isForecast,
-        unavailableReason: weatherSnapshot.unavailableReason,
-        weatherLocked,
-        previousLocation: previousLocationSnapshot,
-      };
-
-      await writeCachedSuggestion(uid, payload);
-      setSuggestedMl(nextSuggestion);
-      setWeather({ ...weatherSnapshot, isForecast });
-      setPreviousLocation(previousLocationSnapshot);
-    } catch {
-      setSuggestedMl((prev) => prev);
-      setWeather((prev) => prev);
-    } finally {
-      setLoading(false);
-    }
+    await runSharedWaterRefresh({
+      uid,
+      dayKey,
+      calendarTz,
+      profile,
+      burnedKcalToday,
+      stepsToday,
+    });
   }, [
     burnedKcalToday,
-    calendarDayKey,
     calendarTz,
+    dayKey,
     enabled,
     profile.activityLevel,
     profile.age,
@@ -525,16 +613,18 @@ export function useWaterIntakeSuggestion(options: {
     void refresh();
   }, [refresh]);
 
+  const weather = shared.weather;
+
   return {
-    suggestedMl,
+    suggestedMl: shared.suggestedMl,
     weather,
     weatherDescription: weather?.description ?? null,
     placeName: weather?.placeName ?? null,
-    previousLocation,
-    previousSuggestedMl: previousLocation?.suggestedMl ?? null,
-    previousPlaceName: previousLocation?.placeName ?? null,
+    previousLocation: shared.previousLocation,
+    previousSuggestedMl: shared.previousLocation?.suggestedMl ?? null,
+    previousPlaceName: shared.previousLocation?.placeName ?? null,
     weatherUnavailableReason: weather?.unavailableReason ?? null,
-    loading,
+    loading: shared.loading,
     refresh,
   };
 }

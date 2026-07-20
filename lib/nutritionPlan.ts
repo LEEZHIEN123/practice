@@ -46,6 +46,8 @@ type DatasetMeal = {
   i: string[];
   d: string[];
   img: string;
+  /** Diet bucket this meal was indexed under. */
+  diet?: NutritionDietaryKey;
 };
 
 type DatasetCombo = { b: number; l: number; di: number; s: number };
@@ -105,7 +107,9 @@ export function normalizeNutritionDietary(
 
 /**
  * Map dataset / profile goal labels onto app GoalKey.
- * Source nutrition dataset "Muscle Gain" is the same as the app fitness goal "Gain Weight".
+ * Dataset "Muscle Gain" = app "Gain Weight" / gain
+ * Dataset "Maintenance" = app "Maintain Weight" / maintain
+ * Dataset "Weight Loss" = app "Lose Weight" / lose
  */
 export function normalizeNutritionGoal(value: string | null | undefined): GoalKey | null {
   const raw = String(value ?? "")
@@ -147,6 +151,33 @@ export function nutritionGoalLabel(goal: GoalKey | null | undefined): string {
   if (goal === "lose") return "Lose Weight";
   if (goal === "maintain") return "Maintain Weight";
   return "—";
+}
+
+/** Same Today Calorie target used on Home (TDEE adjusted by fitness goal). */
+export function nutritionIntakeTargetKcal(params: {
+  weightKg: number | null | undefined;
+  heightCm: number | null | undefined;
+  age: number | null | undefined;
+  gender: "male" | "female" | null | undefined;
+  activityMultiplier?: number | null;
+  goal: GoalKey | null | undefined;
+}): number | null {
+  const weightKg = Number(params.weightKg);
+  const heightCm = Number(params.heightCm);
+  const age = Number(params.age);
+  if (!weightKg || !heightCm || !age || !params.gender) return null;
+  const bmr =
+    params.gender === "male"
+      ? 10 * weightKg + 6.25 * heightCm - 5 * age + 5
+      : 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
+  const mult =
+    typeof params.activityMultiplier === "number" && params.activityMultiplier > 0
+      ? params.activityMultiplier
+      : 1.2;
+  const tdee = bmr * mult;
+  if (params.goal === "lose") return Math.round(tdee - 500);
+  if (params.goal === "gain") return Math.round(tdee + 300);
+  return Math.round(tdee);
 }
 
 export function nutritionDietaryLabel(d: NutritionDietaryKey | null | undefined): string {
@@ -318,7 +349,8 @@ function parseKey(key: string): {
   goal: GoalKey;
   diet: NutritionDietaryKey;
 } | null {
-  const [activity, bmi, goal, diet] = key.split("|");
+  const parts = key.split("|");
+  const [activity, bmi, goal, diet] = parts;
   if (
     (activity !== "sedentary" &&
       activity !== "light" &&
@@ -333,13 +365,71 @@ function parseKey(key: string): {
   return { activity, bmi, goal, diet };
 }
 
-/** Collect matching meal combos from v5_clean index (no calorie filter). */
+function comboCalories(combo: DatasetCombo): number {
+  return (
+    (MEALS_BY_ID.get(combo.b)?.cal ?? 0) +
+    (MEALS_BY_ID.get(combo.l)?.cal ?? 0) +
+    (MEALS_BY_ID.get(combo.di)?.cal ?? 0) +
+    (MEALS_BY_ID.get(combo.s)?.cal ?? 0)
+  );
+}
+
+const MEAT_FISH_RE =
+  /\b(chicken|turkey|beef|pork|lamb|meat|fish|salmon|tuna|sardine|sardines|shrimp|seafood|bacon|ham|sausage|mince|steak|pate|scotch egg)\b/i;
+const EGG_RE = /\b(egg|eggs|omelette|omelet)\b/i;
+const DAIRY_RE =
+  /\b(milk|cheese|yoghurt|yogurt|butter|cream|custard|ice cream|whey|ghee)\b/i;
+const HONEY_RE = /\bhoney\b/i;
+
+function stripStockPhrases(text: string): string {
+  return String(text || "").replace(/\b(chicken|beef|bone|fish)\s+(stock|broth)\b/gi, "vegetable stock");
+}
+
+function inferMealDiet(name: string, ingredients: string[] = []): NutritionDietaryKey {
+  const blob = stripStockPhrases([name, ...ingredients].join(" "));
+  if (MEAT_FISH_RE.test(blob)) return "omnivore";
+  if (EGG_RE.test(blob) || DAIRY_RE.test(blob) || HONEY_RE.test(blob)) return "vegetarian";
+  return "vegan";
+}
+
+function mealMatchesDiet(mealId: number, diet: NutritionDietaryKey): boolean {
+  const meal = MEALS_BY_ID.get(mealId);
+  if (!meal) return false;
+  const tagged =
+    meal.diet === "omnivore" || meal.diet === "vegetarian" || meal.diet === "vegan"
+      ? meal.diet
+      : inferMealDiet(meal.n, Array.isArray(meal.i) ? meal.i : []);
+  if (diet === "omnivore") return true;
+  if (diet === "vegetarian") return tagged === "vegetarian" || tagged === "vegan";
+  return tagged === "vegan";
+}
+
+function filterCombosForDiet(combos: DatasetCombo[], diet: NutritionDietaryKey): DatasetCombo[] {
+  return combos.filter(
+    (c) =>
+      mealMatchesDiet(c.b, diet) &&
+      mealMatchesDiet(c.l, diet) &&
+      mealMatchesDiet(c.di, diet) &&
+      mealMatchesDiet(c.s, diet)
+  );
+}
+
+/**
+ * Matching meal sets must share the user's fitness goal, dietary preference,
+ * and BMI category. Rows missing any of these three are never recommended.
+ * Meals may be mixed across matching sets; every meal must match the diet.
+ * Optional daily calorie cap applies.
+ */
 export function findMatchingNutritionCombos(params: {
-  activityLevel: NutritionActivityKey | null;
   bmiCategory: NutritionBmiCategory | null;
   goal: GoalKey | null;
   dietaryPreference: NutritionDietaryKey | null;
+  dailyCalorieTarget?: number | null;
 }): DatasetCombo[] {
+  if (!params.bmiCategory || !params.goal || !params.dietaryPreference) {
+    return [];
+  }
+
   const entries = Object.entries(DATA.index)
     .map(([key, combos]) => {
       const parsed = parseKey(key);
@@ -354,33 +444,83 @@ export function findMatchingNutritionCombos(params: {
     combos: DatasetCombo[];
   }>;
 
-  // 1) All four: BMI + goal + dietary + activity
-  // 2) If none, prioritize BMI + goal + dietary (drop activity)
-  // 3) Then relax further only if still empty
-  const filters: Array<(e: (typeof entries)[number]) => boolean> = [
+  const pool = entries.filter(
     (e) =>
-      (!params.activityLevel || e.activity === params.activityLevel) &&
-      (!params.bmiCategory || e.bmi === params.bmiCategory) &&
-      (!params.goal || e.goal === params.goal) &&
-      (!params.dietaryPreference || e.diet === params.dietaryPreference),
-    (e) =>
-      (!params.bmiCategory || e.bmi === params.bmiCategory) &&
-      (!params.goal || e.goal === params.goal) &&
-      (!params.dietaryPreference || e.diet === params.dietaryPreference),
-    (e) =>
-      (!params.bmiCategory || e.bmi === params.bmiCategory) &&
-      (!params.goal || e.goal === params.goal),
-    (e) => !params.bmiCategory || e.bmi === params.bmiCategory,
-    () => true,
-  ];
+      e.bmi === params.bmiCategory &&
+      e.goal === params.goal &&
+      e.diet === params.dietaryPreference
+  );
+  let combos = filterCombosForDiet(
+    pool.flatMap((e) => e.combos),
+    params.dietaryPreference
+  );
+  if (!combos.length) return [];
 
-  for (const filter of filters) {
-    const pool = entries.filter(filter);
-    const combos = pool.flatMap((e) => e.combos);
-    if (combos.length) return combos;
+  const cap =
+    typeof params.dailyCalorieTarget === "number" &&
+    Number.isFinite(params.dailyCalorieTarget) &&
+    params.dailyCalorieTarget > 0
+      ? params.dailyCalorieTarget
+      : null;
+  if (cap != null) {
+    const within = combos.filter((c) => comboCalories(c) <= cap + 25);
+    if (within.length) combos = within;
+  }
+  return combos;
+}
+
+/** Dietary preferences that have at least one matching set for this goal + BMI. */
+export function availableNutritionDietaryOptions(params: {
+  bmiCategory: NutritionBmiCategory | null;
+  goal: GoalKey | null;
+  dailyCalorieTarget?: number | null;
+}): NutritionDietaryKey[] {
+  const options: NutritionDietaryKey[] = ["omnivore", "vegetarian", "vegan"];
+  return options.filter(
+    (dietaryPreference) =>
+      findMatchingNutritionCombos({
+        bmiCategory: params.bmiCategory,
+        goal: params.goal,
+        dietaryPreference,
+        dailyCalorieTarget: params.dailyCalorieTarget,
+      }).length > 0
+  );
+}
+
+function buildMixedDayCombo(
+  combos: DatasetCombo[],
+  diet: NutritionDietaryKey,
+  dailyCalorieTarget?: number | null
+): DatasetCombo | null {
+  if (!combos.length) return null;
+
+  const breakfasts = [...new Set(combos.map((c) => c.b))].filter((id) => mealMatchesDiet(id, diet));
+  const lunches = [...new Set(combos.map((c) => c.l))].filter((id) => mealMatchesDiet(id, diet));
+  const dinners = [...new Set(combos.map((c) => c.di))].filter((id) => mealMatchesDiet(id, diet));
+  const snacks = [...new Set(combos.map((c) => c.s))].filter((id) => mealMatchesDiet(id, diet));
+  if (!breakfasts.length || !lunches.length || !dinners.length || !snacks.length) return null;
+
+  const cap =
+    typeof dailyCalorieTarget === "number" &&
+    Number.isFinite(dailyCalorieTarget) &&
+    dailyCalorieTarget > 0
+      ? dailyCalorieTarget
+      : null;
+
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const next: DatasetCombo = {
+      b: pickRandom(breakfasts),
+      l: pickRandom(lunches),
+      di: pickRandom(dinners),
+      s: pickRandom(snacks),
+    };
+    if (cap == null || comboCalories(next) <= cap + 25) return next;
   }
 
-  return Object.values(DATA.index).flat();
+  const sorted = [...combos].sort((a, b) => comboCalories(a) - comboCalories(b));
+  const lightest = sorted[0]!;
+  if (cap == null || comboCalories(lightest) <= cap + 25) return lightest;
+  return null;
 }
 
 export function generateActiveNutritionPlan(params: {
@@ -389,18 +529,22 @@ export function generateActiveNutritionPlan(params: {
   goal: GoalKey | null;
   dietaryPreference: NutritionDietaryKey | null;
   activityLevel: NutritionActivityKey | null;
+  dailyCalorieTarget?: number | null;
 }): ActiveNutritionPlan {
   const bmiCategory = nutritionBmiCategory(params.bmi);
   const combos = findMatchingNutritionCombos({
-    activityLevel: params.activityLevel,
     bmiCategory,
     goal: params.goal,
     dietaryPreference: params.dietaryPreference,
+    dailyCalorieTarget: params.dailyCalorieTarget,
   });
   const days = durationDays(params.duration);
   const schedule: NutritionDaySchedule[] = [];
   for (let i = 0; i < days; i++) {
-    const combo = combos.length ? pickRandom(combos) : { b: 0, l: 0, di: 0, s: 0 };
+    const combo = params.dietaryPreference
+      ? buildMixedDayCombo(combos, params.dietaryPreference, params.dailyCalorieTarget)
+      : null;
+    if (!combo) break;
     schedule.push(dayFromCombo(i + 1, combo));
   }
 
@@ -432,7 +576,10 @@ export function nutritionPlanOutOfSync(
   if (plan.dietaryPreference !== params.dietaryPreference) return true;
   if (plan.activityLevel !== params.activityLevel) return true;
   if (plan.bmiCategory !== nutritionBmiCategory(params.bmi)) return true;
-  if (!Array.isArray(plan.schedule) || plan.schedule.length !== durationDays(params.duration)) return true;
+  if (!Array.isArray(plan.schedule)) return true;
+  // Empty schedule is valid when no dataset rows match goal + diet + BMI.
+  if (plan.schedule.length === 0) return false;
+  if (plan.schedule.length !== durationDays(params.duration)) return true;
   const sample = plan.schedule[0]?.breakfast;
   if (
     !sample ||
@@ -444,4 +591,193 @@ export function nutritionPlanOutOfSync(
     return true;
   }
   return false;
+}
+
+export type NutritionPlanArchiveEntry = {
+  plan: ActiveNutritionPlan;
+  lastCompletedDay?: number | null;
+  lastCompletedAt?: string | null;
+};
+
+function nutritionPlanArchiveBmiKey(bmiCategory: NutritionBmiCategory): string {
+  return bmiCategory.toLowerCase().replace(/\s/g, "_");
+}
+
+/** Firestore field: `nutritionPlanArchive.{goal}.{duration}.{diet}.{bmiCategory}.{activityLevel}` */
+export function nutritionPlanArchiveField(
+  goal: GoalKey,
+  duration: PlanDuration,
+  diet: NutritionDietaryKey,
+  bmiCategory: NutritionBmiCategory,
+  activityLevel: NutritionActivityKey
+): string {
+  const cat = nutritionPlanArchiveBmiKey(bmiCategory);
+  return `nutritionPlanArchive.${goal}.${duration}.${diet}.${cat}.${activityLevel}`;
+}
+
+export function nutritionPlanDurationFromUserData(
+  data: Record<string, unknown> | undefined
+): PlanDuration {
+  const nutritionDuration = data?.nutritionPlanDuration;
+  if (
+    nutritionDuration === "week" ||
+    nutritionDuration === "biweekly" ||
+    nutritionDuration === "monthly"
+  ) {
+    return nutritionDuration;
+  }
+  const planDuration = data?.planDuration;
+  if (planDuration === "week" || planDuration === "biweekly" || planDuration === "monthly") {
+    return planDuration;
+  }
+  return "week";
+}
+
+export function getNutritionPlanArchiveEntry(
+  data: Record<string, unknown> | undefined,
+  goal: GoalKey,
+  duration: PlanDuration,
+  diet: NutritionDietaryKey,
+  bmiCategory: NutritionBmiCategory,
+  activityLevel: NutritionActivityKey
+): NutritionPlanArchiveEntry | null {
+  const root = data?.nutritionPlanArchive as Record<string, unknown> | undefined;
+  const byGoal = root?.[goal] as Record<string, unknown> | undefined;
+  const byDuration = byGoal?.[duration] as Record<string, unknown> | undefined;
+  const byDiet = byDuration?.[diet] as Record<string, unknown> | undefined;
+  const cat = nutritionPlanArchiveBmiKey(bmiCategory);
+  const byBmi = byDiet?.[cat] as Record<string, unknown> | undefined;
+  const entry = byBmi?.[activityLevel] as NutritionPlanArchiveEntry | undefined;
+  if (!entry?.plan) return null;
+  return entry;
+}
+
+/** Save the current active plan + progress under its profile key before switching away. */
+export function nutritionPlanArchiveUpdateFields(
+  plan: ActiveNutritionPlan,
+  lastCompletedDay: number | null,
+  lastCompletedAt: Date | null
+): Record<string, unknown> {
+  if (!plan.goal || !plan.dietaryPreference || !plan.bmiCategory || !plan.activityLevel) {
+    return {};
+  }
+  const field = nutritionPlanArchiveField(
+    plan.goal,
+    plan.duration,
+    plan.dietaryPreference,
+    plan.bmiCategory,
+    plan.activityLevel
+  );
+  return {
+    [field]: {
+      plan,
+      lastCompletedDay: lastCompletedDay ?? null,
+      lastCompletedAt: lastCompletedAt ? lastCompletedAt.toISOString() : null,
+    },
+  };
+}
+
+export function parseArchiveLastCompletedAt(value: unknown): Date | null {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  if (value && typeof (value as { toDate?: () => Date }).toDate === "function") {
+    const parsed = (value as { toDate: () => Date }).toDate();
+    return parsed instanceof Date ? parsed : null;
+  }
+  return null;
+}
+
+/** True when an archived plan exists for this profile combo and is still valid. */
+export function canRestoreNutritionPlan(params: {
+  data: Record<string, unknown> | undefined;
+  duration: PlanDuration;
+  bmi: number | null;
+  goal: GoalKey | null;
+  dietaryPreference: NutritionDietaryKey | null;
+  activityLevel: NutritionActivityKey | null;
+}): boolean {
+  const bmiCategory = nutritionBmiCategory(params.bmi);
+  if (!params.goal || !params.dietaryPreference || !bmiCategory || !params.activityLevel) {
+    return false;
+  }
+  const cached = getNutritionPlanArchiveEntry(
+    params.data,
+    params.goal,
+    params.duration,
+    params.dietaryPreference,
+    bmiCategory,
+    params.activityLevel
+  );
+  return !!(
+    cached?.plan &&
+    !nutritionPlanOutOfSync(cached.plan, {
+      duration: params.duration,
+      bmi: params.bmi,
+      goal: params.goal,
+      dietaryPreference: params.dietaryPreference,
+      activityLevel: params.activityLevel,
+    })
+  );
+}
+
+/** Restore a saved plan for this profile combo if still valid; otherwise generate a new one. */
+export function pickOrGenerateNutritionPlan(params: {
+  data: Record<string, unknown> | undefined;
+  duration: PlanDuration;
+  bmi: number | null;
+  goal: GoalKey | null;
+  dietaryPreference: NutritionDietaryKey | null;
+  activityLevel: NutritionActivityKey | null;
+  dailyCalorieTarget?: number | null;
+}): {
+  plan: ActiveNutritionPlan;
+  lastCompletedDay: number | null;
+  lastCompletedAt: Date | null;
+  fromArchive: boolean;
+} {
+  const bmiCategory = nutritionBmiCategory(params.bmi);
+  const generateFresh = () => ({
+    plan: generateActiveNutritionPlan(params),
+    lastCompletedDay: null as number | null,
+    lastCompletedAt: null as Date | null,
+    fromArchive: false,
+  });
+
+  if (!params.goal || !params.dietaryPreference || !bmiCategory || !params.activityLevel) {
+    return generateFresh();
+  }
+
+  const cached = getNutritionPlanArchiveEntry(
+    params.data,
+    params.goal,
+    params.duration,
+    params.dietaryPreference,
+    bmiCategory,
+    params.activityLevel
+  );
+
+  if (
+    cached?.plan &&
+    !nutritionPlanOutOfSync(cached.plan, {
+      duration: params.duration,
+      bmi: params.bmi,
+      goal: params.goal,
+      dietaryPreference: params.dietaryPreference,
+      activityLevel: params.activityLevel,
+    })
+  ) {
+    const lcd = Number(cached.lastCompletedDay);
+    const lastCompletedDay = Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null;
+    return {
+      plan: cached.plan,
+      lastCompletedDay,
+      lastCompletedAt: parseArchiveLastCompletedAt(cached.lastCompletedAt),
+      fromArchive: true,
+    };
+  }
+
+  return generateFresh();
 }

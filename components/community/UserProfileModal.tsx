@@ -261,15 +261,22 @@ export function UserProfileModal({
                             : "Hidden by Support Admin. Only you can see this here."}
                         </ThemedText>
                       </View>
+                    ) : post.authorHidden && isSelf ? (
+                      <View
+                        className="mb-2 rounded-lg px-2.5 py-1.5 border"
+                        style={{ backgroundColor: "#f8fafc", borderColor: "#cbd5e1" }}
+                      >
+                        <ThemedText className="text-[11px] font-semibold" style={{ color: "#475569" }}>
+                          Hidden from everyone. Only you can see this here.
+                        </ThemedText>
+                      </View>
                     ) : isPendingReview ? (
                       <View
                         className="mb-2 rounded-lg px-2.5 py-1.5 border"
                         style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
                       >
                         <ThemedText className="text-[11px] font-semibold" style={{ color: "#c2410c" }}>
-                          {isSelf
-                            ? "Reported and under review by Support Admin. Please follow community guidelines."
-                            : "This post is under review by Support Admin."}
+                          Under review. Please be careful with community guidelines.
                         </ThemedText>
                       </View>
                     ) : null}

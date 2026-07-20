@@ -1,45 +1,58 @@
 import { Pressable } from "@/components/Pressable";
+import { PlanGeneratingCard } from "@/components/PlanGeneratingCard";
+import { PlanGeneratingModal } from "@/components/PlanGeneratingModal";
 import {
-  ProfileScreenHeader,
-  ThemedCard,
-  ThemedRow,
-  ThemedScreen,
-  ThemedText,
-  useProfileCardStyles,
+    ProfileScreenHeader,
+    ThemedCard,
+    ThemedRow,
+    ThemedScreen,
+    ThemedText,
+    useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
-import { useThemedScreen } from "@/lib/useThemedScreen";
 import {
-  generateActiveNutritionPlan,
-  expandNutritionPlanText,
-  normalizeNutritionActivity,
-  normalizeNutritionDietary,
-  normalizeNutritionGoal,
-  nutritionDietaryLabel,
-  nutritionGoalLabel,
-  nutritionPlanOutOfSync,
-  type ActiveNutritionPlan,
-  type NutritionDietaryKey,
-  type NutritionMealSuggestion,
+    availableNutritionDietaryOptions,
+    expandNutritionPlanText,
+    generateActiveNutritionPlan,
+    normalizeNutritionActivity,
+    normalizeNutritionDietary,
+    normalizeNutritionGoal,
+    nutritionBmiCategory,
+    nutritionDietaryLabel,
+    nutritionGoalLabel,
+    nutritionIntakeTargetKcal,
+    nutritionPlanArchiveUpdateFields,
+    nutritionPlanDurationFromUserData,
+    nutritionPlanOutOfSync,
+    canRestoreNutritionPlan,
+    pickOrGenerateNutritionPlan,
+    type ActiveNutritionPlan,
+    type NutritionDietaryKey,
+    type NutritionMealSuggestion,
 } from "@/lib/nutritionPlan";
+import {
+    peekNutritionPlanCache,
+    writeNutritionPlanCache,
+} from "@/lib/nutritionPlanCache";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { calcBmi, durationDays, type PlanDuration } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
+    collection,
+    doc,
+    getDoc,
+    limit,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    Timestamp,
+    updateDoc,
+    where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
-
-const DIETARY_OPTIONS: NutritionDietaryKey[] = ["omnivore", "vegetarian", "vegan"];
 
 type MealIconName = keyof typeof Ionicons.glyphMap;
 type MealType = "breakfast" | "lunch" | "dinner" | "snack";
@@ -142,25 +155,89 @@ function MealBlock({
   );
 }
 
+function initialNutritionState() {
+  const uid = auth.currentUser?.uid;
+  const cached = peekNutritionPlanCache(uid);
+  if (!cached?.plan) {
+    return {
+      plan: null as ActiveNutritionPlan | null,
+      pendingDuration: "week" as PlanDuration,
+      lastCompletedDay: null as number | null,
+      lastCompletedAt: null as Date | null,
+      hydrated: false,
+    };
+  }
+  return {
+    plan: expandNutritionPlanText(cached.plan),
+    pendingDuration: (cached.duration ?? cached.plan.duration ?? "week") as PlanDuration,
+    lastCompletedDay: cached.lastCompletedDay,
+    lastCompletedAt:
+      cached.lastCompletedAtMs != null ? new Date(cached.lastCompletedAtMs) : null,
+    hydrated: true,
+  };
+}
+
 export default function MealPlanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { cardStyle, textPrimary, theme, isDark } = useThemedScreen();
   const { modalCardStyle } = useProfileCardStyles();
 
-  const [plan, setPlan] = useState<ActiveNutritionPlan | null>(null);
-  const [pendingDuration, setPendingDuration] = useState<PlanDuration>("week");
+  const initial = useMemo(() => initialNutritionState(), []);
+  const [plan, setPlan] = useState<ActiveNutritionPlan | null>(initial.plan);
+  const [pendingDuration, setPendingDuration] = useState<PlanDuration>(initial.pendingDuration);
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [savingDietary, setSavingDietary] = useState(false);
-  const [lastCompletedDay, setLastCompletedDay] = useState<number | null>(null);
-  const [lastCompletedAt, setLastCompletedAt] = useState<Date | null>(null);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [hydrated, setHydrated] = useState(initial.hydrated);
+  const [lastCompletedDay, setLastCompletedDay] = useState<number | null>(initial.lastCompletedDay);
+  const [lastCompletedAt, setLastCompletedAt] = useState<Date | null>(initial.lastCompletedAt);
   const [calendarTick, setCalendarTick] = useState(0);
   const [day1Hit, setDay1Hit] = useState(false);
   const [day1EarliestAt, setDay1EarliestAt] = useState<Date | null>(null);
   const [loggedMealKeys, setLoggedMealKeys] = useState<Set<string>>(() => new Set());
   const syncingRef = useRef(false);
   const rolloverInFlightRef = useRef(false);
+  const dailyCalorieTargetRef = useRef<number | null>(
+    peekNutritionPlanCache(auth.currentUser?.uid)?.dailyCalorieTarget ?? null
+  );
+  const dietWriteSeqRef = useRef(0);
+  const durationWriteSeqRef = useRef(0);
+  const planRef = useRef<ActiveNutritionPlan | null>(null);
+  planRef.current = plan;
+
+  const applyPlanLocally = (
+    next: ActiveNutritionPlan,
+    extras?: {
+      duration?: PlanDuration;
+      lastCompletedDay?: number | null;
+      lastCompletedAt?: Date | null;
+      dailyCalorieTarget?: number | null;
+    }
+  ) => {
+    const expanded = expandNutritionPlanText(next);
+    planRef.current = expanded;
+    setPlan(expanded);
+    if (extras?.duration) setPendingDuration(extras.duration);
+    if (extras?.lastCompletedDay !== undefined) setLastCompletedDay(extras.lastCompletedDay);
+    if (extras?.lastCompletedAt !== undefined) setLastCompletedAt(extras.lastCompletedAt);
+    if (extras?.dailyCalorieTarget !== undefined) {
+      dailyCalorieTargetRef.current = extras.dailyCalorieTarget;
+    }
+    writeNutritionPlanCache(auth.currentUser?.uid, {
+      plan: expanded,
+      duration: extras?.duration ?? expanded.duration,
+      lastCompletedDay:
+        extras?.lastCompletedDay !== undefined ? extras.lastCompletedDay : lastCompletedDay,
+      lastCompletedAtMs:
+        extras?.lastCompletedAt !== undefined
+          ? extras.lastCompletedAt?.getTime() ?? null
+          : lastCompletedAt?.getTime() ?? null,
+      dailyCalorieTarget:
+        extras?.dailyCalorieTarget !== undefined
+          ? extras.dailyCalorieTarget
+          : dailyCalorieTargetRef.current,
+    });
+  };
 
   useEffect(() => {
     const id = setInterval(() => setCalendarTick((n) => n + 1), 60_000);
@@ -195,54 +272,81 @@ export default function MealPlanScreen() {
       const dietaryPreference = normalizeNutritionDietary(
         typeof data.dietaryPreference === "string" ? data.dietaryPreference : null
       );
+      const dailyCalorieTarget = nutritionIntakeTargetKcal({
+        weightKg: Number(data.weight ?? 0),
+        heightCm: Number(data.height ?? 0),
+        age: Number(data.age ?? 0),
+        gender: data.gender === "male" || data.gender === "female" ? data.gender : null,
+        activityMultiplier:
+          typeof data.activityMultiplier === "number" ? data.activityMultiplier : null,
+        goal,
+      });
+      dailyCalorieTargetRef.current = dailyCalorieTarget;
       const existing = (data.activeNutritionPlan as ActiveNutritionPlan | undefined) ?? null;
 
       const lcd = Number(data.activeNutritionPlanLastCompletedDay);
-      setLastCompletedDay(Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null);
+      const nextLastCompletedDay = Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null;
       const lca =
         (data.activeNutritionPlanLastCompletedAt as any)?.toDate?.() instanceof Date
           ? (data.activeNutritionPlanLastCompletedAt as any).toDate()
           : null;
+      setLastCompletedDay(nextLastCompletedDay);
       setLastCompletedAt(lca);
-
       setPendingDuration(nutritionDuration);
+      setHydrated(true);
 
       const needsNew = nutritionPlanOutOfSync(existing, {
         duration: nutritionDuration,
         bmi,
         goal,
-        dietaryPreference: dietaryPreference ?? "omnivore",
-        activityLevel: activityLevel ?? "moderate",
+        dietaryPreference,
+        activityLevel,
       });
 
       if (!needsNew && existing) {
-        setPlan(expandNutritionPlanText(existing));
+        applyPlanLocally(existing, {
+          duration: nutritionDuration,
+          lastCompletedDay: nextLastCompletedDay,
+          lastCompletedAt: lca,
+          dailyCalorieTarget,
+        });
         return;
       }
 
-      if (syncingRef.current) {
-        if (existing) setPlan(expandNutritionPlanText(existing));
-        return;
-      }
+      // Avoid clobbering an optimistic local plan while a write is in flight.
+      if (syncingRef.current) return;
 
-      const next = expandNutritionPlanText(
-        generateActiveNutritionPlan({
+      const archivePatch = existing
+        ? nutritionPlanArchiveUpdateFields(existing, nextLastCompletedDay, lca)
+        : {};
+      const mergedData = { ...data, ...archivePatch };
+      const { plan: next, lastCompletedDay: restoredLcd, lastCompletedAt: restoredLca } =
+        pickOrGenerateNutritionPlan({
+          data: mergedData,
           duration: nutritionDuration,
           bmi,
           goal,
-          dietaryPreference: dietaryPreference ?? "omnivore",
-          activityLevel: activityLevel ?? "moderate",
-        })
-      );
-      setPlan(next);
+          dietaryPreference,
+          activityLevel,
+          dailyCalorieTarget,
+        });
+      applyPlanLocally(next, {
+        duration: nutritionDuration,
+        lastCompletedDay: restoredLcd,
+        lastCompletedAt: restoredLca,
+        dailyCalorieTarget,
+      });
 
       syncingRef.current = true;
       void updateDoc(doc(db, "users", user.uid), {
+        ...archivePatch,
         nutritionPlanDuration: nutritionDuration,
-        activeNutritionPlan: next,
+        activeNutritionPlan: planRef.current,
         nutritionPlanDurationChosenAt: serverTimestamp(),
-        activeNutritionPlanLastCompletedDay: null,
-        activeNutritionPlanLastCompletedAt: null,
+        activeNutritionPlanLastCompletedDay: restoredLcd,
+        activeNutritionPlanLastCompletedAt: restoredLca
+          ? Timestamp.fromDate(restoredLca)
+          : null,
       } as any)
         .catch((e) => console.log("Failed to persist nutrition plan:", e))
         .finally(() => {
@@ -325,13 +429,25 @@ export default function MealPlanScreen() {
     rolloverInFlightRef.current = true;
     (async () => {
       try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
+        const dailyCalorieTarget = nutritionIntakeTargetKcal({
+          weightKg: Number(data.weight ?? 0),
+          heightCm: Number(data.height ?? 0),
+          age: Number(data.age ?? 0),
+          gender: data.gender === "male" || data.gender === "female" ? data.gender : null,
+          activityMultiplier:
+            typeof data.activityMultiplier === "number" ? data.activityMultiplier : null,
+          goal: plan.goal,
+        });
         const next = expandNutritionPlanText(
           generateActiveNutritionPlan({
             duration: plan.duration,
             bmi: plan.bmi,
             goal: plan.goal,
-            dietaryPreference: plan.dietaryPreference ?? "omnivore",
-            activityLevel: plan.activityLevel ?? "moderate",
+            dietaryPreference: plan.dietaryPreference,
+            activityLevel: plan.activityLevel,
+            dailyCalorieTarget,
           })
         );
         await updateDoc(doc(db, "users", user.uid), {
@@ -396,6 +512,14 @@ export default function MealPlanScreen() {
     return { bmiLine, goalLine };
   }, [plan]);
 
+  const availableDiets = useMemo(() => {
+    if (!plan) return [] as NutritionDietaryKey[];
+    return availableNutritionDietaryOptions({
+      bmiCategory: plan.bmiCategory ?? nutritionBmiCategory(plan.bmi),
+      goal: plan.goal,
+    });
+  }, [plan]);
+
   const openMeal = (day: number, mealType: MealType) => {
     router.push({
       pathname: "/nutrition-meal-detail",
@@ -407,69 +531,164 @@ export default function MealPlanScreen() {
     } as any);
   };
 
-  const saveDietaryPreference = async (nextDiet: NutritionDietaryKey) => {
+  const saveDietaryPreference = (nextDiet: NutritionDietaryKey) => {
     const user = auth.currentUser;
-    if (!user || !plan || savingDietary) return;
-    if (plan.dietaryPreference === nextDiet) return;
+    const current = planRef.current;
+    if (!user || !current) return;
+    if (current.dietaryPreference === nextDiet) return;
 
-    try {
-      setSavingDietary(true);
-      const next = expandNutritionPlanText(
-        generateActiveNutritionPlan({
-          duration: plan.duration,
-          bmi: plan.bmi,
-          goal: plan.goal,
+    const previous = current;
+    const previousLastCompletedDay = lastCompletedDay;
+    const previousLastCompletedAt = lastCompletedAt;
+    const writeSeq = ++dietWriteSeqRef.current;
+    syncingRef.current = true;
+
+    void (async () => {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const snap = await getDoc(userRef);
+        const data = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
+        const archivePatch = nutritionPlanArchiveUpdateFields(
+          previous,
+          previousLastCompletedDay,
+          previousLastCompletedAt
+        );
+        const mergedData = { ...data, ...archivePatch };
+        const pickParams = {
+          data: mergedData,
+          duration: previous.duration,
+          bmi: previous.bmi,
+          goal: previous.goal,
           dietaryPreference: nextDiet,
-          activityLevel: plan.activityLevel ?? "moderate",
-        })
-      );
-      setPlan(next);
-      syncingRef.current = true;
-      await updateDoc(doc(db, "users", user.uid), {
-        dietaryPreference: nextDiet,
-        activeNutritionPlan: next,
-        activeNutritionPlanLastCompletedDay: null,
-        activeNutritionPlanLastCompletedAt: null,
-      } as any);
-    } catch (e) {
-      console.log("Failed to update dietary preference:", e);
-      Alert.alert("Error", "Could not update dietary preference. Please try again.");
-    } finally {
-      syncingRef.current = false;
-      setSavingDietary(false);
-    }
+          activityLevel: previous.activityLevel,
+        };
+        if (!canRestoreNutritionPlan(pickParams)) {
+          setGeneratingPlan(true);
+        }
+        const { plan: next, lastCompletedDay: lcd, lastCompletedAt: lca } =
+          pickOrGenerateNutritionPlan({
+            ...pickParams,
+            dailyCalorieTarget: dailyCalorieTargetRef.current,
+          });
+
+        if (writeSeq !== dietWriteSeqRef.current) return;
+
+        applyPlanLocally(next, {
+          lastCompletedDay: lcd,
+          lastCompletedAt: lca,
+        });
+
+        await updateDoc(userRef, {
+          ...archivePatch,
+          dietaryPreference: nextDiet,
+          activeNutritionPlan: planRef.current,
+          activeNutritionPlanLastCompletedDay: lcd,
+          activeNutritionPlanLastCompletedAt: lca ? Timestamp.fromDate(lca) : null,
+        } as any);
+      } catch (e) {
+        console.log("Failed to update dietary preference:", e);
+        if (writeSeq === dietWriteSeqRef.current) {
+          applyPlanLocally(previous, {
+            lastCompletedDay: previousLastCompletedDay,
+            lastCompletedAt: previousLastCompletedAt,
+          });
+          Alert.alert("Error", "Could not update dietary preference. Please try again.");
+        }
+      } finally {
+        if (writeSeq === dietWriteSeqRef.current) {
+          syncingRef.current = false;
+          setGeneratingPlan(false);
+        }
+      }
+    })();
   };
 
-  const saveNutritionDuration = async (nextDuration: PlanDuration) => {
+  const saveNutritionDuration = (nextDuration: PlanDuration) => {
     const user = auth.currentUser;
+    const current = planRef.current;
     if (!user) return;
-    try {
-      setBusy(true);
-      const next = expandNutritionPlanText(
-        generateActiveNutritionPlan({
-          duration: nextDuration,
-          bmi: plan?.bmi ?? null,
-          goal: plan?.goal ?? null,
-          dietaryPreference: plan?.dietaryPreference ?? "omnivore",
-          activityLevel: plan?.activityLevel ?? "moderate",
-        })
-      );
-      await updateDoc(doc(db, "users", user.uid), {
-        nutritionPlanDuration: nextDuration,
-        nutritionPlanDurationChosenAt: serverTimestamp(),
-        activeNutritionPlan: next,
-        activeNutritionPlanLastCompletedDay: null,
-        activeNutritionPlanLastCompletedAt: null,
-      } as any);
-      setPlan(next);
-      setPendingDuration(nextDuration);
+    if (current?.duration === nextDuration) {
       setPickerVisible(false);
-    } catch (e) {
-      console.log("Failed to switch nutrition plan:", e);
-      Alert.alert("Error", "Could not switch your nutrition schedule. Please try again.");
-    } finally {
-      setBusy(false);
+      return;
     }
+
+    const previous = current;
+    const previousDuration = pendingDuration;
+    const previousLastCompletedDay = lastCompletedDay;
+    const previousLastCompletedAt = lastCompletedAt;
+    const writeSeq = ++durationWriteSeqRef.current;
+    setPickerVisible(false);
+    syncingRef.current = true;
+
+    void (async () => {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const snap = await getDoc(userRef);
+        const data = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
+        const archivePatch = previous
+          ? nutritionPlanArchiveUpdateFields(
+              previous,
+              previousLastCompletedDay,
+              previousLastCompletedAt
+            )
+          : {};
+        const mergedData = { ...data, ...archivePatch };
+        const pickParams = {
+          data: mergedData,
+          duration: nextDuration,
+          bmi: previous?.bmi ?? null,
+          goal: previous?.goal ?? null,
+          dietaryPreference: previous?.dietaryPreference ?? null,
+          activityLevel: previous?.activityLevel ?? null,
+        };
+        if (!canRestoreNutritionPlan(pickParams)) {
+          setGeneratingPlan(true);
+        }
+        const { plan: next, lastCompletedDay: lcd, lastCompletedAt: lca } =
+          pickOrGenerateNutritionPlan({
+            ...pickParams,
+            dailyCalorieTarget: dailyCalorieTargetRef.current,
+          });
+
+        if (writeSeq !== durationWriteSeqRef.current) return;
+
+        applyPlanLocally(next, {
+          duration: nextDuration,
+          lastCompletedDay: lcd,
+          lastCompletedAt: lca,
+        });
+
+        await updateDoc(userRef, {
+          ...archivePatch,
+          nutritionPlanDuration: nextDuration,
+          nutritionPlanDurationChosenAt: serverTimestamp(),
+          activeNutritionPlan: planRef.current,
+          activeNutritionPlanLastCompletedDay: lcd,
+          activeNutritionPlanLastCompletedAt: lca ? Timestamp.fromDate(lca) : null,
+        } as any);
+      } catch (e) {
+        console.log("Failed to switch nutrition plan:", e);
+        if (writeSeq === durationWriteSeqRef.current) {
+          if (previous) {
+            applyPlanLocally(previous, {
+              duration: previousDuration,
+              lastCompletedDay: previousLastCompletedDay,
+              lastCompletedAt: previousLastCompletedAt,
+            });
+          } else {
+            planRef.current = null;
+            setPlan(null);
+            setPendingDuration(previousDuration);
+          }
+          Alert.alert("Error", "Could not switch your nutrition schedule. Please try again.");
+        }
+      } finally {
+        if (writeSeq === durationWriteSeqRef.current) {
+          syncingRef.current = false;
+          setGeneratingPlan(false);
+        }
+      }
+    })();
   };
 
   return (
@@ -492,7 +711,9 @@ export default function MealPlanScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} className="px-3">
-        {!plan ? (
+        {!hydrated && !plan ? (
+          <PlanGeneratingCard subtitle="Loading your nutrition guidance…" />
+        ) : !plan ? (
           <ThemedCard className="p-5">
             <ThemedText className="text-lg font-extrabold">No plan yet</ThemedText>
             <ThemedText variant="muted" className="mt-2 leading-6">
@@ -526,115 +747,129 @@ export default function MealPlanScreen() {
                 </ThemedRow>
               ) : null}
 
-              <ThemedText variant="muted" className="text-sm tracking-widest font-extrabold mt-5">
-                DIETARY PREFERENCE
-              </ThemedText>
-              <View className="flex-row flex-wrap gap-2 mt-4">
-                {DIETARY_OPTIONS.map((option) => {
-                  const selected = plan.dietaryPreference === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      disabled={savingDietary}
-                      onPress={() => {
-                        if (selected || savingDietary) return;
-                        Alert.alert(
-                          "Change dietary preference?",
-                          `Switch to ${nutritionDietaryLabel(option)}? Your meal suggestions will update to match.`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Confirm",
-                              onPress: () => void saveDietaryPreference(option),
-                            },
-                          ]
-                        );
-                      }}
-                      className="px-4 py-2.5 rounded-full border active:opacity-90"
-                      style={
-                        selected
-                          ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
-                          : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
-                      }
-                    >
-                      {selected ? (
-                        <ThemedText variant="accent" className="text-base font-extrabold">
-                          {nutritionDietaryLabel(option)}
-                        </ThemedText>
-                      ) : (
-                        <ThemedText className="text-base font-extrabold">
-                          {nutritionDietaryLabel(option)}
-                        </ThemedText>
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {availableDiets.length > 0 ? (
+                <>
+                  <ThemedText variant="muted" className="text-sm tracking-widest font-extrabold mt-5">
+                    DIETARY PREFERENCE
+                  </ThemedText>
+                  <View className="flex-row flex-wrap gap-2 mt-4">
+                    {availableDiets.map((option) => {
+                      const selected = plan.dietaryPreference === option;
+                      return (
+                        <Pressable
+                          key={option}
+                          onPress={() => {
+                            if (selected) return;
+                            Alert.alert(
+                              "Change dietary preference?",
+                              `Switch to ${nutritionDietaryLabel(option)}? Your meal suggestions will update to match.`,
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                  text: "Confirm",
+                                  onPress: () => saveDietaryPreference(option),
+                                },
+                              ]
+                            );
+                          }}
+                          className="px-4 py-2.5 rounded-full border active:opacity-90"
+                          style={
+                            selected
+                              ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                              : { backgroundColor: theme.rowBg, borderColor: theme.cardBorder }
+                          }
+                        >
+                          {selected ? (
+                            <ThemedText variant="accent" className="text-base font-extrabold">
+                              {nutritionDietaryLabel(option)}
+                            </ThemedText>
+                          ) : (
+                            <ThemedText className="text-base font-extrabold">
+                              {nutritionDietaryLabel(option)}
+                            </ThemedText>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
             </ThemedCard>
 
             <ThemedText className="text-2xl font-extrabold mt-6 mb-3">Schedule</ThemedText>
-            <View className="gap-4">
-              {plan.schedule.map((row) => {
-                const totalKcal = dayTotalKcal(row);
-                const isToday = todayPlanDay === row.day;
-                const dayCardStyle = isToday ? { borderColor: theme.danger } : undefined;
+            {!plan.schedule?.length ? (
+              <ThemedCard className="p-5">
+                <ThemedText className="text-lg font-extrabold">No matching meals</ThemedText>
+                <ThemedText variant="muted" className="mt-2 leading-6">
+                  {availableDiets.length > 0
+                    ? "No meals match your current dietary preference for this fitness goal and BMI. Try another dietary preference above."
+                    : "No meals match your fitness goal and BMI category in the dataset yet."}
+                </ThemedText>
+              </ThemedCard>
+            ) : (
+              <View className="gap-4">
+                {plan.schedule.map((row) => {
+                  const totalKcal = dayTotalKcal(row);
+                  const isToday = todayPlanDay === row.day;
+                  const dayCardStyle = isToday ? { borderColor: theme.danger } : undefined;
 
-                return (
-                  <ThemedCard key={row.day} className="p-5" style={dayCardStyle}>
-                    <View className="flex-row items-center justify-between mb-3 gap-3">
-                      <View className="flex-row items-center flex-1 pr-2">
-                        <ThemedText
-                          className="text-lg font-extrabold"
-                          style={isToday ? { color: theme.danger } : undefined}
-                        >
-                          Day {row.day}
-                        </ThemedText>
-                        {isToday ? (
-                          <View
-                            className="ml-2 px-2 py-1 rounded-full border"
-                            style={{
-                              backgroundColor: theme.dangerSoft,
-                              borderColor: theme.danger,
-                            }}
+                  return (
+                    <ThemedCard key={row.day} className="p-5" style={dayCardStyle}>
+                      <View className="flex-row items-center justify-between mb-3 gap-3">
+                        <View className="flex-row items-center flex-1 pr-2">
+                          <ThemedText
+                            className="text-lg font-extrabold"
+                            style={isToday ? { color: theme.danger } : undefined}
                           >
-                            <Text
-                              className="text-[10px] font-extrabold"
-                              style={{ color: theme.danger }}
+                            Day {row.day}
+                          </ThemedText>
+                          {isToday ? (
+                            <View
+                              className="ml-2 px-2 py-1 rounded-full border"
+                              style={{
+                                backgroundColor: theme.dangerSoft,
+                                borderColor: theme.danger,
+                              }}
                             >
-                              TODAY
-                            </Text>
-                          </View>
-                        ) : null}
+                              <Text
+                                className="text-[10px] font-extrabold"
+                                style={{ color: theme.danger }}
+                              >
+                                TODAY
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <ThemedText
+                          className="text-sm font-bold"
+                          style={{ color: isDark ? "#60a5fa" : "#2563eb" }}
+                        >
+                          Total: {totalKcal} kcal
+                        </ThemedText>
                       </View>
-                      <ThemedText
-                        className="text-sm font-bold"
-                        style={{ color: isDark ? "#60a5fa" : "#2563eb" }}
-                      >
-                        Total: {totalKcal} kcal
-                      </ThemedText>
-                    </View>
-                    <View className="gap-3">
-                      {(
-                        [
-                          ["BREAKFAST", "breakfast", row.breakfast],
-                          ["LUNCH", "lunch", row.lunch],
-                          ["DINNER", "dinner", row.dinner],
-                          ["SNACK", "snack", row.snack],
-                        ] as const
-                      ).map(([title, mealType, meal]) => (
-                        <MealBlock
-                          key={mealType}
-                          title={title}
-                          meal={meal}
-                          done={loggedMealKeys.has(mealDoneKey(row.day, mealType))}
-                          onPress={() => openMeal(row.day, mealType)}
-                        />
-                      ))}
-                    </View>
-                  </ThemedCard>
-                );
-              })}
-            </View>
+                      <View className="gap-3">
+                        {(
+                          [
+                            ["BREAKFAST", "breakfast", row.breakfast],
+                            ["LUNCH", "lunch", row.lunch],
+                            ["DINNER", "dinner", row.dinner],
+                            ["SNACK", "snack", row.snack],
+                          ] as const
+                        ).map(([title, mealType, meal]) => (
+                          <MealBlock
+                            key={mealType}
+                            title={title}
+                            meal={meal}
+                            done={loggedMealKeys.has(mealDoneKey(row.day, mealType))}
+                            onPress={() => openMeal(row.day, mealType)}
+                          />
+                        ))}
+                      </View>
+                    </ThemedCard>
+                  );
+                })}
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -662,7 +897,6 @@ export default function MealPlanScreen() {
                 return (
                   <Pressable
                     key={option}
-                    disabled={busy}
                     onPress={() => setPendingDuration(option)}
                     className="rounded-3xl p-5 border active:opacity-90"
                     style={
@@ -699,7 +933,6 @@ export default function MealPlanScreen() {
             </View>
 
             <Pressable
-              disabled={busy}
               onPress={() => {
                 Alert.alert(
                   "Switch nutrition schedule?",
@@ -708,7 +941,7 @@ export default function MealPlanScreen() {
                     { text: "Cancel", style: "cancel" },
                     {
                       text: "Confirm",
-                      onPress: () => void saveNutritionDuration(pendingDuration),
+                      onPress: () => saveNutritionDuration(pendingDuration),
                     },
                   ]
                 );
@@ -719,7 +952,6 @@ export default function MealPlanScreen() {
             </Pressable>
 
             <Pressable
-              disabled={busy}
               onPress={() => setPickerVisible(false)}
               className="mt-3 py-3 rounded-full items-center border active:opacity-90"
               style={cardStyle}
@@ -729,6 +961,11 @@ export default function MealPlanScreen() {
           </View>
         </View>
       </Modal>
+
+      <PlanGeneratingModal
+        visible={generatingPlan}
+        subtitle="Building your new nutrition schedule…"
+      />
     </ThemedScreen>
   );
 }

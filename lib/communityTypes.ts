@@ -24,6 +24,8 @@ export type CommunityPost = {
   commentCount: number;
   likedBy: string[];
   blocked: boolean;
+  /** Author hid this post from the community; only the author (and admin) can see it. */
+  authorHidden: boolean;
   underReview: boolean;
   createdAt: number;
 };

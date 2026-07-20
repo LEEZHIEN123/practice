@@ -30,7 +30,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, ActivityIndicator, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
@@ -441,10 +441,13 @@ export default function WaterIntakeScreen() {
               </Pressable>
             </View>
 
-            {suggestionLoading ? (
-              <ThemedText variant="muted" className="text-sm mt-3">
-                Calculating based on your profile and local weather...
-              </ThemedText>
+            {suggestionLoading && suggestedMl == null ? (
+              <View className="items-center py-6">
+                <ActivityIndicator color={theme.accent} size="large" />
+                <ThemedText variant="muted" className="text-sm mt-3 text-center leading-5">
+                  Calculating based on your profile and local weather…
+                </ThemedText>
+              </View>
             ) : suggestedMl != null ? (
               <>
                 <ThemedText className="text-3xl font-extrabold mt-3" style={{ color: "#2563eb" }}>

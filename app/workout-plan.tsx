@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { PlanGeneratingModal } from "@/components/PlanGeneratingModal";
 import {
     ProfileScreenHeader,
     ThemedCard,
@@ -330,6 +331,7 @@ export default function WorkoutPlanScreen() {
       return;
     }
     try {
+      setPickerVisible(false);
       setBusy(true);
       const snap = await getDoc(doc(db, "users", user.uid));
       const udata = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
@@ -343,7 +345,6 @@ export default function WorkoutPlanScreen() {
         activePlanLastCompletedAt: null,
         [workoutPlansByBmiGoalField(band, goal, duration)]: next,
       } as any);
-      setPickerVisible(false);
     } catch (e) {
       console.log("Failed to switch plan:", e);
       Alert.alert("Error", "Could not switch your plan. Please try again.");
@@ -500,6 +501,11 @@ export default function WorkoutPlanScreen() {
           </>
         )}
       </ScrollView>
+
+      <PlanGeneratingModal
+        visible={busy}
+        subtitle="Building your new workout schedule…"
+      />
 
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>

@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { AdminPendingReportTip } from "@/components/community/AdminPendingReportTip";
 import { CommentMenuModal } from "@/components/community/CommentMenuModal";
+import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
 import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
@@ -47,6 +48,7 @@ type PostCommentsSheetProps = {
   visible: boolean;
   post: CommunityPost | null;
   currentUserId: string | null;
+  adminUid?: string | null;
   friendIds?: Set<string> | string[];
   onClose: () => void;
   onOpenProfile?: (userId: string) => void;
@@ -59,6 +61,7 @@ export function PostCommentsSheet({
   visible,
   post,
   currentUserId,
+  adminUid = null,
   friendIds,
   onClose,
   onOpenProfile,
@@ -222,32 +225,46 @@ export function PostCommentsSheet({
                       <View className="flex-row items-start justify-between gap-2">
                         {onOpenProfile ? (
                           <Pressable onPress={() => onOpenProfile(comment.authorId)} className="flex-1">
-                            <ThemedText className="text-sm font-extrabold">
-                              {comment.authorName}
-                              <PersonNameSuffix
-                                isMe={comment.authorId === currentUserId}
-                                isFriend={
-                                  comment.authorId !== currentUserId &&
-                                  friendSet.has(comment.authorId)
-                                }
-                                accentColor={theme.accentText}
-                                textClassName="text-sm font-bold"
-                              />
-                            </ThemedText>
+                            <CommunityAuthorName
+                              authorId={comment.authorId}
+                              authorName={comment.authorName}
+                              adminUid={adminUid}
+                              textClassName="text-sm font-extrabold"
+                              iconSize={14}
+                              ownSuffix={
+                                <PersonNameSuffix
+                                  isMe={comment.authorId === currentUserId}
+                                  isFriend={
+                                    comment.authorId !== currentUserId &&
+                                    friendSet.has(comment.authorId)
+                                  }
+                                  accentColor={theme.accentText}
+                                  textClassName="text-sm font-bold"
+                                />
+                              }
+                            />
                           </Pressable>
                         ) : (
-                          <ThemedText className="text-sm font-extrabold flex-1">
-                            {comment.authorName}
-                            <PersonNameSuffix
-                              isMe={comment.authorId === currentUserId}
-                              isFriend={
-                                comment.authorId !== currentUserId &&
-                                friendSet.has(comment.authorId)
+                          <View className="flex-1">
+                            <CommunityAuthorName
+                              authorId={comment.authorId}
+                              authorName={comment.authorName}
+                              adminUid={adminUid}
+                              textClassName="text-sm font-extrabold"
+                              iconSize={14}
+                              ownSuffix={
+                                <PersonNameSuffix
+                                  isMe={comment.authorId === currentUserId}
+                                  isFriend={
+                                    comment.authorId !== currentUserId &&
+                                    friendSet.has(comment.authorId)
+                                  }
+                                  accentColor={theme.accentText}
+                                  textClassName="text-sm font-bold"
+                                />
                               }
-                              accentColor={theme.accentText}
-                              textClassName="text-sm font-bold"
                             />
-                          </ThemedText>
+                          </View>
                         )}
                         <ThemedText variant="muted" className="text-[10px]">
                           {formatChatMessageTime(comment.createdAt)}

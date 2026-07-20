@@ -5,8 +5,8 @@ type PostPendingReviewTipProps = {
 };
 
 const TIP_COPY: Record<PostPendingReviewTipProps["variant"], string> = {
-  author: "Your post is under review by Support Admin.",
-  public: "This post is under review by Support Admin.",
+  author: "This post is under review. Please contact Support Admin if you have any questions.",
+  public: "This post is under review. Please verify the information before responding, sharing, or taking action.",
   admin: "Pending review — see Report Management.",
 };
 

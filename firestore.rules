@@ -101,8 +101,11 @@ service cloud.firestore {
     function postNotBlocked() {
       return resource.data.get("blocked", false) == false;
     }
+    function postNotAuthorHidden() {
+      return resource.data.get("authorHidden", false) == false;
+    }
     function canReadCommunityPost() {
-      return postNotBlocked()
+      return (postNotBlocked() && postNotAuthorHidden())
         || isAdmin()
         || resource.data.authorId == request.auth.uid;
     }
@@ -165,7 +168,8 @@ service cloud.firestore {
       allow read: if isSignedIn() && canReadCommunityPost();
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.get("blocked", false) == false;
+        && request.resource.data.get("blocked", false) == false
+        && request.resource.data.get("authorHidden", false) == false;
       allow update: if isSignedIn() && (
         isAdmin()
         || isAuthorPostEdit()

@@ -27,6 +27,7 @@ import {
   loadLikerProfiles,
   requestBlockedPostReReview,
   resolveAdminUid,
+  setPostAuthorHidden,
   submitReport,
   subscribeChats,
   subscribeComments,
@@ -65,7 +66,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
-import { removeCommunityPost } from "@/lib/communityBootstrap";
+import { patchCommunityPost, removeCommunityPost } from "@/lib/communityBootstrap";
 
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
   return (
@@ -131,8 +132,8 @@ export default function CommunityPostScreen() {
 
   const displayComments = useMemo(() => threadedComments(comments), [comments]);
   const profilePosts = useMemo(
-    () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId) : []),
-    [profileUserId, allPosts]
+    () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId, currentUserId) : []),
+    [profileUserId, allPosts, currentUserId]
   );
 
   useEffect(() => {
@@ -387,6 +388,40 @@ export default function CommunityPostScreen() {
     );
   };
 
+  const handleToggleAuthorHidden = () => {
+    if (!post) return;
+    const nextHidden = !post.authorHidden;
+    Alert.alert(
+      nextHidden ? "Hide from everyone?" : "Show to community?",
+      nextHidden
+        ? "This post will be hidden from the community. Only you can see it on your profile."
+        : "This post will be visible in the community again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: nextHidden ? "Hide" : "Show",
+          onPress: () => {
+            void (async () => {
+              const optimistic = { ...post, authorHidden: nextHidden };
+              setPost(optimistic);
+              patchCommunityPost(optimistic);
+              try {
+                await setPostAuthorHidden(post, nextHidden);
+              } catch (e: unknown) {
+                setPost(post);
+                patchCommunityPost(post);
+                Alert.alert(
+                  "Error",
+                  e instanceof Error ? e.message : "Could not update post visibility."
+                );
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   const handleUpdatePost = async (values: {
     content: string;
     tags: string[];
@@ -499,6 +534,15 @@ export default function CommunityPostScreen() {
                       : "This post was reported and has been hidden by Support Admin. Only you can see it here."}
                   </Text>
                 </View>
+              ) : post.authorHidden && isOwnPost ? (
+                <View
+                  className="mt-3 rounded-xl px-3 py-2 border"
+                  style={{ backgroundColor: "#f8fafc", borderColor: "#cbd5e1" }}
+                >
+                  <Text className="text-xs font-semibold" style={{ color: "#475569" }}>
+                    Hidden from everyone. Only you can see this on your profile.
+                  </Text>
+                </View>
               ) : isUnderReview ? (
                 <View className="mt-2">
                   <PostPendingReviewTip variant={isOwnPost ? "author" : "public"} />
@@ -594,18 +638,25 @@ export default function CommunityPostScreen() {
                           onPress={() => void openUserProfile(comment.authorId)}
                           className="flex-1"
                         >
-                          <Text className="text-sm font-extrabold" style={textPrimary}>
-                            {comment.authorName}
-                            <PersonNameSuffix
-                              isMe={comment.authorId === currentUserId}
-                              isFriend={
-                                comment.authorId !== currentUserId &&
-                                friendIds.has(comment.authorId)
-                              }
-                              accentColor={theme.accentText}
-                              textClassName="text-sm font-bold"
-                            />
-                          </Text>
+                          <CommunityAuthorName
+                            authorId={comment.authorId}
+                            authorName={comment.authorName}
+                            adminUid={adminUid}
+                            textClassName="text-sm font-extrabold"
+                            textStyle={textPrimary}
+                            iconSize={14}
+                            ownSuffix={
+                              <PersonNameSuffix
+                                isMe={comment.authorId === currentUserId}
+                                isFriend={
+                                  comment.authorId !== currentUserId &&
+                                  friendIds.has(comment.authorId)
+                                }
+                                accentColor={theme.accentText}
+                                textClassName="text-sm font-bold"
+                              />
+                            }
+                          />
                         </Pressable>
                         <Text className="text-[10px]" style={textMuted}>
                           {formatChatMessageTime(comment.createdAt)}
@@ -799,6 +850,7 @@ export default function CommunityPostScreen() {
         onRequestReReview={
           post?.blocked && !post.underReview ? () => setReReviewVisible(true) : undefined
         }
+        onToggleAuthorHidden={isOwnPost ? handleToggleAuthorHidden : undefined}
       />
 
       <PostComposerModal

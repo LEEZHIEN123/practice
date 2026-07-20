@@ -7,8 +7,7 @@ export function CommentReviewTip() {
       style={{ backgroundColor: "#fff7ed", borderColor: "#fdba74" }}
     >
       <Text className="text-xs font-semibold text-[#c2410c]">
-        Notice: This comment is under review by Support Admin. Please be respectful and follow
-        community guidelines.
+        Under review. Please be careful with community guidelines.
       </Text>
     </View>
   );

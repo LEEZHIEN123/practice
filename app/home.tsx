@@ -25,7 +25,10 @@ import {
   generateActiveNutritionPlan,
   normalizeNutritionActivity,
   normalizeNutritionDietary,
+  nutritionIntakeTargetKcal,
+  type ActiveNutritionPlan,
 } from "@/lib/nutritionPlan";
+import { writeNutritionPlanCache } from "@/lib/nutritionPlanCache";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -182,18 +185,43 @@ export default function HomeScreen() {
         const dietaryKey = normalizeNutritionDietary(
           typeof data.dietaryPreference === "string" ? data.dietaryPreference : null
         );
+        const dailyCalorieTarget = nutritionIntakeTargetKcal({
+          weightKg: typeof data.weight === "number" ? data.weight : weightKg,
+          heightCm: typeof data.height === "number" ? data.height : heightCm,
+          age: typeof data.age === "number" ? data.age : age,
+          gender:
+            data.gender === "male" || data.gender === "female"
+              ? data.gender
+              : gender,
+          activityMultiplier: mult,
+          goal: recommendedPlan,
+        });
         const nutritionPlan = expandNutritionPlanText(
           generateActiveNutritionPlan({
             duration,
             bmi,
             goal: recommendedPlan,
-            dietaryPreference: dietaryKey ?? "omnivore",
-            activityLevel: activityKey ?? "moderate",
+            dietaryPreference: dietaryKey,
+            activityLevel: activityKey,
+            dailyCalorieTarget,
           })
         );
 
+        writeNutritionPlanCache(user.uid, {
+          plan: nutritionPlan,
+          duration,
+          lastCompletedDay: null,
+          lastCompletedAtMs: null,
+          dailyCalorieTarget,
+        });
+
+        setPlanDuration(duration);
+        setNutritionPlanDuration(duration);
+        setPlanPickerVisible(false);
+        router.push((target === "nutrition" ? "/meal-plan" : "/workout-plan") as any);
+
         // First choice applies to both workout and nutrition schedules.
-        await updateDoc(doc(db, "users", user.uid), {
+        void updateDoc(doc(db, "users", user.uid), {
           planDuration: duration,
           planDurationChosenAt: serverTimestamp(),
           nutritionPlanDuration: duration,
@@ -205,11 +233,10 @@ export default function HomeScreen() {
           activeNutritionPlanLastCompletedDay: null,
           activeNutritionPlanLastCompletedAt: null,
           [workoutPlansByBmiGoalField(band, recommendedPlan, duration)]: plan,
-        } as any);
-        setPlanDuration(duration);
-        setNutritionPlanDuration(duration);
-        setPlanPickerVisible(false);
-        router.push((target === "nutrition" ? "/meal-plan" : "/workout-plan") as any);
+        } as any).catch((e) => {
+          console.log("Failed to save plan:", e);
+          Alert.alert("Error", "Failed to save your plan. Please try again.");
+        });
       } catch (e) {
         console.log("Failed to save plan:", e);
         Alert.alert("Error", "Failed to generate your plan. Please try again.");
@@ -258,6 +285,31 @@ export default function HomeScreen() {
         }
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
+
+        const rawNutrition = data?.activeNutritionPlan as ActiveNutritionPlan | undefined;
+        if (rawNutrition) {
+          const lcd = Number(data?.activeNutritionPlanLastCompletedDay);
+          const lca =
+            data?.activeNutritionPlanLastCompletedAt?.toDate?.() instanceof Date
+              ? data.activeNutritionPlanLastCompletedAt.toDate()
+              : null;
+          const nutritionDuration =
+            data?.nutritionPlanDuration === "week" ||
+            data?.nutritionPlanDuration === "biweekly" ||
+            data?.nutritionPlanDuration === "monthly"
+              ? data.nutritionPlanDuration
+              : data?.planDuration === "week" ||
+                  data?.planDuration === "biweekly" ||
+                  data?.planDuration === "monthly"
+                ? data.planDuration
+                : rawNutrition.duration;
+          writeNutritionPlanCache(user.uid, {
+            plan: expandNutritionPlanText(rawNutrition),
+            duration: nutritionDuration,
+            lastCompletedDay: Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null,
+            lastCompletedAtMs: lca?.getTime() ?? null,
+          });
+        }
 
         const rawPlan = data?.activeWorkoutPlan as ActiveWorkoutPlan | undefined;
         if (rawPlan) {

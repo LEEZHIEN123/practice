@@ -32,6 +32,7 @@ import {
   ensureDirectChat,
   fetchPostById,
   fetchPostIdsCommentedByUser,
+  fetchPostsByIds,
   filterPostsByKeyword,
   filterPostsByTag,
   getCurrentUserProfile,
@@ -352,6 +353,7 @@ export function AdminCommunityHub() {
   const [manageFilter, setManageFilter] = useState<"liked" | "commented" | null>(null);
   const [manageMenuVisible, setManageMenuVisible] = useState(false);
   const [commentedPostIds, setCommentedPostIds] = useState<string[]>([]);
+  const [commentedFilterPosts, setCommentedFilterPosts] = useState<CommunityPost[]>([]);
   const [friendIds, setFriendIds] = useState<string[]>([]);
   const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
@@ -418,8 +420,7 @@ export function AdminCommunityHub() {
     }
     const unsubCommented = subscribePostIdsCommentedByUser(
       currentUserId,
-      setCommentedPostIds,
-      () => setCommentedPostIds([])
+      setCommentedPostIds
     );
     const unsubFriends = subscribeFriendsList(
       (friends) => setFriendIds(friends.map((f) => f.id)),
@@ -432,11 +433,34 @@ export function AdminCommunityHub() {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!currentUserId || manageFilter !== "commented") return;
+    if (!currentUserId || manageFilter !== "commented") {
+      if (manageFilter !== "commented") setCommentedFilterPosts([]);
+      return;
+    }
     void fetchPostIdsCommentedByUser(currentUserId)
       .then(setCommentedPostIds)
       .catch(() => {});
   }, [currentUserId, manageFilter]);
+
+  useEffect(() => {
+    if (manageFilter !== "commented") return;
+    const missing = commentedPostIds.filter((id) => !posts.some((p) => p.id === id));
+    if (missing.length === 0) {
+      setCommentedFilterPosts([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchPostsByIds(missing)
+      .then((extras) => {
+        if (!cancelled) setCommentedFilterPosts(extras);
+      })
+      .catch(() => {
+        if (!cancelled) setCommentedFilterPosts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [manageFilter, commentedPostIds, posts]);
 
   useEffect(() => {
     if (communitySubTab !== "feed" || activeTab !== "community") {
@@ -628,13 +652,22 @@ export function AdminCommunityHub() {
   }, [uniqueReviewedReports, reviewedReportStatusFilter, reviewedReportSearch]);
 
   const displayedPosts = useMemo(() => {
-    let list = filterPostsByTag(posts, tagFilterView ? activeTagFilter : null);
+    let list = filterPostsByTag(
+      posts.filter((post) => !post.authorHidden),
+      tagFilterView ? activeTagFilter : null
+    );
     list = filterPostsByKeyword(list, searchQuery);
     if (manageFilter === "liked" && currentUserId) {
       list = list.filter((post) => post.likedBy.includes(currentUserId));
     } else if (manageFilter === "commented") {
       const idSet = new Set(commentedPostIds);
-      list = list.filter((post) => idSet.has(post.id));
+      const byId = new Map(list.map((post) => [post.id, post]));
+      for (const post of commentedFilterPosts) {
+        if (!byId.has(post.id)) byId.set(post.id, post);
+      }
+      list = [...byId.values()]
+        .filter((post) => idSet.has(post.id))
+        .sort((a, b) => b.createdAt - a.createdAt);
     }
     return list;
   }, [
@@ -645,6 +678,7 @@ export function AdminCommunityHub() {
     manageFilter,
     currentUserId,
     commentedPostIds,
+    commentedFilterPosts,
   ]);
 
   const filteredUsers = useMemo(() => {
@@ -657,8 +691,8 @@ export function AdminCommunityHub() {
   }, [users, userSearch]);
 
   const profilePosts = useMemo(
-    () => (profileUserId ? getPostsByAuthor(posts, profileUserId) : []),
-    [posts, profileUserId]
+    () => (profileUserId ? getPostsByAuthor(posts, profileUserId, currentUserId) : []),
+    [posts, profileUserId, currentUserId]
   );
 
   const openCommunityUserProfile = async (userId: string) => {

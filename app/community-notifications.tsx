@@ -29,11 +29,12 @@ import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { db } from "../firebaseConfig";
+import { auth, db } from "../firebaseConfig";
 import type { FriendRequest } from "../lib/communityTypes";
 
 function ProfileAvatar({
@@ -87,6 +88,12 @@ export default function CommunityNotificationsScreen() {
   const [profileFriendBusy, setProfileFriendBusy] = useState(false);
   const [activeFriendNotification, setActiveFriendNotification] =
     useState<CommunityNotification | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => setCurrentUserId(user?.uid ?? null));
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeNotifications(setNotifications);
@@ -99,8 +106,8 @@ export default function CommunityNotificationsScreen() {
   }, []);
 
   const profilePosts = useMemo(
-    () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId) : []),
-    [allPosts, profileUserId]
+    () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId, currentUserId) : []),
+    [allPosts, profileUserId, currentUserId]
   );
 
   const unreadCount = useMemo(

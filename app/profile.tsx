@@ -18,10 +18,20 @@ import {
   type PlanDuration,
   workoutPlansByBmiGoalField,
 } from "@/lib/workoutPlan";
+import {
+  normalizeNutritionActivity,
+  normalizeNutritionDietary,
+  normalizeNutritionGoal,
+  nutritionIntakeTargetKcal,
+  nutritionPlanArchiveUpdateFields,
+  nutritionPlanDurationFromUserData,
+  pickOrGenerateNutritionPlan,
+  type ActiveNutritionPlan,
+} from "@/lib/nutritionPlan";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -148,7 +158,7 @@ export default function ProfileScreen() {
 
     Alert.alert(
       "Update goal?",
-      "Your daily calorie target and personalised workout plan will be recalculated. This may change your remaining calories and future workouts.",
+      "Your daily calorie target, workout plan, and nutrition plan will be recalculated. When you switch back, your previous nutrition progress will be restored.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -161,9 +171,9 @@ export default function ProfileScreen() {
 
               const userRef = doc(db, "users", user.uid);
               const snap = await getDoc(userRef);
-              const data = snap.exists() ? (snap.data() as any) : {};
+              const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
 
-              const updates: any = {
+              const updates: Record<string, unknown> = {
                 recommendedPlan: newKey,
               };
 
@@ -181,6 +191,66 @@ export default function ProfileScreen() {
                 updates.activeWorkoutPlan = plan;
                 updates[workoutPlansByBmiGoalField(band, newKey, plan.duration)] = plan;
               }
+
+              const existingNutritionPlan =
+                (data.activeNutritionPlan as ActiveNutritionPlan | undefined) ?? null;
+              const nutritionLcd = Number(data.activeNutritionPlanLastCompletedDay);
+              const nutritionLastCompletedDay =
+                Number.isFinite(nutritionLcd) && nutritionLcd > 0 ? Math.floor(nutritionLcd) : null;
+              const nutritionLastCompletedAt =
+                (data.activeNutritionPlanLastCompletedAt as { toDate?: () => Date } | undefined)
+                  ?.toDate?.() instanceof Date
+                  ? (data.activeNutritionPlanLastCompletedAt as { toDate: () => Date }).toDate()
+                  : null;
+
+              const archivePatch = existingNutritionPlan
+                ? nutritionPlanArchiveUpdateFields(
+                    existingNutritionPlan,
+                    nutritionLastCompletedDay,
+                    nutritionLastCompletedAt
+                  )
+                : {};
+              Object.assign(updates, archivePatch);
+
+              const nutritionDuration = nutritionPlanDurationFromUserData(data);
+              const nutritionGoal = normalizeNutritionGoal(newKey);
+              const dietaryPreference = normalizeNutritionDietary(
+                typeof data.dietaryPreference === "string" ? data.dietaryPreference : null
+              );
+              const activityLevel = normalizeNutritionActivity(
+                typeof data.activityLevel === "string" ? data.activityLevel : null,
+                typeof data.activityMultiplier === "number" ? data.activityMultiplier : null
+              );
+              const dailyCalorieTarget = nutritionIntakeTargetKcal({
+                weightKg: weight,
+                heightCm: height,
+                age: Number(data.age ?? 0),
+                gender:
+                  data.gender === "male" || data.gender === "female" ? data.gender : null,
+                activityMultiplier:
+                  typeof data.activityMultiplier === "number" ? data.activityMultiplier : null,
+                goal: nutritionGoal,
+              });
+
+              const {
+                plan: nutritionPlan,
+                lastCompletedDay,
+                lastCompletedAt,
+              } = pickOrGenerateNutritionPlan({
+                data: { ...data, ...archivePatch },
+                duration: nutritionDuration,
+                bmi,
+                goal: nutritionGoal,
+                dietaryPreference,
+                activityLevel,
+                dailyCalorieTarget,
+              });
+
+              updates.activeNutritionPlan = nutritionPlan;
+              updates.activeNutritionPlanLastCompletedDay = lastCompletedDay;
+              updates.activeNutritionPlanLastCompletedAt = lastCompletedAt
+                ? Timestamp.fromDate(lastCompletedAt)
+                : null;
 
               await updateDoc(userRef, updates);
 

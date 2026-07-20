@@ -1,4 +1,5 @@
 import { CommentReviewTip } from "@/components/community/CommentReviewTip";
+import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
 import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { Pressable } from "@/components/Pressable";
 import { ThemedText } from "@/components/themed/ThemedUi";
@@ -44,6 +45,7 @@ type PostCommentsPreviewProps = {
   postId: string;
   commentCount: number;
   currentUserId?: string | null;
+  adminUid?: string | null;
   friendIds?: Set<string>;
   onSeeMore: () => void;
   onOpenProfile?: (userId: string) => void;
@@ -53,11 +55,12 @@ export function PostCommentsPreview({
   postId,
   commentCount,
   currentUserId = null,
+  adminUid = null,
   friendIds,
   onSeeMore,
   onOpenProfile,
 }: PostCommentsPreviewProps) {
-  const { theme } = useThemedScreen();
+  const { theme, textPrimary } = useThemedScreen();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [pendingReviewCommentIds, setPendingReviewCommentIds] = useState<string[]>([]);
   const friendSet = friendIds ?? new Set<string>();
@@ -83,6 +86,24 @@ export function PostCommentsPreview({
       {preview.map((comment) => {
         const isMe = Boolean(currentUserId && comment.authorId === currentUserId);
         const isFriend = !isMe && friendSet.has(comment.authorId);
+        const nameRow = (
+          <CommunityAuthorName
+            authorId={comment.authorId}
+            authorName={comment.authorName}
+            adminUid={adminUid}
+            textClassName="text-xs font-extrabold"
+            textStyle={textPrimary}
+            iconSize={12}
+            ownSuffix={
+              <PersonNameSuffix
+                isMe={isMe}
+                isFriend={isFriend}
+                accentColor={theme.accentText}
+                textClassName="text-xs font-bold"
+              />
+            }
+          />
+        );
         return (
           <View key={comment.id} className="mb-2.5">
             {pendingReviewCommentIds.includes(comment.id) ? <CommentReviewTip /> : null}
@@ -96,27 +117,9 @@ export function PostCommentsPreview({
               )}
               <View className="flex-1 ml-2">
                 {onOpenProfile ? (
-                  <Pressable onPress={() => onOpenProfile(comment.authorId)}>
-                    <ThemedText className="text-xs font-extrabold">
-                      {comment.authorName}
-                      <PersonNameSuffix
-                        isMe={isMe}
-                        isFriend={isFriend}
-                        accentColor={theme.accentText}
-                        textClassName="text-xs font-bold"
-                      />
-                    </ThemedText>
-                  </Pressable>
+                  <Pressable onPress={() => onOpenProfile(comment.authorId)}>{nameRow}</Pressable>
                 ) : (
-                  <ThemedText className="text-xs font-extrabold">
-                    {comment.authorName}
-                    <PersonNameSuffix
-                      isMe={isMe}
-                      isFriend={isFriend}
-                      accentColor={theme.accentText}
-                      textClassName="text-xs font-bold"
-                    />
-                  </ThemedText>
+                  nameRow
                 )}
                 {comment.replyToAuthorName ? (
                   <ThemedText variant="accent" className="text-[10px] font-bold mt-0.5">
