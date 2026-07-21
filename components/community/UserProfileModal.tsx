@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import {
   ProfileScreenHeader,
@@ -284,13 +285,7 @@ export function UserProfileModal({
                       {post.content}
                     </ThemedText>
                     <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
-                    {post.imageUrl ? (
-                      <Image
-                        source={{ uri: post.imageUrl }}
-                        style={{ width: "100%", height: 160, borderRadius: 12, marginTop: 10 }}
-                        contentFit="cover"
-                      />
-                    ) : null}
+                    <PostImagesGallery imageUrls={post.imageUrls} maxHeight={160} />
                     {post.tags.length > 0 ? (
                       <View className="flex-row flex-wrap gap-1.5 mt-2">
                         {post.tags.map((tag) => (

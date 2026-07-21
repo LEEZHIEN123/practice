@@ -5,13 +5,21 @@ import {
     ThemedText,
     useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
-import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { addDaysToYmd, formatCalendarDayKey, localDateFromYmd } from "@/lib/calendarDay";
+import { subscribeFriendsList } from "@/lib/communityService";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import {
+  DAILY_STEP_TARGET,
+  publishDailyStepRanking,
+  subscribeDailyStepRanking,
+  type DailyStepRankingEntry,
+} from "@/lib/stepLeaderboard";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
@@ -21,6 +29,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
 type PeriodKey = "week" | "month" | "year";
+type ScreenSection = "progress" | "ranking";
+type RankingScope = "all" | "friends";
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
@@ -30,6 +40,13 @@ const startOfWeekMon = (d: Date) => {
   const out = startOfDay(d);
   out.setDate(out.getDate() - diff);
   return out;
+};
+
+/** Monday YYYY-MM-DD for the week containing `dayKey` (Mon=0 … Sun=6). */
+const mondayKeyForDayKey = (dayKey: string) => {
+  const date = localDateFromYmd(dayKey);
+  const diff = (date.getDay() + 6) % 7;
+  return addDaysToYmd(dayKey, -diff);
 };
 
 const formatLongDate = (d: Date) => {
@@ -45,12 +62,41 @@ const formatLongDate = (d: Date) => {
   }
 };
 
+const formatDayKeyLong = (dayKey: string) => formatLongDate(localDateFromYmd(dayKey));
+
 function effectiveSteps(data: { stepsAuto?: unknown; stepsManual?: unknown } | undefined) {
   const manual = data?.stepsManual;
   if (typeof manual === "number" && Number.isFinite(manual) && manual >= 0) return Math.round(manual);
   const auto = data?.stepsAuto;
   if (typeof auto === "number" && Number.isFinite(auto) && auto >= 0) return Math.round(auto);
   return 0;
+}
+
+function remainingUntilMidnight(date: Date, timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(date);
+    const value = (type: "hour" | "minute" | "second") =>
+      parseInt(parts.find((part) => part.type === type)?.value ?? "0", 10);
+    const elapsed = value("hour") * 3600 + value("minute") * 60 + value("second");
+    const remaining = Math.max(0, 86400 - elapsed);
+    const hours = Math.floor(remaining / 3600);
+    const minutes = Math.floor((remaining % 3600) / 60);
+    const seconds = remaining % 60;
+    return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+  } catch {
+    const remaining =
+      86400 - (date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds());
+    const hours = Math.floor(remaining / 3600);
+    const minutes = Math.floor((remaining % 3600) / 60);
+    const seconds = remaining % 60;
+    return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+  }
 }
 
 export default function StepProgressScreen() {
@@ -71,9 +117,22 @@ export default function StepProgressScreen() {
     : "week") as PeriodKey;
 
   const [period, setPeriod] = useState<PeriodKey>(initialPeriod);
+  const [screenSection, setScreenSection] = useState<ScreenSection>("progress");
+  const [rankingScope, setRankingScope] = useState<RankingScope>("all");
+  const [rankingEntries, setRankingEntries] = useState<DailyStepRankingEntry[]>([]);
+  const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingError, setRankingError] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(() => new Date());
+  const [myRankingProfile, setMyRankingProfile] = useState<{
+    name: string;
+    profileImage: string | null;
+  }>({ name: "You", profileImage: null });
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [stepSeries, setStepSeries] = useState<number[]>(Array(7).fill(0));
-  const [windowRows, setWindowRows] = useState<{ label: string; date: Date; steps: number }[]>([]);
+  const [windowRows, setWindowRows] = useState<
+    { label: string; date: Date; dayKey: string; steps: number }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [stepHoverIdx, setStepHoverIdx] = useState<number | null>(null);
   const [seriesRefresh, setSeriesRefresh] = useState(0);
@@ -87,6 +146,7 @@ export default function StepProgressScreen() {
   const [stepText, setStepText] = useState("");
   const [saving, setSaving] = useState(false);
   const [editModalDate, setEditModalDate] = useState(() => new Date());
+  const [allowEditDateSelection, setAllowEditDateSelection] = useState(false);
   const [showEditDatePicker, setShowEditDatePicker] = useState(false);
   const [editDayAuto, setEditDayAuto] = useState(0);
   const [editDayManual, setEditDayManual] = useState<number | null>(null);
@@ -101,6 +161,99 @@ export default function StepProgressScreen() {
     const unsub = onAuthStateChanged(auth, (u) => setAuthUid(u?.uid ?? null));
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const rankingDayKey = formatCalendarDayKey(clockNow, calendarTz);
+  const rankingCountdown = remainingUntilMidnight(clockNow, calendarTz);
+
+  useEffect(() => {
+    if (!authUid || screenSection !== "ranking") return;
+    setRankingLoading(true);
+    setRankingError(null);
+    void getDoc(doc(db, "users", authUid))
+      .then((snap) => {
+        const data = snap.data() as { name?: unknown; profileImage?: unknown } | undefined;
+        setMyRankingProfile({
+          name:
+            typeof data?.name === "string" && data.name.trim()
+              ? data.name.trim()
+              : auth.currentUser?.displayName || "You",
+          profileImage:
+            typeof data?.profileImage === "string" && data.profileImage
+              ? data.profileImage
+              : null,
+        });
+      })
+      .catch(() => {
+        setMyRankingProfile({
+          name: auth.currentUser?.displayName || "You",
+          profileImage: null,
+        });
+      });
+    const unsubscribeRanking = subscribeDailyStepRanking(
+      rankingDayKey,
+      (entries) => {
+        setRankingEntries(entries);
+        setRankingLoading(false);
+      },
+      () => {
+        setRankingEntries([]);
+        setRankingError("Could not load today’s ranking.");
+        setRankingLoading(false);
+      }
+    );
+    const unsubscribeFriends = subscribeFriendsList(
+      (friends) => setFriendIds(new Set(friends.map((friend) => friend.id))),
+      () => setFriendIds(new Set())
+    );
+    return () => {
+      unsubscribeRanking();
+      unsubscribeFriends();
+    };
+  }, [authUid, rankingDayKey, screenSection]);
+
+  const myTodaySteps = useMemo(() => {
+    if (todayManualOverride != null) return Math.max(0, Math.round(todayManualOverride));
+    if (liveTodayAuto != null) return Math.max(0, Math.round(liveTodayAuto));
+    return 0;
+  }, [liveTodayAuto, todayManualOverride]);
+
+  const visibleRankingEntries = useMemo(() => {
+    const scoped =
+      rankingScope === "all"
+        ? rankingEntries
+        : rankingEntries.filter(
+            (entry) => entry.uid === authUid || friendIds.has(entry.uid)
+          );
+
+    // Always include the signed-in user locally so their fixed row can be
+    // shown even before their public ranking projection finishes syncing.
+    if (!authUid) return scoped;
+    if (scoped.some((entry) => entry.uid === authUid)) return scoped;
+
+    return [
+      ...scoped,
+      {
+        uid: authUid,
+        name: myRankingProfile.name,
+        profileImage: myRankingProfile.profileImage,
+        steps: myTodaySteps,
+      },
+    ].sort((a, b) => b.steps - a.steps);
+  }, [
+    authUid,
+    friendIds,
+    myRankingProfile.name,
+    myRankingProfile.profileImage,
+    myTodaySteps,
+    rankingEntries,
+    rankingScope,
+  ]);
+  const hasVisibleRankedEntries = visibleRankingEntries.some((entry) => entry.steps > 0);
 
   useEffect(() => {
     lastLiveSyncedRef.current = 0;
@@ -121,14 +274,15 @@ export default function StepProgressScreen() {
 
   const title = useMemo(() => {
     if (period === "week") {
-      const ws = startOfWeekMon(anchor);
-      const we = new Date(ws);
-      we.setDate(we.getDate() + 6);
+      const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+      const sundayKey = addDaysToYmd(mondayKey, 6);
+      const ws = localDateFromYmd(mondayKey);
+      const we = localDateFromYmd(sundayKey);
       return `${ws.getMonth() + 1}/${ws.getDate()} - ${we.getMonth() + 1}/${we.getDate()}`;
     }
     if (period === "month") return `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, "0")}`;
     return String(anchor.getFullYear());
-  }, [anchor, period]);
+  }, [anchor, calendarTz, period]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -173,13 +327,9 @@ export default function StepProgressScreen() {
       setLoading(true);
       try {
         if (period === "week") {
-          const weekStart = startOfWeekMon(anchor);
-          const days = Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(weekStart);
-            d.setDate(d.getDate() + i);
-            return d;
-          });
-          const keys = days.map((d) => formatCalendarDayKey(d, calendarTz));
+          const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+          const keys = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mondayKey, i));
+          const days = keys.map((key) => localDateFromYmd(key));
           const snaps = await Promise.all(keys.map((k) => getDoc(doc(db, "users", user.uid, "dailyStats", k))));
           const series = snaps.map((s) => effectiveSteps(s.exists() ? (s.data() as any) : undefined));
           setStepSeries(series);
@@ -187,6 +337,7 @@ export default function StepProgressScreen() {
             days.map((d, idx) => ({
               label: chartLabels[idx],
               date: d,
+              dayKey: keys[idx],
               steps: series[idx] ?? 0,
             }))
           );
@@ -225,6 +376,7 @@ export default function StepProgressScreen() {
             buckets.map((steps, idx) => ({
               label: `Week ${idx + 1} (${fmtDmy(ranges[idx][0])}-${fmtDmy(ranges[idx][1])})`,
               date: monthStart,
+              dayKey: formatCalendarDayKey(monthStart, calendarTz),
               steps,
             }))
           );
@@ -253,6 +405,7 @@ export default function StepProgressScreen() {
           monthTotals.map((steps, idx) => ({
             label: new Date(year, idx, 1).toLocaleDateString(undefined, { month: "long" }),
             date: new Date(year, idx, 1),
+            dayKey: formatCalendarDayKey(new Date(year, idx, 1), calendarTz),
             steps,
           }))
         );
@@ -288,6 +441,9 @@ export default function StepProgressScreen() {
         setTodayManualOverride(manual);
         setLiveTodayAuto(auto);
         lastLiveSyncedRef.current = Math.max(lastLiveSyncedRef.current, auto);
+        void publishDailyStepRanking(todayKey, manual ?? auto).catch((error) => {
+          console.log("Failed to publish step ranking:", error);
+        });
       },
       () => {
         setTodayManualOverride(null);
@@ -362,10 +518,10 @@ export default function StepProgressScreen() {
     if (todayManualOverride != null) return;
     if (liveTodayAuto == null) return;
 
-    const ws = startOfWeekMon(anchor);
-    const today = startOfDay(new Date());
-    const idx = Math.floor((today.getTime() - ws.getTime()) / (24 * 60 * 60 * 1000));
-    if (idx < 0 || idx > 6) return;
+    const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+    const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+    const idx = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mondayKey, i)).indexOf(todayKey);
+    if (idx < 0) return;
 
     setStepSeries((prev) => {
       if (!prev.length) return prev;
@@ -380,7 +536,7 @@ export default function StepProgressScreen() {
       if (row) next[idx] = { ...row, steps: liveTodayAuto };
       return next;
     });
-  }, [anchor, liveTodayAuto, period, todayManualOverride]);
+  }, [anchor, calendarTz, liveTodayAuto, period, todayManualOverride]);
 
   useEffect(() => {
     if (period !== "week") return;
@@ -463,16 +619,29 @@ export default function StepProgressScreen() {
     return anchor.getFullYear() < now.getFullYear();
   }, [anchor, period]);
 
-  const currentPeriodSlotIndex = useMemo(() => getCurrentPeriodSlotIndex(period, anchor), [period, anchor]);
+  const currentPeriodSlotIndex = useMemo(() => {
+    if (period === "week") {
+      const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+      const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+      const idx = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mondayKey, i)).indexOf(todayKey);
+      return idx >= 0 ? idx : null;
+    }
+    return getCurrentPeriodSlotIndex(period, anchor);
+  }, [anchor, calendarTz, period]);
+
+  const weekIndexForDayKey = (dayKey: string) => {
+    const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+    return Array.from({ length: 7 }, (_, i) => addDaysToYmd(mondayKey, i)).indexOf(dayKey);
+  };
 
   const stepBarTooltip = useMemo(() => {
     if (stepHoverIdx == null) return "";
     const idx = stepHoverIdx;
     const steps = stepSeries[idx] ?? 0;
     if (period === "week") {
-      const ws = startOfWeekMon(anchor);
-      const d = new Date(ws);
-      d.setDate(d.getDate() + idx);
+      const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
+      const dayKey = addDaysToYmd(mondayKey, idx);
+      const d = localDateFromYmd(dayKey);
       const dateStr = d.toLocaleDateString(undefined, {
         year: "numeric",
         month: "numeric",
@@ -489,12 +658,16 @@ export default function StepProgressScreen() {
       year: "numeric",
     });
     return `${monthTitle}\n${steps.toLocaleString()} steps`;
-  }, [anchor, chartLabels, period, stepHoverIdx, stepSeries]);
+  }, [anchor, calendarTz, chartLabels, period, stepHoverIdx, stepSeries]);
 
-  const openEdit = () => {
-    setEditModalDate(new Date());
+  const openEditForDate = (date: Date, allowDateSelection = false) => {
+    setEditModalDate(new Date(date));
+    setAllowEditDateSelection(allowDateSelection);
+    setShowEditDatePicker(false);
     setEditOpen(true);
   };
+
+  const openEdit = () => openEditForDate(new Date(), true);
 
   const saveManual = async () => {
     const user = auth.currentUser;
@@ -526,9 +699,7 @@ export default function StepProgressScreen() {
       }
 
       if (period === "week") {
-        const ws = startOfWeekMon(anchor);
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const idx = Math.floor((startOfDay(editModalDate).getTime() - startOfDay(ws).getTime()) / msPerDay);
+        const idx = weekIndexForDayKey(dayKey);
         if (idx >= 0 && idx <= 6) {
           setStepSeries((prev) => {
             if (!prev.length) return prev;
@@ -578,9 +749,7 @@ export default function StepProgressScreen() {
       }
 
       if (period === "week") {
-        const ws = startOfWeekMon(anchor);
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const idx = Math.floor((startOfDay(editModalDate).getTime() - startOfDay(ws).getTime()) / msPerDay);
+        const idx = weekIndexForDayKey(dayKey);
         if (idx >= 0 && idx <= 6) {
           setStepSeries((prev) => {
             if (!prev.length) return prev;
@@ -613,9 +782,33 @@ export default function StepProgressScreen() {
 
   return (
     <ThemedScreen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="px-3" style={{ paddingTop: insets.top + 12 }}>
-        <ProfileScreenHeader title="Step Progress" onBack={() => router.back()} titleClassName="text-xl" />
+      <View
+        className="px-3 pb-5"
+        style={{ paddingTop: insets.top + 12, backgroundColor: theme.screenBg, zIndex: 20 }}
+      >
+        <ProfileScreenHeader title="Daily Steps" onBack={() => router.back()} titleClassName="text-xl" />
+        <View className="rounded-full p-1 flex-row" style={segmentTrackStyle}>
+          {(["progress", "ranking"] as const).map((section) => {
+            const active = screenSection === section;
+            return (
+              <Pressable
+                key={section}
+                onPress={() => setScreenSection(section)}
+                className="flex-1 py-3 rounded-full items-center"
+                style={active ? segmentActiveStyle : undefined}
+              >
+                <ThemedText variant={active ? "accent" : "muted"} className="font-extrabold">
+                  {section === "progress" ? "Step Progress" : "Ranking"}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
 
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }} className="flex-1 px-3">
+        {screenSection === "progress" ? (
+          <>
         <ThemedCard className="p-5">
           <View className="flex-row items-center justify-between">
             <View>
@@ -744,16 +937,20 @@ export default function StepProgressScreen() {
 
         <ThemedCard className="mt-5 p-5 pb-6">
           <ThemedText className="text-base tracking-widest font-extrabold">STEP RECORD</ThemedText>
-          <ThemedText variant="muted" className="text-sm mt-2">Steps reset each day.</ThemedText>
+          <ThemedText className="mt-2 text-sm font-extrabold" style={{ color: "#3b82f6" }}>
+            Recommended daily target: {DAILY_STEP_TARGET.toLocaleString()} steps per day
+          </ThemedText>
           <View className="mt-4 gap-3">
             {windowRows.length === 0 ? (
               <ThemedText variant="muted">No step data yet.</ThemedText>
             ) : (
               windowRows.map((r, idx) => {
                 const isCurrentRow = currentPeriodSlotIndex !== null && idx === currentPeriodSlotIndex;
+                const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+                const canEditDay = period === "week" && r.dayKey <= todayKey;
                 return (
                   <View
-                    key={`${r.date.getTime()}-${idx}`}
+                    key={`${r.dayKey}-${idx}`}
                     className={`flex-row items-center justify-between rounded-2xl px-4 py-4 border ${
                       isCurrentRow ? "border-2" : ""
                     }`}
@@ -764,23 +961,293 @@ export default function StepProgressScreen() {
                   >
                     <View className="flex-row items-center flex-1 flex-wrap pr-2">
                       <ThemedText variant="secondary" className="text-base font-bold">
-                        {period === "week" ? formatLongDate(r.date) : r.label}
+                        {period === "week" ? formatDayKeyLong(r.dayKey) : r.label}
                       </ThemedText>
                       {isCurrentRow ? (
                         <ThemedText className="ml-2 text-xs font-extrabold" style={{ color: theme.danger }}>
                           Current
                         </ThemedText>
                       ) : null}
+                      {period === "week" && r.steps >= DAILY_STEP_TARGET ? (
+                        <View
+                          className="ml-2 flex-row items-center rounded-full px-2 py-1"
+                          style={{ backgroundColor: theme.accentSoft }}
+                        >
+                          <Ionicons name="checkmark-circle" size={14} color={theme.accentText} />
+                          <ThemedText variant="accent" className="ml-1 text-[10px] font-extrabold">
+                            Target achieved
+                          </ThemedText>
+                        </View>
+                      ) : null}
                     </View>
-                    <ThemedText className="text-base font-extrabold">
-                      {r.steps ? `${r.steps.toLocaleString()} steps` : "—"}
-                    </ThemedText>
+                    <View className="flex-row items-center">
+                      <ThemedText className="text-base font-extrabold">
+                        {r.steps ? `${r.steps.toLocaleString()} steps` : "—"}
+                      </ThemedText>
+                      {period === "week" ? (
+                        <Pressable
+                          onPress={() => openEditForDate(localDateFromYmd(r.dayKey))}
+                          disabled={!canEditDay}
+                          hitSlop={10}
+                          accessibilityLabel={`Edit steps for ${formatDayKeyLong(r.dayKey)}`}
+                          className="ml-3 w-9 h-9 rounded-full border items-center justify-center"
+                          style={[cardStyle, { opacity: canEditDay ? 1 : 0.35 }]}
+                        >
+                          <Ionicons name="create-outline" size={18} color={theme.textPrimary} />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
                 );
               })
             )}
           </View>
         </ThemedCard>
+          </>
+        ) : (
+          <ThemedCard className="p-5 pb-6">
+            <View className="items-center">
+              <ThemedText className="text-xl font-extrabold">Daily Step Ranking</ThemedText>
+              <ThemedText variant="muted" className="mt-1 text-sm text-center">
+                Refreshes every day at 12:00 AM
+              </ThemedText>
+              <View
+                className="mt-3 flex-row items-center rounded-full px-4 py-2"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="time-outline" size={17} color={theme.accentText} />
+                <ThemedText variant="accent" className="ml-2 font-extrabold">
+                  Resets in {rankingCountdown}
+                </ThemedText>
+              </View>
+            </View>
+
+            <View className="mt-5 rounded-full p-1 flex-row" style={segmentTrackStyle}>
+              {(["all", "friends"] as const).map((scope) => {
+                const active = rankingScope === scope;
+                return (
+                  <Pressable
+                    key={scope}
+                    onPress={() => setRankingScope(scope)}
+                    className="flex-1 py-3 rounded-full items-center"
+                    style={active ? segmentActiveStyle : undefined}
+                  >
+                    <ThemedText variant={active ? "accent" : "muted"} className="font-bold">
+                      {scope === "all" ? "All" : "Friends"}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {!rankingLoading && !rankingError && !hasVisibleRankedEntries ? (
+              <View
+                className="mt-5 items-center rounded-2xl border px-4 py-5"
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+              >
+                <Ionicons name="walk-outline" size={28} color={theme.accentText} />
+                <ThemedText variant="accent" className="mt-2 text-center font-extrabold">
+                  {rankingScope === "friends"
+                    ? "None of your friends have recorded steps today."
+                    : "No one has recorded steps today."}
+                </ThemedText>
+                <ThemedText variant="muted" className="mt-1 text-center text-sm">
+                  Start moving to become the first person in today’s ranking!
+                </ThemedText>
+              </View>
+            ) : null}
+
+            {rankingLoading ? (
+              <View className="items-center py-8">
+                <ThemedText variant="muted">Loading ranking…</ThemedText>
+              </View>
+            ) : rankingError ? (
+              <ThemedText variant="muted" className="py-8 text-center">
+                {rankingError}
+              </ThemedText>
+            ) : visibleRankingEntries.length === 0 ? (
+              <ThemedText variant="muted" className="py-8 text-center">
+                {rankingScope === "friends"
+                  ? "No friends have recorded steps today yet."
+                  : "No step records for today yet."}
+              </ThemedText>
+            ) : (
+              (() => {
+                const podiumEntries = visibleRankingEntries
+                  .slice(0, 3)
+                  .filter((entry) => entry.steps > 0);
+                const currentUserEntry = visibleRankingEntries.find(
+                  (entry) => entry.uid === authUid
+                );
+                const currentUserRankIndex = visibleRankingEntries
+                  .filter((entry) => entry.steps > 0)
+                  .findIndex((entry) => entry.uid === authUid);
+                const listEntries = visibleRankingEntries
+                  .map((entry, index) => ({ entry, rank: index + 1 }))
+                  .slice(podiumEntries.length)
+                  .filter(({ entry }) => entry.uid !== authUid);
+                const medalColors = ["#f59e0b", "#94a3b8", "#b45309"];
+                const stageHeights = [76, 56, 44];
+                const renderPodiumSlot = (rankIndex: number) => {
+                  const entry = podiumEntries[rankIndex];
+                  const isFirst = rankIndex === 0;
+                  const avatarSize = isFirst ? 72 : 56;
+                  if (!entry) return <View key={`podium-empty-${rankIndex}`} className="flex-1" />;
+                  const isCurrentUser = entry.uid === authUid;
+                  return (
+                    <View key={entry.uid} className="flex-1 items-center justify-end">
+                      {isFirst ? (
+                        <Ionicons name="trophy" size={22} color="#f59e0b" style={{ marginBottom: 4 }} />
+                      ) : null}
+                      <View
+                        className="overflow-hidden rounded-full items-center justify-center"
+                        style={{
+                          width: avatarSize,
+                          height: avatarSize,
+                          backgroundColor: theme.accentSoft,
+                          borderWidth: 3,
+                          borderColor: medalColors[rankIndex],
+                        }}
+                      >
+                        {entry.profileImage ? (
+                          <Image
+                            source={{ uri: entry.profileImage }}
+                            style={{ width: avatarSize, height: avatarSize }}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <Ionicons
+                            name="person"
+                            size={isFirst ? 30 : 24}
+                            color={theme.accentText}
+                          />
+                        )}
+                      </View>
+                      <ThemedText className="mt-1.5 text-xs font-extrabold text-center" numberOfLines={1}>
+                        {entry.name}
+                        {isCurrentUser ? " (You)" : ""}
+                      </ThemedText>
+                      <ThemedText variant="accent" className="text-xs font-bold">
+                        {entry.steps.toLocaleString()}
+                      </ThemedText>
+                      <View
+                        className="mt-1.5 w-full items-center justify-start rounded-t-2xl pt-1.5"
+                        style={{
+                          height: stageHeights[rankIndex],
+                          backgroundColor: medalColors[rankIndex],
+                        }}
+                      >
+                        <ThemedText
+                          className="text-lg font-extrabold"
+                          style={{ color: "#ffffff" }}
+                        >
+                          {rankIndex + 1}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  );
+                };
+
+                return (
+                  <>
+                    {podiumEntries.length > 0 ? (
+                      <View className="mt-6 flex-row items-end gap-2 px-1">
+                        {renderPodiumSlot(1)}
+                        {renderPodiumSlot(0)}
+                        {renderPodiumSlot(2)}
+                      </View>
+                    ) : null}
+
+                    {listEntries.length > 0 ? (
+                      <View className="mt-5 gap-3">
+                        {listEntries.map(({ entry, rank }) => {
+                          return (
+                            <View
+                              key={entry.uid}
+                              className="flex-row items-center rounded-2xl border px-4 py-3"
+                              style={{
+                                backgroundColor: theme.rowBg,
+                                borderColor: theme.cardBorder,
+                              }}
+                            >
+                              <ThemedText
+                                className="w-8 text-center text-base font-extrabold"
+                                style={{ color: theme.textMuted }}
+                              >
+                                {rank}
+                              </ThemedText>
+                              <View
+                                className="ml-2 h-11 w-11 overflow-hidden rounded-full items-center justify-center"
+                                style={{ backgroundColor: theme.accentSoft }}
+                              >
+                                {entry.profileImage ? (
+                                  <Image
+                                    source={{ uri: entry.profileImage }}
+                                    style={{ width: 44, height: 44 }}
+                                    contentFit="cover"
+                                  />
+                                ) : (
+                                  <Ionicons name="person" size={20} color={theme.accentText} />
+                                )}
+                              </View>
+                              <View className="ml-3 flex-1">
+                                <ThemedText className="font-extrabold" numberOfLines={1}>
+                                  {entry.name}
+                                </ThemedText>
+                              </View>
+                              <ThemedText className="ml-2 font-extrabold">
+                                {entry.steps.toLocaleString()}
+                              </ThemedText>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+
+                    {currentUserEntry ? (
+                      <View
+                        className="mt-6 flex-row items-center rounded-2xl border-2 px-4 py-3"
+                        style={{
+                          backgroundColor: theme.accentSoft,
+                          borderColor: theme.accent,
+                        }}
+                      >
+                        <ThemedText
+                          variant="accent"
+                          className="w-8 text-center text-base font-extrabold"
+                        >
+                          {currentUserRankIndex >= 0 ? currentUserRankIndex + 1 : "—"}
+                        </ThemedText>
+                        <View
+                          className="ml-2 h-11 w-11 overflow-hidden rounded-full items-center justify-center"
+                          style={{ backgroundColor: theme.cardBg }}
+                        >
+                          {currentUserEntry.profileImage ? (
+                            <Image
+                              source={{ uri: currentUserEntry.profileImage }}
+                              style={{ width: 44, height: 44 }}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <Ionicons name="person" size={20} color={theme.accentText} />
+                          )}
+                        </View>
+                        <View className="ml-3 flex-1">
+                          <ThemedText className="font-extrabold" numberOfLines={1}>
+                            {currentUserEntry.name} (You)
+                          </ThemedText>
+                        </View>
+                        <ThemedText className="ml-2 font-extrabold">
+                          {currentUserEntry.steps.toLocaleString()}
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                  </>
+                );
+              })()
+            )}
+          </ThemedCard>
+        )}
       </ScrollView>
 
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
@@ -795,16 +1262,19 @@ export default function StepProgressScreen() {
                   {editDayManual != null ? " • Manual override active" : ""}
                 </ThemedText>
               </View>
-              <Pressable
-                onPress={() => setShowEditDatePicker(true)}
-                className="w-11 h-11 rounded-full border items-center justify-center"
-                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
-              >
-                <Ionicons name="calendar-outline" size={22} color={theme.accentText} />
-              </Pressable>
+              {allowEditDateSelection ? (
+                <Pressable
+                  onPress={() => setShowEditDatePicker(true)}
+                  accessibilityLabel="Choose step record date"
+                  className="w-11 h-11 rounded-full border items-center justify-center"
+                  style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                >
+                  <Ionicons name="calendar-outline" size={22} color={theme.accentText} />
+                </Pressable>
+              ) : null}
             </View>
 
-            {showEditDatePicker && (
+            {allowEditDateSelection && showEditDatePicker ? (
               <DateTimePicker
                 value={editModalDate}
                 mode="date"
@@ -816,7 +1286,7 @@ export default function StepProgressScreen() {
                   if (date) setEditModalDate(date);
                 }}
               />
-            )}
+            ) : null}
 
             <View className="mt-5">
               <ThemedText className="font-extrabold ml-1 mb-2">TOTAL STEPS FOR THIS DAY</ThemedText>

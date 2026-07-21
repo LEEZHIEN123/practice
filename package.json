@@ -12,7 +12,8 @@
     "lint": "expo lint",
     "cleanup:zero-kcal-workouts": "node scripts/deleteZeroKcalWorkoutLogs.cjs",
     "setup:community-admin": "node scripts/setupCommunityAdmin.cjs",
-    "deploy:firestore": "npx firebase-tools deploy --only firestore"
+    "deploy:firestore": "npx firebase-tools deploy --only firestore",
+    "deploy:storage": "npx firebase-tools deploy --only storage"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -1,8 +1,8 @@
 import { Pressable } from "@/components/Pressable";
+import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { ThemedBackButton, ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { PostEditSnapshot } from "@/lib/communityTypes";
-import { Image } from "expo-image";
 import { Modal, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -48,12 +48,10 @@ export function PostEditHistoryModal({
                 <ThemedText variant="secondary" className="text-sm leading-6">
                   {entry.content}
                 </ThemedText>
-                {entry.imageUrl ? (
-                  <Image
-                    source={{ uri: entry.imageUrl }}
-                    style={{ width: "100%", height: 140, borderRadius: 12, marginTop: 8 }}
-                    contentFit="cover"
-                  />
+                {(entry.imageUrls?.length ?? 0) > 0 ? (
+                  <PostImagesGallery imageUrls={entry.imageUrls ?? []} maxHeight={140} />
+                ) : entry.imageUrl ? (
+                  <PostImagesGallery imageUrls={[entry.imageUrl]} maxHeight={140} />
                 ) : null}
                 {entry.tags.length > 0 ? (
                   <View className="flex-row flex-wrap gap-1.5 mt-2">

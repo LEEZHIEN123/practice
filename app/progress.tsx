@@ -7,11 +7,13 @@ import {
   ProgressMetricLink,
   ProgressMetricValue,
 } from "@/components/progress/ProgressMetricCard";
+import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
 import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
 import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { getPedometerOrNull } from "@/lib/pedometerSafe";
+import { publishDailyStepRanking } from "@/lib/stepLeaderboard";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -165,6 +167,13 @@ export default function ProgressScreen() {
     () => formatCalendarDayKey(new Date(), calendarTz),
     [calendarTz, dayTick]
   );
+
+  useEffect(() => {
+    if (!stepsHydrated || !authUid) return;
+    void publishDailyStepRanking(todayDayKey, displaySteps).catch((error) => {
+      console.log("Failed to publish daily step ranking:", error);
+    });
+  }, [authUid, displaySteps, stepsHydrated, todayDayKey]);
 
   const waterProfile = useMemo(
     () => ({
@@ -1255,28 +1264,31 @@ export default function ProgressScreen() {
   return (
     <View style={screenStyle}>
       <ScrollView contentContainerStyle={{ paddingBottom: tabBarPadding }} className="px-3 pt-10">
-        <View className="flex-row justify-between items-center mb-8">
-          <Text className="text-4xl font-extrabold" style={textPrimary}>
-            Progress
-          </Text>
-          <Pressable
-            onPress={() => {
-              rememberBottomTabRoute("/progress");
-              router.push("/profile");
-            }}
-            className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
-            style={iconButtonStyle}
-          >
-            {profileImage ? (
-              <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
-            ) : (
-              <Ionicons name="person-outline" size={22} color="#76C893" />
-            )}
-          </Pressable>
-        </View>
+        <ProfileScreenHeader
+          title="Progress"
+          titleClassName="text-3xl"
+          showBackButton={false}
+          className="mb-4"
+          rightSlot={
+            <Pressable
+              onPress={() => {
+                rememberBottomTabRoute("/progress");
+                router.push("/profile");
+              }}
+              className="w-12 h-12 rounded-full border-2 border-[#b7ead1] overflow-hidden items-center justify-center"
+              style={iconButtonStyle}
+            >
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={{ width: 48, height: 48 }} resizeMode="cover" />
+              ) : (
+                <Ionicons name="person-outline" size={22} color="#76C893" />
+              )}
+            </Pressable>
+          }
+        />
 
         {/* Segmented Control */}
-        <View className="mt-3 rounded-full p-1 flex-row" style={segmentTrackStyle}>
+        <View className="rounded-full p-1 flex-row" style={segmentTrackStyle}>
           <Pressable
             onPress={() => setTab("weight")}
             className={`flex-1 py-3 rounded-full items-center ${

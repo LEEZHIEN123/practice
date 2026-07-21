@@ -5,6 +5,7 @@ import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTi
 import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
 import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
+import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostLikesModal } from "@/components/community/PostLikesModal";
@@ -426,13 +427,14 @@ export default function CommunityPostScreen() {
     content: string;
     tags: string[];
     achievementIds: string[];
+    imageUris: string[];
   }) => {
     if (!post) return;
     try {
       setPosting(true);
       await updatePost(post, {
         content: values.content,
-        imageUrl: post.imageUrl,
+        imageUris: values.imageUris,
         tags: values.tags,
         achievementIds: values.achievementIds,
       });
@@ -557,13 +559,7 @@ export default function CommunityPostScreen() {
 
               <PostAchievementChips achievementIds={post.achievementIds ?? []} />
 
-              {post.imageUrl ? (
-                <Image
-                  source={{ uri: post.imageUrl }}
-                  style={{ width: "100%", height: 220, borderRadius: 16, marginTop: 10 }}
-                  contentFit="cover"
-                />
-              ) : null}
+              <PostImagesGallery imageUrls={post.imageUrls} maxHeight={260} />
 
               {post.tags.length > 0 ? (
                 <View className="flex-row flex-wrap gap-2 mt-3">
@@ -863,6 +859,7 @@ export default function CommunityPostScreen() {
                 content: post.content,
                 tags: post.tags,
                 achievementIds: post.achievementIds ?? [],
+                imageUris: post.imageUrls,
               }
             : undefined
         }

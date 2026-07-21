@@ -4,6 +4,7 @@ import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { FriendsSection } from "@/components/community/FriendsSection";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostCommentsPreview, useLiveCommentCount } from "@/components/community/PostCommentsPreview";
+import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
@@ -12,6 +13,7 @@ import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { UserProfileModal } from "@/components/community/UserProfileModal";
 import { Pressable } from "@/components/Pressable";
+import { BottomTabBar, useBottomTabBarScrollPadding } from "@/components/navigation/BottomTabBar";
 import { ProfileScreenHeader, ThemedBackButton, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
@@ -261,6 +263,7 @@ export default function CommunityScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ openPostId?: string; openComments?: string }>();
   const insets = useSafeAreaInsets();
+  const tabBarPadding = useBottomTabBarScrollPadding(72);
   useAdminRedirect();
   const { cardStyle, screenStyle, surfaceStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
     useThemedScreen();
@@ -626,6 +629,7 @@ export default function CommunityScreen() {
     content: string;
     tags: string[];
     achievementIds: string[];
+    imageUris: string[];
   }) => {
     if (!auth.currentUser?.uid) {
       Alert.alert("Sign in required", "Please sign in to post in the community.");
@@ -636,7 +640,7 @@ export default function CommunityScreen() {
       if (editingPost) {
         await updatePost(editingPost, {
           content: values.content,
-          imageUrl: editingPost.imageUrl,
+          imageUris: values.imageUris,
           tags: values.tags,
           achievementIds: values.achievementIds,
         });
@@ -646,6 +650,7 @@ export default function CommunityScreen() {
           content: values.content,
           tags: values.tags,
           achievementIds: values.achievementIds,
+          imageUris: values.imageUris,
         });
         prependCommunityPost(created);
         setPosts((prev) => {
@@ -931,17 +936,20 @@ export default function CommunityScreen() {
 
   if (!currentUserId) {
     return (
-      <View className="flex-1 items-center justify-center px-8" style={screenStyle}>
-        <Text className="text-lg font-extrabold text-center" style={textPrimary}>Sign in required</Text>
-        <Text className="text-sm text-center mt-2" style={textMuted}>
-          Please log in to use the community features.
-        </Text>
-        <Pressable
-          onPress={() => router.replace("/login")}
-          className="mt-6 rounded-full bg-[#52B69A] px-8 py-3"
-        >
-          <Text className="text-sm font-extrabold text-white">Go to Login</Text>
-        </Pressable>
+      <View className="flex-1" style={screenStyle}>
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-lg font-extrabold text-center" style={textPrimary}>Sign in required</Text>
+          <Text className="text-sm text-center mt-2" style={textMuted}>
+            Please log in to use the community features.
+          </Text>
+          <Pressable
+            onPress={() => router.replace("/login")}
+            className="mt-6 rounded-full bg-[#52B69A] px-8 py-3"
+          >
+            <Text className="text-sm font-extrabold text-white">Go to Login</Text>
+          </Pressable>
+        </View>
+        <BottomTabBar active="community" />
       </View>
     );
   }
@@ -952,7 +960,8 @@ export default function CommunityScreen() {
         <View className="px-4">
           <ProfileScreenHeader
             title="Community"
-            onBack={() => router.back()}
+            titleClassName="text-3xl"
+            showBackButton={false}
             rightSlot={
               <View className="flex-row items-center gap-1">
                 <Pressable
@@ -1123,7 +1132,7 @@ export default function CommunityScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
-          paddingBottom: insets.bottom + 100,
+          paddingBottom: tabBarPadding,
         }}
       >
         {activeTab === "feed" ? (
@@ -1224,13 +1233,7 @@ export default function CommunityScreen() {
 
                       <PostAchievementChips achievementIds={post.achievementIds ?? []} />
 
-                      {post.imageUrl ? (
-                        <Image
-                          source={{ uri: post.imageUrl }}
-                          style={{ width: "100%", height: 220, borderRadius: 16, marginTop: 10 }}
-                          contentFit="cover"
-                        />
-                      ) : null}
+                      <PostImagesGallery imageUrls={post.imageUrls} />
                       </Pressable>
 
                       {post.tags.length > 0 ? (
@@ -1390,7 +1393,7 @@ export default function CommunityScreen() {
             setComposerVisible(true);
           }}
           className="absolute right-5 flex-row items-center rounded-full bg-[#52B69A] px-6 py-4 shadow-lg"
-          style={{ bottom: insets.bottom + 44 }}
+          style={{ bottom: tabBarPadding - 56 }}
         >
           <Ionicons name="add" size={28} color="white" />
           <Text className="text-base font-extrabold text-white ml-1.5">New post</Text>
@@ -1401,7 +1404,7 @@ export default function CommunityScreen() {
         <Pressable
           onPress={() => setAddFriendVisible(true)}
           className="absolute right-5 flex-row items-center rounded-full bg-[#52B69A] px-6 py-4 shadow-lg"
-          style={{ bottom: insets.bottom + 44 }}
+          style={{ bottom: tabBarPadding - 56 }}
         >
           <Ionicons name="person-add" size={24} color="white" />
           <Text className="text-base font-extrabold text-white ml-1.5">Add friend</Text>
@@ -1427,6 +1430,7 @@ export default function CommunityScreen() {
                 content: editingPost.content,
                 tags: editingPost.tags,
                 achievementIds: editingPost.achievementIds ?? [],
+                imageUris: editingPost.imageUrls,
               }
             : undefined
         }
@@ -1621,6 +1625,8 @@ export default function CommunityScreen() {
           </View>
         </View>
       </Modal>
+
+      <BottomTabBar active="community" />
     </View>
   );
 }

@@ -10,6 +10,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
+import { publishAchievementRanking } from "./achievementLeaderboard";
 
 export type AchievementCategory = "workout" | "meal" | "community" | "streaks";
 export type AchievementFilter = "all" | AchievementCategory;
@@ -604,39 +605,40 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
   const user = auth.currentUser;
   if (!user) return null;
 
-  const ref = doc(db, "users", user.uid);
+  const result = await computeAchievementsForUser(user.uid, { persist: true });
+  if (!result) return null;
+
+  void publishAchievementRanking(result.unlockedCount).catch((error) => {
+    console.log("Achievement ranking sync unavailable:", error);
+  });
+  return result.sections;
+}
+
+/** Compute unlocked achievement count for any user (admin can use this for ranking backfill). */
+export async function computeUnlockedAchievementCountForUser(uid: string): Promise<number> {
+  const result = await computeAchievementsForUser(uid, { persist: false });
+  return result?.unlockedCount ?? 0;
+}
+
+async function computeAchievementsForUser(
+  uid: string,
+  options: { persist: boolean }
+): Promise<{ sections: AchievementSectionModel[]; unlockedCount: number } | null> {
+  const ref = doc(db, "users", uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
 
   const data = snap.data() as Record<string, unknown>;
   let state = mergeAchievementState(data);
-  const today = localYmd(new Date());
-  const loginUpdate = computeLoginStreakUpdate(state, today);
-  state = loginUpdate.next;
+  const isSelf = auth.currentUser?.uid === uid;
+  let shouldPersistLogin = false;
 
-  const weightLogCountPromise = getCountFromServer(
-    collection(db, "users", user.uid, "weightLogs")
-  );
-  const workoutLogCountPromise = getCountFromServer(
-    collection(db, "users", user.uid, "workoutLogs")
-  );
-  const discoverWorkoutLogCountPromise = getCountFromServer(
-    query(collection(db, "users", user.uid, "workoutLogs"), where("origin", "==", "discover"))
-  );
-  const completedSessionCountPromise = getCountFromServer(
-    query(collection(db, "users", user.uid, "workoutSessions"), where("status", "==", "completed"))
-  );
-  const waterLogCountPromise = getCountFromServer(
-    collection(db, "users", user.uid, "waterLogs")
-  );
-  const mealLogCountPromise = getCountFromServer(
-    collection(db, "users", user.uid, "mealLogs")
-  );
-  const nutritionPlanMealCountPromise = getCountFromServer(
-    query(collection(db, "users", user.uid, "mealLogs"), where("origin", "==", "nutritionPlan"))
-  );
-  const dailyStatsSnapPromise = getDocs(collection(db, "users", user.uid, "dailyStats"));
-  const communityMetricsPromise = loadCommunityMetrics(user.uid);
+  if (options.persist && isSelf) {
+    const today = localYmd(new Date());
+    const loginUpdate = computeLoginStreakUpdate(state, today);
+    state = loginUpdate.next;
+    shouldPersistLogin = loginUpdate.shouldPersist;
+  }
 
   const [
     weightLogCountSnap,
@@ -649,15 +651,21 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     dailyStatsSnap,
     communityMetrics,
   ] = await Promise.all([
-    weightLogCountPromise,
-    workoutLogCountPromise,
-    discoverWorkoutLogCountPromise,
-    completedSessionCountPromise,
-    waterLogCountPromise,
-    mealLogCountPromise,
-    nutritionPlanMealCountPromise,
-    dailyStatsSnapPromise,
-    communityMetricsPromise,
+    getCountFromServer(collection(db, "users", uid, "weightLogs")),
+    getCountFromServer(collection(db, "users", uid, "workoutLogs")),
+    getCountFromServer(
+      query(collection(db, "users", uid, "workoutLogs"), where("origin", "==", "discover"))
+    ),
+    getCountFromServer(
+      query(collection(db, "users", uid, "workoutSessions"), where("status", "==", "completed"))
+    ),
+    getCountFromServer(collection(db, "users", uid, "waterLogs")),
+    getCountFromServer(collection(db, "users", uid, "mealLogs")),
+    getCountFromServer(
+      query(collection(db, "users", uid, "mealLogs"), where("origin", "==", "nutritionPlan"))
+    ),
+    getDocs(collection(db, "users", uid, "dailyStats")),
+    loadCommunityMetrics(uid),
   ]);
 
   let stepDays3000Count = 0;
@@ -713,12 +721,17 @@ export async function loadAndSyncAchievements(): Promise<AchievementSectionModel
     }
   }
 
-  if (loginUpdate.shouldPersist || unlocksGrew) {
+  if (options.persist && isSelf && (shouldPersistLogin || unlocksGrew)) {
     state = { ...state, unlockedAchievements: [...unlocked] };
     await updateDoc(ref, { achievementState: state });
   }
 
-  return applyPersistedUnlocks(rawSections, unlocked);
+  const sections = applyPersistedUnlocks(rawSections, unlocked);
+  const unlockedCount = sections.reduce(
+    (sum, section) => sum + section.completedCount,
+    0
+  );
+  return { sections, unlockedCount };
 }
 
 export type ShareableAchievement = {

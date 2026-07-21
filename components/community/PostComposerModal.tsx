@@ -7,6 +7,10 @@ import {
 import { DEFAULT_POST_TAGS } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
+import { ImageEditor } from "expo-dynamic-image-crop";
+import { Image } from "expo-image";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +30,7 @@ export type PostComposerValues = {
   content: string;
   tags: string[];
   achievementIds: string[];
+  imageUris: string[];
 };
 
 type PostComposerModalProps = {
@@ -38,6 +43,8 @@ type PostComposerModalProps = {
   onClose: () => void;
   onSubmit: (values: PostComposerValues) => Promise<void>;
 };
+
+const MAX_POST_IMAGES = 6;
 
 export function PostComposerModal({
   visible,
@@ -54,8 +61,13 @@ export function PostComposerModal({
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [achievementIds, setAchievementIds] = useState<string[]>([]);
+  const [imageUris, setImageUris] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
+  const [editingImageUri, setEditingImageUri] = useState<string | null>(null);
+  const [cropperVisible, setCropperVisible] = useState(false);
+  const [processingImage, setProcessingImage] = useState(false);
   const [completedAchievements, setCompletedAchievements] = useState<ShareableAchievement[]>([]);
   const [loadingAchievements, setLoadingAchievements] = useState(false);
   const [achievementsExpanded, setAchievementsExpanded] = useState(false);
@@ -63,11 +75,16 @@ export function PostComposerModal({
   useEffect(() => {
     if (!visible) {
       setBusy(false);
+      setEditingImageIndex(null);
+      setEditingImageUri(null);
+      setCropperVisible(false);
+      setProcessingImage(false);
       return;
     }
     setContent(initial?.content ?? "");
     setTags(initial?.tags ?? []);
     setAchievementIds(showAchievements ? initial?.achievementIds ?? [] : []);
+    setImageUris(initial?.imageUris ?? []);
     setCustomTag("");
     setAchievementsExpanded(false);
 
@@ -127,6 +144,99 @@ export function PostComposerModal({
     setCustomTag("");
   };
 
+  const appendImages = (uris: string[]) => {
+    if (uris.length === 0) return;
+    setImageUris((prev) => {
+      const merged = [...prev];
+      for (const uri of uris) {
+        if (merged.length >= MAX_POST_IMAGES) break;
+        if (!merged.includes(uri)) merged.push(uri);
+      }
+      return merged;
+    });
+  };
+
+  const removeImageAt = (index: number) => {
+    setImageUris((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const openImageEditor = (index: number) => {
+    setEditingImageIndex(index);
+    setEditingImageUri(imageUris[index]);
+  };
+
+  const closeImageEditor = () => {
+    if (processingImage) return;
+    setEditingImageIndex(null);
+    setEditingImageUri(null);
+    setCropperVisible(false);
+  };
+
+  const rotateEditingImage = async (degrees: -90 | 90) => {
+    if (!editingImageUri || processingImage) return;
+    try {
+      setProcessingImage(true);
+      const result = await ImageManipulator.manipulateAsync(
+        editingImageUri,
+        [{ rotate: degrees }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      setEditingImageUri(result.uri);
+    } catch {
+      Alert.alert("Photo editing", "Could not rotate this photo.");
+    } finally {
+      setProcessingImage(false);
+    }
+  };
+
+  const applyImageEdits = () => {
+    if (editingImageIndex === null || !editingImageUri || processingImage) return;
+    setImageUris((prev) =>
+      prev.map((uri, index) => (index === editingImageIndex ? editingImageUri : uri))
+    );
+    closeImageEditor();
+  };
+
+  const pickImages = async (source: "camera" | "library") => {
+    const remaining = MAX_POST_IMAGES - imageUris.length;
+    if (remaining <= 0) {
+      Alert.alert("Photo limit", `You can attach up to ${MAX_POST_IMAGES} photos per post.`);
+      return;
+    }
+
+    const permission =
+      source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        source === "camera"
+          ? "Allow camera access to take a photo for your post."
+          : "Allow photo access to choose images for your post."
+      );
+      return;
+    }
+
+    const result =
+      source === "camera"
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsMultipleSelection: true,
+            selectionLimit: remaining,
+            quality: 0.8,
+          });
+
+    if (result.canceled) return;
+    const picked = result.assets.map((asset) => asset.uri).filter(Boolean);
+    appendImages(picked);
+  };
+
   const handleSubmit = async () => {
     if (submitting || busy) return;
     if (!content.trim()) {
@@ -140,6 +250,7 @@ export function PostComposerModal({
         content,
         tags,
         achievementIds: showAchievements ? achievementIds : [],
+        imageUris,
       });
     } finally {
       setBusy(false);
@@ -147,6 +258,7 @@ export function PostComposerModal({
   };
 
   const isSubmitting = submitting || busy;
+  const canAddMorePhotos = imageUris.length < MAX_POST_IMAGES;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -194,6 +306,78 @@ export function PostComposerModal({
               style={inputStyle}
               placeholderTextColor={placeholderColor}
             />
+
+            <View className="flex-row items-center justify-between mt-5 mb-2">
+              <ThemedText className="text-sm font-extrabold">
+                Photos{imageUris.length > 0 ? ` (${imageUris.length}/${MAX_POST_IMAGES})` : ""}
+              </ThemedText>
+            </View>
+
+            {imageUris.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10, paddingBottom: 4 }}
+              >
+                {imageUris.map((uri, index) => (
+                  <View key={`${uri}-${index}`} className="relative overflow-hidden rounded-2xl" style={cardStyle}>
+                    <Pressable
+                      onPress={() => openImageEditor(index)}
+                      disabled={isSubmitting}
+                      accessibilityLabel={`View and edit photo ${index + 1}`}
+                    >
+                      <Image
+                        source={{ uri }}
+                        style={{ width: 132, height: 132 }}
+                        contentFit="cover"
+                      />
+                    </Pressable>
+                    <View
+                      className="absolute top-2 right-2 min-w-[28px] h-7 px-2 rounded-full items-center justify-center border-2 border-white"
+                      style={{ backgroundColor: "#52B69A" }}
+                    >
+                      <Text className="text-xs font-extrabold text-white">{index + 1}</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => removeImageAt(index)}
+                      disabled={isSubmitting}
+                      accessibilityLabel={`Remove photo ${index + 1}`}
+                      className="absolute bottom-2 right-2 w-8 h-8 rounded-full items-center justify-center"
+                      style={{ backgroundColor: "rgba(0,0,0,0.72)" }}
+                    >
+                      <Ionicons name="close" size={18} color="white" />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+
+            {canAddMorePhotos ? (
+              <View className={`flex-row gap-3 ${imageUris.length > 0 ? "mt-3" : ""}`}>
+                <Pressable
+                  onPress={() => void pickImages("library")}
+                  disabled={isSubmitting}
+                  className="flex-1 flex-row items-center justify-center rounded-2xl border py-3"
+                  style={cardStyle}
+                >
+                  <Ionicons name="images-outline" size={20} color={theme.accentText} />
+                  <ThemedText variant="accent" className="font-extrabold ml-2">
+                    Gallery
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={() => void pickImages("camera")}
+                  disabled={isSubmitting}
+                  className="flex-1 flex-row items-center justify-center rounded-2xl border py-3"
+                  style={cardStyle}
+                >
+                  <Ionicons name="camera-outline" size={20} color={theme.accentText} />
+                  <ThemedText variant="accent" className="font-extrabold ml-2">
+                    Camera
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : null}
 
             {showAchievements ? (
               <>
@@ -345,6 +529,111 @@ export function PostComposerModal({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={editingImageIndex !== null}
+        animationType="slide"
+        onRequestClose={closeImageEditor}
+      >
+        <View className="flex-1 bg-black">
+          <View
+            className="flex-row items-center justify-between px-4 pb-3"
+            style={{ paddingTop: insets.top + 10 }}
+          >
+            <Pressable
+              onPress={closeImageEditor}
+              disabled={processingImage}
+              hitSlop={8}
+              accessibilityLabel="Close photo editor"
+            >
+              <Ionicons name="close" size={28} color="white" />
+            </Pressable>
+            <Text className="text-lg font-extrabold text-white">
+              {editingImageIndex === null ? "Photo" : `Photo ${editingImageIndex + 1}`}
+            </Text>
+            <Pressable
+              onPress={applyImageEdits}
+              disabled={processingImage || !editingImageUri}
+              hitSlop={8}
+              accessibilityLabel="Apply photo edits"
+            >
+              <Text
+                className="text-base font-extrabold"
+                style={{ color: processingImage ? "#6b7280" : "#52B69A" }}
+              >
+                Apply
+              </Text>
+            </Pressable>
+          </View>
+
+          <View className="flex-1 items-center justify-center px-3">
+            {editingImageUri ? (
+              <Image
+                source={{ uri: editingImageUri }}
+                style={{ width: "100%", height: "100%" }}
+                contentFit="contain"
+              />
+            ) : null}
+            {processingImage ? (
+              <View className="absolute inset-0 items-center justify-center bg-black/40">
+                <ActivityIndicator color="white" size="large" />
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            className="flex-row gap-3 px-4 pt-4"
+            style={{ paddingBottom: insets.bottom + 16, backgroundColor: theme.navBg }}
+          >
+            <Pressable
+              onPress={() => void rotateEditingImage(-90)}
+              disabled={processingImage || !editingImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="refresh-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Rotate left
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setCropperVisible(true)}
+              disabled={processingImage || !editingImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="crop-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Crop
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void rotateEditingImage(90)}
+              disabled={processingImage || !editingImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="reload-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Rotate right
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {editingImageUri ? (
+        <ImageEditor
+          isVisible={cropperVisible}
+          imageUri={editingImageUri}
+          onEditingComplete={(croppedImageData) => {
+            setEditingImageUri(croppedImageData.uri);
+            setCropperVisible(false);
+          }}
+          onEditingCancel={() => setCropperVisible(false)}
+          dynamicCrop
+        />
+      ) : null}
     </Modal>
   );
 }

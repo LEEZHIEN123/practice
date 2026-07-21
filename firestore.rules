@@ -86,7 +86,7 @@ service cloud.firestore {
       return !("isAdmin" in request.resource.data)
         || request.resource.data.isAdmin == resource.data.get("isAdmin", false);
     }
-    function userProfileFieldsSafe() {
+    function userProfileFieldsSafe(userId) {
       return !("role" in request.resource.data)
         || request.resource.data.role == resource.data.get("role", "")
         || (
@@ -141,8 +141,8 @@ service cloud.firestore {
           || request.resource.data.get("role", "") != "admin"
           || isAdminEmail()
         );
-      allow update: if isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe();
-      allow delete: if (isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe())
+      allow update: if isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe(userId);
+      allow delete: if (isOwner(userId) && adminFieldUnchanged() && userProfileFieldsSafe(userId))
         || (isAdmin()
           && userId != request.auth.uid
           && resource.data.get("role", "") != "admin"
@@ -162,6 +162,37 @@ service cloud.firestore {
         allow create, update: if isOwner(userId);
         allow delete: if isOwner(userId) || isAdmin();
       }
+    }
+
+    match /dailyStepRankings/{dayKey}/entries/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.dayKey == dayKey
+        && request.resource.data.name is string
+        && request.resource.data.steps is int
+        && request.resource.data.steps >= 0
+        && request.resource.data.steps <= 200000;
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /achievementRankings/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if (
+          (
+            isOwner(userId)
+            && request.resource.data.uid == request.auth.uid
+          )
+          || (
+            isAdmin()
+            && request.resource.data.uid == userId
+          )
+        )
+        && request.resource.data.name is string
+        && request.resource.data.unlockedCount is int
+        && request.resource.data.unlockedCount >= 0
+        && request.resource.data.unlockedCount <= 60;
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /communityPosts/{postId} {

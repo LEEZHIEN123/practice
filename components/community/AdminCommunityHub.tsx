@@ -3,6 +3,7 @@ import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { Pressable } from "@/components/Pressable";
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
+import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostComposerModal } from "@/components/community/PostComposerModal";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
@@ -799,19 +800,8 @@ export function AdminCommunityHub() {
       return;
     }
     if (!postText.trim()) return;
-    try {
-      setPosting(true);
-      const created = await createPost({ content: postText, tags: [] });
-      setPosts((prev) => {
-        const merged = [created, ...prev.filter((item) => item.id !== created.id)];
-        return merged.sort((a, b) => b.createdAt - a.createdAt);
-      });
-      setPostText("");
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not create post.");
-    } finally {
-      setPosting(false);
-    }
+    setEditingPost(null);
+    setComposerVisible(true);
   };
 
   const handleLike = async (post: CommunityPost) => {
@@ -876,6 +866,7 @@ export function AdminCommunityHub() {
     content: string;
     tags: string[];
     achievementIds: string[];
+    imageUris: string[];
   }) => {
     if (!auth.currentUser?.uid) {
       Alert.alert("Sign in required", "Please sign in to post.");
@@ -886,7 +877,7 @@ export function AdminCommunityHub() {
       if (editingPost) {
         await updatePost(editingPost, {
           content: values.content,
-          imageUrl: editingPost.imageUrl,
+          imageUris: values.imageUris,
           tags: values.tags,
           achievementIds: values.achievementIds,
         });
@@ -895,11 +886,13 @@ export function AdminCommunityHub() {
           content: values.content,
           tags: values.tags,
           achievementIds: values.achievementIds,
+          imageUris: values.imageUris,
         });
         setPosts((prev) => {
           const merged = [created, ...prev.filter((item) => item.id !== created.id)];
           return merged.sort((a, b) => b.createdAt - a.createdAt);
         });
+        setPostText("");
       }
       setComposerVisible(false);
       setEditingPost(null);
@@ -1043,18 +1036,8 @@ export function AdminCommunityHub() {
             {reportDetailPost.content}
           </Text>
         ) : null}
-        {reportDetailPost.imageUrl ? (
-          <Image
-            source={{ uri: reportDetailPost.imageUrl }}
-            style={{
-              width: "100%",
-              aspectRatio: 4 / 3,
-              maxHeight: 220,
-              borderRadius: 16,
-              marginTop: 12,
-            }}
-            contentFit="cover"
-          />
+        {reportDetailPost.imageUrls.length > 0 ? (
+          <PostImagesGallery imageUrls={reportDetailPost.imageUrls} maxHeight={220} />
         ) : null}
         {reportDetailPost.tags.length > 0 ? (
           <View className="flex-row flex-wrap gap-2 mt-3">
@@ -1608,15 +1591,11 @@ export function AdminCommunityHub() {
                 />
                 <Pressable
                   onPress={() => void handleCreatePost()}
-                  disabled={posting || !postText.trim()}
+                  disabled={!postText.trim()}
                   className="mt-3 rounded-full py-3 items-center"
                   style={{ backgroundColor: postText.trim() ? "#52B69A" : theme.iconMuted }}
                 >
-                  {posting ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text className="text-sm font-extrabold text-white">Post</Text>
-                  )}
+                  <Text className="text-sm font-extrabold text-white">Continue</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -1682,13 +1661,7 @@ export function AdminCommunityHub() {
                       {post.content}
                     </Text>
                     <PostAchievementChips achievementIds={post.achievementIds ?? []} />
-                    {post.imageUrl ? (
-                      <Image
-                        source={{ uri: post.imageUrl }}
-                        style={{ width: "100%", height: 180, borderRadius: 16, marginTop: 10 }}
-                        contentFit="cover"
-                      />
-                    ) : null}
+                    <PostImagesGallery imageUrls={post.imageUrls} maxHeight={180} />
                   </Pressable>
                   {post.tags.length > 0 ? (
                     <View className="flex-row flex-wrap gap-2 mt-3">
@@ -3040,8 +3013,16 @@ export function AdminCommunityHub() {
                 content: editingPost.content,
                 tags: editingPost.tags,
                 achievementIds: editingPost.achievementIds ?? [],
+                imageUris: editingPost.imageUrls,
               }
-            : undefined
+            : postText.trim()
+              ? {
+                  content: postText,
+                  tags: [],
+                  achievementIds: [],
+                  imageUris: [],
+                }
+              : undefined
         }
         submitting={posting}
         onClose={() => {

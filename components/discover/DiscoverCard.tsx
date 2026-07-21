@@ -38,7 +38,7 @@ function defaultIcon(cardKey: DiscoverCardKey) {
   if (cardKey === "community") {
     return <Ionicons name="people" size={30} color="white" />;
   }
-  return <MaterialCommunityIcons name="robot-happy-outline" size={24} color="white" />;
+  return <MaterialCommunityIcons name="robot-happy-outline" size={24} color="#76C893" />;
 }
 
 export function DiscoverCard({

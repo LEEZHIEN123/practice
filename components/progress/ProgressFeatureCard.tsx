@@ -47,7 +47,7 @@ export function ProgressFeatureCard({
     >
       <View
         className={large ? "px-5 py-6" : "px-5 py-5"}
-        style={large ? { minHeight: 112 } : undefined}
+        style={large ? { minHeight: 132, justifyContent: "center" } : undefined}
       >
         <Image
           source={PROGRESS_METRIC_CARD_IMAGES[cardKey]}

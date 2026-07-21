@@ -155,6 +155,7 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
 export async function deleteUserFirestoreProfile(uid: string): Promise<void> {
   await deleteUserSubcollections(uid);
   await deleteUserCommunityData(uid);
+  await safe(() => deleteDoc(doc(db, "achievementRankings", uid)));
   await deleteDoc(doc(db, "users", uid));
 }
 

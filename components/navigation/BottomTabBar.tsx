@@ -8,12 +8,18 @@ import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export type BottomTabKey = "home" | "discover" | "progress" | "profile";
+export type BottomTabKey = "home" | "discover" | "community" | "progress" | "profile";
 
 /** Icon row + labels + vertical padding, excluding the device safe area. */
 export const BOTTOM_TAB_BAR_CORE_HEIGHT = 58;
 
-export const BOTTOM_TAB_ROUTES = ["/home", "/discover", "/progress", "/profile"] as const;
+export const BOTTOM_TAB_ROUTES = [
+  "/home",
+  "/discover",
+  "/community",
+  "/progress",
+  "/profile",
+] as const;
 
 export function isBottomTabRoute(pathname: string) {
   return (BOTTOM_TAB_ROUTES as readonly string[]).includes(pathname);
@@ -41,7 +47,7 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
   const items: {
     key: BottomTabKey;
     label: string;
-    route: "/home" | "/discover" | "/progress" | "/profile";
+    route: "/home" | "/discover" | "/community" | "/progress" | "/profile";
     icon: keyof typeof Ionicons.glyphMap;
     iconActive: keyof typeof Ionicons.glyphMap;
   }[] = [
@@ -52,6 +58,13 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
       route: "/discover",
       icon: "compass-outline",
       iconActive: "compass",
+    },
+    {
+      key: "community",
+      label: "COMMUNITY",
+      route: "/community",
+      icon: "people-outline",
+      iconActive: "people",
     },
     {
       key: "progress",
@@ -66,6 +79,7 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
   useEffect(() => {
     if (active === "home") rememberBottomTabRoute("/home");
     else if (active === "discover") rememberBottomTabRoute("/discover");
+    else if (active === "community") rememberBottomTabRoute("/community");
     else if (active === "progress") rememberBottomTabRoute("/progress");
   }, [active]);
 
@@ -99,7 +113,7 @@ export function BottomTabBar({ active }: BottomTabBarProps) {
             className="flex-1 items-center py-2"
           >
             <View className="h-[22px] items-center justify-center">
-              {item.key === "discover" ? (
+              {item.key === "community" ? (
                 <CommunityUnreadBadge count={totalUnread}>
                   <Ionicons name={iconName} size={22} color={iconColor} />
                 </CommunityUnreadBadge>

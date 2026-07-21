@@ -51,9 +51,10 @@ export function ProfileScreenHeader({
   backIcon = "arrow-back",
   backIconSize = 24,
   headerHeightClassName = "min-h-12",
+  showBackButton = true,
 }: {
   title: string;
-  onBack: () => void;
+  onBack?: () => void;
   rightSlot?: React.ReactNode;
   centerSlot?: React.ReactNode;
   titleClassName?: string;
@@ -63,6 +64,7 @@ export function ProfileScreenHeader({
   backIcon?: keyof typeof Ionicons.glyphMap;
   backIconSize?: number;
   headerHeightClassName?: string;
+  showBackButton?: boolean;
 }) {
   const { textPrimary } = useThemedScreen();
   const badgeLabel =
@@ -120,12 +122,16 @@ export function ProfileScreenHeader({
         )}
 
       <View className="shrink-0 justify-center" style={{ zIndex: 2, elevation: 2 }}>
-        <ThemedBackButton
-          onPress={onBack}
-          className={backButtonClassName}
-          icon={backIcon}
-          size={backIconSize}
-        />
+        {showBackButton ? (
+          <ThemedBackButton
+            onPress={onBack ?? (() => {})}
+            className={backButtonClassName}
+            icon={backIcon}
+            size={backIconSize}
+          />
+        ) : (
+          <View className={backButtonClassName} />
+        )}
       </View>
 
       <View className="flex-1" pointerEvents="none" />

@@ -21,7 +21,7 @@ import {
   writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, storage } from "../firebaseConfig";
 import { canModifyOwnChatMessage } from "./chatMessageUtils";
 import { getChatSticker } from "./chatStickers";
@@ -121,14 +121,27 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
   const editHistory: PostEditSnapshot[] = Array.isArray(data.editHistory)
     ? data.editHistory.map((entry) => {
         const e = entry as Record<string, unknown>;
+        const legacyImageUrl = typeof e.imageUrl === "string" ? e.imageUrl : null;
+        const imageUrls = Array.isArray(e.imageUrls)
+          ? e.imageUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
+          : legacyImageUrl
+            ? [legacyImageUrl]
+            : [];
         return {
           content: String(e.content ?? ""),
-          imageUrl: typeof e.imageUrl === "string" ? e.imageUrl : null,
+          imageUrl: imageUrls[0] ?? null,
+          imageUrls,
           tags: Array.isArray(e.tags) ? e.tags.map(String) : [],
           editedAt: Number(e.editedAt ?? 0),
         };
       })
     : [];
+  const legacyImageUrl = typeof data.imageUrl === "string" ? data.imageUrl : null;
+  const imageUrls = Array.isArray(data.imageUrls)
+    ? data.imageUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
+    : legacyImageUrl
+      ? [legacyImageUrl]
+      : [];
 
   return {
     id,
@@ -138,7 +151,8 @@ function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
       typeof data.authorProfileImage === "string" ? data.authorProfileImage : null,
     content: String(data.content ?? ""),
     category: (data.category as PostCategory) ?? "general",
-    imageUrl: typeof data.imageUrl === "string" ? data.imageUrl : null,
+    imageUrl: imageUrls[0] ?? null,
+    imageUrls,
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
     achievementIds: Array.isArray(data.achievementIds) ? data.achievementIds.map(String) : [],
     editHistory,
@@ -1074,10 +1088,44 @@ export async function uploadChatAudio(localUri: string, chatId: string): Promise
   return getDownloadURL(objectRef);
 }
 
+async function uploadCommunityPostImage(
+  localUri: string,
+  postId: string,
+  imageIndex: number
+): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  if (/^https?:\/\//i.test(localUri)) return localUri;
+
+  const blob = await localUriToBlob(localUri);
+  if (blob.size < 1) throw new Error("The selected image is empty.");
+  if (blob.size > 10 * 1024 * 1024) {
+    throw new Error("The selected image must be smaller than 10 MB.");
+  }
+
+  const objectRef = ref(
+    storage,
+    `communityPosts/${postId}/${user.uid}/${Date.now()}-${imageIndex}.jpg`
+  );
+  await uploadBytes(objectRef, blob, {
+    contentType: blob.type || "image/jpeg",
+  });
+  return getDownloadURL(objectRef);
+}
+
+async function deleteCommunityPostImages(imageUrls: string[]): Promise<void> {
+  await Promise.all(
+    [...new Set(imageUrls)]
+      .filter((url) => /^https?:\/\//i.test(url))
+      .map((url) => deleteObject(ref(storage, url)).catch(() => {}))
+  );
+}
+
 export async function createPost(params: {
   content: string;
   tags?: string[];
   achievementIds?: string[];
+  imageUris?: string[];
 }): Promise<CommunityPost> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
@@ -1090,14 +1138,24 @@ export async function createPost(params: {
   const tags = (params.tags ?? []).map((t) => t.trim()).filter(Boolean);
   const achievementIds = [...new Set((params.achievementIds ?? []).map((id) => id.trim()).filter(Boolean))];
   const now = Date.now();
+  const postRef = doc(collection(db, "communityPosts"));
+  let uploadedImageUrls: string[] = [];
 
-  const payload = {
+  try {
+    uploadedImageUrls = await Promise.all(
+      (params.imageUris ?? []).slice(0, 6).map((uri, index) =>
+        uploadCommunityPostImage(uri, postRef.id, index)
+      )
+    );
+    const imageUrl = uploadedImageUrls[0] ?? null;
+    const payload = {
     authorId: uid,
     authorName: profile.name,
     authorProfileImage: profile.profileImage ?? null,
     content: trimmed,
     category: "general" as PostCategory,
-    imageUrl: null,
+    imageUrl,
+    imageUrls: uploadedImageUrls,
     tags,
     achievementIds,
     editHistory: [] as PostEditSnapshot[],
@@ -1110,18 +1168,18 @@ export async function createPost(params: {
     underReview: false,
     createdAt: now,
     createdAtServer: serverTimestamp(),
-  };
+    };
 
-  try {
-    const docRef = await addDoc(collection(db, "communityPosts"), payload);
+    await setDoc(postRef, payload);
     return {
-      id: docRef.id,
+      id: postRef.id,
       authorId: uid,
       authorName: profile.name,
       authorProfileImage: profile.profileImage ?? null,
       content: trimmed,
       category: "general",
-      imageUrl: null,
+      imageUrl,
+      imageUrls: uploadedImageUrls,
       tags,
       achievementIds,
       editHistory: [],
@@ -1135,13 +1193,21 @@ export async function createPost(params: {
       createdAt: now,
     };
   } catch (e) {
+    if (uploadedImageUrls.length > 0) {
+      await deleteCommunityPostImages(uploadedImageUrls);
+    }
     throw firestoreWriteError(e, "create post");
   }
 }
 
 export async function updatePost(
   post: CommunityPost,
-  params: { content: string; imageUrl?: string | null; tags?: string[]; achievementIds?: string[] }
+  params: {
+    content: string;
+    imageUris?: string[];
+    tags?: string[];
+    achievementIds?: string[];
+  }
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || user.uid !== post.authorId) throw new Error("Not allowed");
@@ -1159,18 +1225,31 @@ export async function updatePost(
   const snapshot: PostEditSnapshot = {
     content: post.content,
     imageUrl: post.imageUrl,
+    imageUrls: post.imageUrls,
     tags: post.tags,
     editedAt: Date.now(),
   };
+  const requestedImageUris = params.imageUris ?? post.imageUrls;
+  const imageUrls = await Promise.all(
+    requestedImageUris.slice(0, 6).map((uri, index) =>
+      /^https?:\/\//i.test(uri)
+        ? Promise.resolve(uri)
+        : uploadCommunityPostImage(uri, post.id, index)
+    )
+  );
+  const imageUrl = imageUrls[0] ?? null;
 
   await updateDoc(doc(db, "communityPosts", post.id), {
     content: trimmed,
-    imageUrl: params.imageUrl !== undefined ? params.imageUrl : post.imageUrl,
+    imageUrl,
+    imageUrls,
     tags,
     achievementIds,
     editHistory: [...post.editHistory, snapshot],
     updatedAt: Date.now(),
   });
+  const removedImageUrls = post.imageUrls.filter((url) => !imageUrls.includes(url));
+  await deleteCommunityPostImages(removedImageUrls);
 }
 
 /** Author hides a post from the community feed; it remains visible only on their profile. */
@@ -1236,6 +1315,12 @@ export async function deletePost(postId: string): Promise<void> {
   }
 
   const authorId = String(data.authorId ?? user.uid);
+  const legacyImageUrl = typeof data.imageUrl === "string" ? data.imageUrl : null;
+  const postImageUrls = Array.isArray(data.imageUrls)
+    ? data.imageUrls.filter((url): url is string => typeof url === "string")
+    : legacyImageUrl
+      ? [legacyImageUrl]
+      : [];
 
   // Authors may delete even while the post is pending admin review / blocked.
   // Remove related data so the post is gone from Community, profile, and admin queues.
@@ -1245,6 +1330,9 @@ export async function deletePost(postId: string): Promise<void> {
   } catch {
     // Continue — post delete should still proceed.
   }
+
+  // Storage cleanup is best-effort; deleting the post must not be blocked by a missing image.
+  await deleteCommunityPostImages(postImageUrls);
 
   // Delete the post document first so it disappears for everyone immediately.
   await deleteDoc(doc(db, "communityPosts", postId));
@@ -2504,7 +2592,7 @@ export async function sendChatMessage(
 
 export async function sharePostToChat(chatId: string, post: CommunityPost): Promise<void> {
   const snippet = formatPostContentSnippet(
-    post.content.trim() || (post.imageUrl ? "Photo post" : "Community post")
+    post.content.trim() || (post.imageUrls.length > 0 ? "Photo post" : "Community post")
   );
   await sendChatMessage(chatId, {
     text: snippet,

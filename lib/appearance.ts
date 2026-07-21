@@ -47,7 +47,7 @@ export type AppearanceTheme = {
 
 export const appearanceThemes: Record<AppearanceMode, AppearanceTheme> = {
   light: {
-    screenBg: "#eef2f1",
+    screenBg: "#e8f3ec",
     cardBg: "#ffffff",
     cardBorder: "#e5e7eb",
     rowBg: "#f7f7f7",
@@ -68,7 +68,7 @@ export const appearanceThemes: Record<AppearanceMode, AppearanceTheme> = {
   },
   dark: {
     screenBg: "#0b1220",
-    cardBg: "#111827",
+    cardBg: "#182234",
     cardBorder: "#334155",
     rowBg: "#1e293b",
     textPrimary: "#f8fafc",

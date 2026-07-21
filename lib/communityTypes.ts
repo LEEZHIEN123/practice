@@ -3,6 +3,7 @@ export type PostCategory = "workout" | "meal" | "weight" | "general";
 export type PostEditSnapshot = {
   content: string;
   imageUrl: string | null;
+  imageUrls: string[];
   tags: string[];
   editedAt: number;
 };
@@ -14,7 +15,9 @@ export type CommunityPost = {
   authorProfileImage: string | null;
   content: string;
   category: PostCategory;
+  /** First image retained for compatibility with older app versions and chat snapshots. */
   imageUrl: string | null;
+  imageUrls: string[];
   tags: string[];
   /** Shared unlocked achievement ids (optional). */
   achievementIds: string[];

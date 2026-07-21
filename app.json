@@ -8,8 +8,8 @@
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
     "infoPlist": {
-      "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose a profile picture.",
-      "NSCameraUsageDescription": "We use the camera to scan barcodes and meal photos for nutrition logging.",
+      "NSPhotoLibraryUsageDescription": "We use your photo library for profile pictures, meal photos, and community post images.",
+      "NSCameraUsageDescription": "We use the camera for barcode scanning, meal photos, and community post images.",
       "NSMotionUsageDescription": "We use motion data to track your steps.",
       "NSLocationWhenInUseUsageDescription": "We use your location to fetch local weather and suggest daily water intake."
     },
@@ -54,7 +54,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to scan barcodes and meal photos for nutrition logging."
+          "cameraPermission": "Allow $(PRODUCT_NAME) to scan barcodes and take meal or community post photos."
         }
       ],
       [

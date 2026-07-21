@@ -145,7 +145,7 @@ export function SharePostToChatModal({
                   {post.authorName}
                 </Text>
                 <Text className="text-sm mt-1" style={textMuted} numberOfLines={2}>
-                  {post.content || (post.imageUrl ? "Photo post" : "Community post")}
+                  {post.content || (post.imageUrls.length > 0 ? "Photo post" : "Community post")}
                 </Text>
               </View>
             ) : null}
