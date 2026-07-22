@@ -21,7 +21,7 @@ export type ActiveChatState = {
 };
 
 const WELCOME_TEXT =
-  "Hi! I'm your fitness assistant. Ask me about workouts, meals, calories, water, steps, your fitness goal, or how to use features in this app.";
+  "Hi! I'm your fitness assistant. Ask me anything about fitness, or how to use this app — I'll answer based on your question.";
 
 function activeKey(uid: string) {
   return `aiCoach:active:${uid}`;

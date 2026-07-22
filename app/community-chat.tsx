@@ -51,7 +51,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   Text,
@@ -201,6 +203,7 @@ export default function CommunityChatScreen() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
   const [menuVisible, setMenuVisible] = useState(false);
   const [stickerPickerVisible, setStickerPickerVisible] = useState(false);
   const [menuMessage, setMenuMessage] = useState<ChatMessage | null>(null);
@@ -273,12 +276,20 @@ export default function CommunityChatScreen() {
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const showSub = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(event.endCoordinates.height);
+      setWindowHeight(Dimensions.get("window").height);
       scrollToBottom(true);
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setWindowHeight(Dimensions.get("window").height);
+    });
+    const dimSub = Dimensions.addEventListener("change", ({ window }) => {
+      setWindowHeight(window.height);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
+      dimSub.remove();
     };
   }, [scrollToBottom]);
 
@@ -573,15 +584,18 @@ export default function CommunityChatScreen() {
     ]);
   };
 
-  // Android already resizes the window (`softwareKeyboardLayoutMode: "resize"`).
-  // Adding keyboardHeight again leaves a large empty gap above the keyboard.
-  // iOS does not resize the same way, so lift the composer by the keyboard height.
-  const inputBottomPadding =
-    keyboardHeight > 0
-      ? Platform.OS === "ios"
-        ? keyboardHeight + 8
-        : 8
-      : insets.bottom + 8;
+  // Keep the composer just above the keyboard:
+  // - If Android already resized the window, only use a small pad (avoid a large gap).
+  // - Otherwise lift by the keyboard height so the textbox is not covered.
+  const inputBottomPadding = useMemo(() => {
+    if (keyboardHeight <= 0) return insets.bottom + 8;
+    if (Platform.OS === "android") {
+      const screenH = Dimensions.get("screen").height;
+      const windowShrunkForKeyboard = screenH - windowHeight > keyboardHeight * 0.45;
+      if (windowShrunkForKeyboard) return 8;
+    }
+    return keyboardHeight + 8;
+  }, [insets.bottom, keyboardHeight, windowHeight]);
 
   if (!chatId) {
     return (
@@ -598,6 +612,11 @@ export default function CommunityChatScreen() {
 
   return (
     <ThemedScreen>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
       <View className="flex-1">
         <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 16 }} className="mb-2">
           <View className="h-12 flex-row items-center">
@@ -890,6 +909,7 @@ export default function CommunityChatScreen() {
           </View>
         )}
     </View>
+      </KeyboardAvoidingView>
 
       <ChatMessageMenuModal
         visible={menuMessage !== null}

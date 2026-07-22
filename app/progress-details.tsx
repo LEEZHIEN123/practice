@@ -157,7 +157,7 @@ function matchesPickedPeriodFilter(
   dayDate: Date,
   period: PeriodKey,
   picked: Date | null,
-  calendarTz: string | null
+  calendarTz: string
 ): boolean {
   if (!picked) return true;
   if (period === "week") {
@@ -224,7 +224,7 @@ function buildPeriodRecordSections<T>(
   period: PeriodKey,
   anchor: Date,
   picked: Date | null,
-  calendarTz: string | null,
+  calendarTz: string,
   todayKey: string,
   currentSlot: number | null
 ): PeriodRecordSection<T>[] {
@@ -341,6 +341,7 @@ export default function ProgressDetailsScreen() {
   const [isEditingRecentWeight, setIsEditingRecentWeight] = useState(false);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [workoutHoverIdx, setWorkoutHoverIdx] = useState<number | null>(null);
+  const [mealHoverIdx, setMealHoverIdx] = useState<number | null>(null);
   const [dayTick, setDayTick] = useState(0);
 
   const sanitizeDecimal = (t: string) => {
@@ -837,6 +838,7 @@ export default function ProgressDetailsScreen() {
 
   useEffect(() => {
     setWorkoutHoverIdx(null);
+    setMealHoverIdx(null);
   }, [tab, period, anchor]);
 
   const workoutBarTooltip = useMemo(() => {
@@ -866,6 +868,34 @@ export default function ProgressDetailsScreen() {
     });
     return `${monthTitle}\n${kcalStr}`;
   }, [anchor, chartLabels, period, tab, workoutBarsForChart, workoutHoverIdx]);
+
+  const mealBarTooltip = useMemo(() => {
+    if (tab !== "meal") return "";
+    if (mealHoverIdx == null) return "";
+    const idx = mealHoverIdx;
+    const v = mealBarsForChart[idx] ?? 0;
+    const kcalStr = `${Math.round(v).toLocaleString()} kcal consumed`;
+    if (period === "week") {
+      const ws = startOfWeekMon(anchor);
+      const d = new Date(ws);
+      d.setDate(d.getDate() + idx);
+      const dateStr = d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      });
+      return `${dateStr}\n${kcalStr}`;
+    }
+    if (period === "month") {
+      const lbl = chartLabels[idx] ?? "";
+      return `${lbl}\n${kcalStr}`;
+    }
+    const monthTitle = new Date(anchor.getFullYear(), idx, 1).toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+    return `${monthTitle}\n${kcalStr}`;
+  }, [anchor, chartLabels, mealBarsForChart, mealHoverIdx, period, tab]);
 
   const weightBarTooltip = useMemo(() => {
     if (tab !== "weight") return "";
@@ -1595,21 +1625,40 @@ export default function ProgressDetailsScreen() {
                 <View className="flex-1 mx-2">
                   <View className="h-40 rounded-2xl overflow-hidden justify-center" style={{ backgroundColor: theme.rowBg }}>
                     <View className="absolute left-0 right-0 bottom-0 h-16 opacity-10" style={{ backgroundColor: theme.accent }} />
+                    {mealBarTooltip ? (
+                      <View className="absolute top-2 left-2 right-2 items-center px-1">
+                        <View
+                          className="px-3 py-2 rounded-2xl border max-w-full"
+                          style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
+                        >
+                          <ThemedText variant="accent" className="text-[11px] font-bold text-center leading-5">
+                            {mealBarTooltip}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    ) : null}
                     <View className="flex-1 flex-row items-end px-3 pb-3">
                       {(() => {
                         return mealBarsForChart.map((v, idx) => {
                           const h = progressBarHeight(v, mealBarsForChart, 12, 96);
+                          const active = mealHoverIdx === idx;
                           return (
-                            <View key={`ml-${idx}`} className="flex-1 items-center">
+                            <Pressable
+                              key={`ml-${idx}`}
+                              onPress={() => setMealHoverIdx((prev) => (prev === idx ? null : idx))}
+                              className="flex-1 items-center justify-end"
+                              hitSlop={8}
+                            >
                               <View
                                 style={{
                                   height: h,
-                                  width: 12,
+                                  width: active ? 14 : 12,
                                   borderRadius: 999,
-                                  backgroundColor: v === 0 ? theme.iconMuted : theme.accent,
+                                  backgroundColor:
+                                    v === 0 ? theme.iconMuted : active ? theme.accentText : theme.accent,
                                 }}
                               />
-                            </View>
+                            </Pressable>
                           );
                         });
                       })()}

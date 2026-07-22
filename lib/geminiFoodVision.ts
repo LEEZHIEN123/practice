@@ -16,7 +16,7 @@ export { isGeminiConfigured };
 export const NOT_FOOD_MESSAGE =
   "This photo doesn't appear to contain food. Please take a photo of your meal or enter details manually.";
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 const ANALYSIS_PROMPT = `Analyze this meal photo. Estimate nutrition for the visible portion only.
 

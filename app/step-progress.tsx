@@ -1,9 +1,9 @@
 import {
-    ProfileScreenHeader,
-    ThemedCard,
-    ThemedScreen,
-    ThemedText,
-    useProfileCardStyles,
+  ProfileScreenHeader,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { addDaysToYmd, formatCalendarDayKey, localDateFromYmd } from "@/lib/calendarDay";
 import { subscribeFriendsList } from "@/lib/communityService";
@@ -937,9 +937,16 @@ export default function StepProgressScreen() {
 
         <ThemedCard className="mt-5 p-5 pb-6">
           <ThemedText className="text-base tracking-widest font-extrabold">STEP RECORD</ThemedText>
-          <ThemedText className="mt-2 text-sm font-extrabold" style={{ color: "#3b82f6" }}>
-            Recommended daily target: {DAILY_STEP_TARGET.toLocaleString()} steps per day
-          </ThemedText>
+          <View className="mt-2 flex-row flex-wrap items-center">
+            <ThemedText className="text-sm font-extrabold" style={{ color: "#3b82f6" }}>
+              Recommended daily target: {DAILY_STEP_TARGET.toLocaleString()} steps perday
+            </ThemedText>
+            {myTodaySteps < DAILY_STEP_TARGET ? (
+              <ThemedText className="ml-2 text-sm font-extrabold" style={{ color: theme.danger }}>
+                (Not achieved)
+              </ThemedText>
+            ) : null}
+          </View>
           <View className="mt-4 gap-3">
             {windowRows.length === 0 ? (
               <ThemedText variant="muted">No step data yet.</ThemedText>

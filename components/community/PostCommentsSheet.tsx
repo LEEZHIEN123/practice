@@ -162,7 +162,7 @@ export function PostCommentsSheet({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
         className="flex-1 justify-end"
         style={{ backgroundColor: theme.modalOverlay }}
       >

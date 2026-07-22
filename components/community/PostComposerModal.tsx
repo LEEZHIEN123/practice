@@ -45,6 +45,7 @@ type PostComposerModalProps = {
 };
 
 const MAX_POST_IMAGES = 6;
+const MAX_POST_CONTENT_LENGTH = 5000;
 
 export function PostComposerModal({
   visible,
@@ -222,7 +223,6 @@ export function PostComposerModal({
       source === "camera"
         ? await ImagePicker.launchCameraAsync({
             mediaTypes: ["images"],
-            allowsEditing: true,
             quality: 0.8,
           })
         : await ImagePicker.launchImageLibraryAsync({
@@ -234,7 +234,67 @@ export function PostComposerModal({
 
     if (result.canceled) return;
     const picked = result.assets.map((asset) => asset.uri).filter(Boolean);
+    if (picked.length === 0) return;
+
+    // Camera uses the same in-app editor as gallery (rotate / crop), not the system crop UI.
+    if (source === "camera") {
+      const uri = picked[0];
+      if (imageUris.length >= MAX_POST_IMAGES || imageUris.includes(uri)) return;
+      const nextIndex = imageUris.length;
+      setImageUris((prev) => {
+        if (prev.length >= MAX_POST_IMAGES || prev.includes(uri)) return prev;
+        return [...prev, uri];
+      });
+      setEditingImageIndex(nextIndex);
+      setEditingImageUri(uri);
+      return;
+    }
+
     appendImages(picked);
+  };
+
+  const hasUnsavedDraft = () => {
+    const initialContent = (initial?.content ?? "").trim();
+    const initialTags = initial?.tags ?? [];
+    const initialAchievementIds = showAchievements ? initial?.achievementIds ?? [] : [];
+    const initialImages = initial?.imageUris ?? [];
+
+    const tagsChanged =
+      tags.length !== initialTags.length ||
+      tags.some((tag) => !initialTags.includes(tag));
+    const achievementsChanged =
+      achievementIds.length !== initialAchievementIds.length ||
+      achievementIds.some((id) => !initialAchievementIds.includes(id));
+    const imagesChanged =
+      imageUris.length !== initialImages.length ||
+      imageUris.some((uri, index) => uri !== initialImages[index]);
+
+    return (
+      content.trim() !== initialContent ||
+      tagsChanged ||
+      achievementsChanged ||
+      imagesChanged ||
+      customTag.trim().length > 0
+    );
+  };
+
+  const requestClose = () => {
+    if (busy || submitting) return;
+    if (!hasUnsavedDraft()) {
+      onClose();
+      return;
+    }
+    const isEditingExisting = Boolean(initial?.content?.trim() || (initial?.imageUris?.length ?? 0) > 0);
+    Alert.alert(
+      isEditingExisting ? "Discard changes?" : "Discard post?",
+      isEditingExisting
+        ? "You have unsaved changes. Close without saving?"
+        : "You have unsaved content. Close without posting?",
+      [
+        { text: "Keep writing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: onClose },
+      ]
+    );
   };
 
   const handleSubmit = async () => {
@@ -261,7 +321,7 @@ export function PostComposerModal({
   const canAddMorePhotos = imageUris.length < MAX_POST_IMAGES;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={requestClose}>
       <KeyboardAvoidingView
         className="flex-1"
         style={screenStyle}
@@ -271,7 +331,7 @@ export function PostComposerModal({
           <View className="px-4 mb-4">
             <ProfileScreenHeader
               title={title}
-              onBack={onClose}
+              onBack={requestClose}
               backIcon="close"
               titleClassName="text-2xl"
               rightSlot={
@@ -299,13 +359,17 @@ export function PostComposerModal({
           >
             <TextInput
               value={content}
-              onChangeText={setContent}
+              onChangeText={(text) => setContent(text.slice(0, MAX_POST_CONTENT_LENGTH))}
               placeholder="Share your progress, meal, workout, or thoughts..."
               multiline
+              maxLength={MAX_POST_CONTENT_LENGTH}
               className="rounded-2xl px-4 py-4 text-sm min-h-[120px]"
               style={inputStyle}
               placeholderTextColor={placeholderColor}
             />
+            <ThemedText variant="muted" className="mt-1.5 text-right text-xs">
+              {content.length}/{MAX_POST_CONTENT_LENGTH}
+            </ThemedText>
 
             <View className="flex-row items-center justify-between mt-5 mb-2">
               <ThemedText className="text-sm font-extrabold">

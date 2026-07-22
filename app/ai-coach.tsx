@@ -29,6 +29,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Keyboard,
   Modal,
   Platform,
@@ -44,8 +45,9 @@ import { auth } from "../firebaseConfig";
 const PROMPTS = [
   "What should I eat today for my fitness goal?",
   "Explain my workout plan schedule",
-  "How do remaining calories work on Home?",
-  "Tips to hit my water and step goals",
+  "How do I log water and see my step ranking?",
+  "Tips to stay on track with my fitness goal",
+  "How can I recover better after workouts?",
 ];
 
 type ChatMessage = StoredChatMessage;
@@ -130,6 +132,7 @@ export default function AICoachScreen() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
   const coachContextRef = useRef<Awaited<ReturnType<typeof fetchCoachUserContext>> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const pendingArchiveRef = useRef<StoredChatMessage[] | null>(null);
@@ -347,21 +350,34 @@ export default function AICoachScreen() {
 
     const onShow = (e: KeyboardEvent) => {
       setKeyboardHeight(e.endCoordinates.height);
+      setWindowHeight(Dimensions.get("window").height);
       scrollToBottom();
     };
     const onHide = () => {
       setKeyboardHeight(0);
+      setWindowHeight(Dimensions.get("window").height);
     };
 
     const showSub = Keyboard.addListener(showEvent, onShow);
     const hideSub = Keyboard.addListener(hideEvent, onHide);
+    const dimSub = Dimensions.addEventListener("change", ({ window }) => {
+      setWindowHeight(window.height);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
+      dimSub.remove();
     };
   }, [scrollToBottom]);
 
-  const inputBarBottomPad = keyboardHeight > 0 ? keyboardHeight + 8 : insets.bottom + 12;
+  // Keep the composer just above the keyboard (no covered textbox, no large empty gap).
+  const inputBarBottomPad =
+    keyboardHeight <= 0
+      ? insets.bottom + 12
+      : Platform.OS === "android" &&
+          Dimensions.get("screen").height - windowHeight > keyboardHeight * 0.45
+        ? 8
+        : keyboardHeight + 8;
 
   return (
     <View style={screenStyle}>
