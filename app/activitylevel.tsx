@@ -53,6 +53,13 @@ export default function ActivityLevel() {
         multiplier: 1.725,
         icon: "fitness-outline" as IoniconName,
       },
+      {
+        key: "super_active" as const,
+        title: "Super Active",
+        subtitle: "Very hard exercise or physically demanding work",
+        multiplier: 1.9,
+        icon: "flash-outline" as IoniconName,
+      },
     ],
     []
   );

@@ -26,6 +26,7 @@ import {
   getPublicUserProfile,
   isCommunityAdminUserId,
   loadLikerProfiles,
+  loadProfileImageMap,
   requestBlockedPostReReview,
   resolveAdminUid,
   setPostAuthorHidden,
@@ -97,6 +98,7 @@ export default function CommunityPostScreen() {
   const [unavailable, setUnavailable] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [adminUid, setAdminUid] = useState<string | null>(null);
+  const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
 
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [pendingReviewCommentIds, setPendingReviewCommentIds] = useState<string[]>([]);
@@ -215,6 +217,21 @@ export default function CommunityPostScreen() {
     const unsub = subscribeComments(post.id, setComments);
     return unsub;
   }, [post]);
+
+  useEffect(() => {
+    const ids = [
+      ...(post?.authorId ? [post.authorId] : []),
+      ...comments.map((c) => c.authorId),
+    ].filter(Boolean);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    void loadProfileImageMap(ids).then((map) => {
+      if (!cancelled) setAuthorAvatarById((prev) => ({ ...prev, ...map }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [post?.authorId, comments]);
 
   useEffect(() => {
     if (!post) return;
@@ -491,7 +508,9 @@ export default function CommunityPostScreen() {
             <View className="px-4 py-4 rounded-2xl" style={cardStyle}>
               <View className="flex-row items-center">
                 <Pressable onPress={() => void openUserProfile(post.authorId)}>
-                  <ProfileAvatar uri={post.authorProfileImage} />
+                  <ProfileAvatar
+                    uri={authorAvatarById[post.authorId] ?? post.authorProfileImage}
+                  />
                 </Pressable>
                 <Pressable
                   onPress={() => void openUserProfile(post.authorId)}
@@ -569,7 +588,9 @@ export default function CommunityPostScreen() {
                       className="rounded-full px-2.5 py-1 border"
                       style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
                     >
-                      <Text className="text-[10px] font-bold text-[#52B69A]">#{tag}</Text>
+                      <Text className="text-[10px] font-bold" style={{ color: theme.accentText }}>
+                        #{tag}
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -581,18 +602,18 @@ export default function CommunityPostScreen() {
                     <Ionicons
                       name={liked ? "heart" : "heart-outline"}
                       size={20}
-                      color={liked ? "#ef4444" : "#52B69A"}
+                      color={liked ? "#ef4444" : theme.accent}
                     />
                   </Pressable>
                   <Pressable onPress={() => void openLikesModal()}>
-                    <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+                    <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accent }}>
                       {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                     </Text>
                   </Pressable>
                 </View>
                 <View className="flex-row items-center">
-                  <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
-                  <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+                  <Ionicons name="chatbubble-outline" size={18} color={theme.accent} />
+                  <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accent }}>
                     {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
                   </Text>
                 </View>
@@ -617,16 +638,20 @@ export default function CommunityPostScreen() {
               return (
                 <View
                   key={comment.id}
-                  className={`rounded-2xl p-4 border mb-2 ${isReply ? "ml-6 border-l-4 border-l-[#52B69A]" : ""}`}
+                  className={`rounded-2xl p-4 border mb-2 ${isReply ? "ml-6 border-l-4" : ""}`}
                   style={[
                     cardStyle,
+                    isReply ? { borderLeftColor: theme.accent } : undefined,
                     isReplyingToThis ? { borderColor: theme.accent, borderWidth: 2 } : undefined,
                   ]}
                 >
                   {hasCommentReviewTip ? <CommentReviewTip /> : null}
                   <View className="flex-row items-center">
                     <Pressable onPress={() => void openUserProfile(comment.authorId)}>
-                      <ProfileAvatar uri={comment.authorProfileImage} size={36} />
+                      <ProfileAvatar
+                        uri={authorAvatarById[comment.authorId] ?? comment.authorProfileImage}
+                        size={36}
+                      />
                     </Pressable>
                     <View className="flex-1 ml-3">
                       <View className="flex-row items-start justify-between gap-2">
@@ -672,7 +697,7 @@ export default function CommunityPostScreen() {
                     ) : null}
                   </View>
                   {comment.replyToAuthorName ? (
-                    <Text className="text-xs font-bold text-[#52B69A] mt-2">
+                    <Text className="text-xs font-bold mt-2" style={{ color: theme.accentText }}>
                       Replying to {comment.replyToAuthorName}
                     </Text>
                   ) : null}
@@ -740,9 +765,10 @@ export default function CommunityPostScreen() {
               <Pressable
                 onPress={() => void handleSendComment()}
                 disabled={commentSending || !commentText.trim()}
-                className={`w-11 h-11 rounded-full items-center justify-center ${
-                  commentText.trim() ? "bg-[#52B69A]" : "bg-gray-200"
-                }`}
+                className="w-11 h-11 rounded-full items-center justify-center"
+                style={{
+                  backgroundColor: commentText.trim() ? theme.accent : theme.iconMuted,
+                }}
               >
                 {commentSending ? (
                   <ActivityIndicator color="white" size="small" />

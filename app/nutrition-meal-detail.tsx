@@ -1,14 +1,14 @@
 import { Pressable } from "@/components/Pressable";
-import { MacroDonut } from "@/components/nutrition/MacroDonut";
 import { ZoomableImageModal } from "@/components/ZoomableImageModal";
+import { MacroDonut } from "@/components/nutrition/MacroDonut";
 import { ProfileScreenHeader, ThemedText } from "@/components/themed/ThemedUi";
+import { resolveNutritionGuidanceImage } from "@/lib/foodImages";
 import { logMealFood } from "@/lib/mealLogService";
-import { FOOD_IMAGE_FALLBACK, resolveFoodImageSource, resolveFoodImageUrl } from "@/lib/foodImages";
 import {
-  expandCookingAbbreviations,
-  expandNutritionPlanText,
-  type ActiveNutritionPlan,
-  type NutritionMealSuggestion,
+    expandCookingAbbreviations,
+    expandNutritionPlanText,
+    type ActiveNutritionPlan,
+    type NutritionMealSuggestion,
 } from "@/lib/nutritionPlan";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -17,11 +17,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { collection, doc, getDoc, limit, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    Text,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -64,22 +64,16 @@ export default function NutritionMealDetailScreen() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [alreadyLogged, setAlreadyLogged] = useState(false);
 
-  const mealImageSource = useMemo(
-    () => (meal ? resolveFoodImageSource(meal.name) : { uri: FOOD_IMAGE_FALLBACK }),
+  const guidanceImage = useMemo(
+    () => (meal ? resolveNutritionGuidanceImage(meal.name) : { url: null, source: null }),
     [meal]
   );
-  const mealImageUri = useMemo(
-    () => (meal ? resolveFoodImageUrl(meal.name) : FOOD_IMAGE_FALLBACK),
-    [meal]
-  );
-  const [displayImageSource, setDisplayImageSource] = useState(mealImageSource);
-  const [displayImageUri, setDisplayImageUri] = useState(mealImageUri);
+  const mealImageUri = guidanceImage.url;
+  const hasMealImage = Boolean(mealImageUri) && !imageFailed;
 
   useEffect(() => {
     setImageFailed(false);
-    setDisplayImageSource(mealImageSource);
-    setDisplayImageUri(mealImageUri);
-  }, [mealImageSource, mealImageUri]);
+  }, [mealImageUri]);
 
   useEffect(() => {
     let cancelled = false;
@@ -273,22 +267,35 @@ export default function NutritionMealDetailScreen() {
             </View>
 
             <View className="mt-4 mx-5 overflow-hidden rounded-3xl">
-              <Pressable onPress={() => setViewerOpen(true)} className="active:opacity-95">
-                <Image
-                  source={displayImageSource}
-                  style={{ width: "100%", height: 260, backgroundColor: theme.rowBg }}
-                  contentFit="cover"
-                  transition={200}
-                  onError={() => {
-                    if (displayImageUri !== FOOD_IMAGE_FALLBACK) {
-                      setDisplayImageSource({ uri: FOOD_IMAGE_FALLBACK });
-                      setDisplayImageUri(FOOD_IMAGE_FALLBACK);
-                    } else {
-                      setImageFailed(true);
-                    }
+              {hasMealImage && mealImageUri ? (
+                <Pressable onPress={() => setViewerOpen(true)} className="active:opacity-95">
+                  <Image
+                    source={{ uri: mealImageUri }}
+                    style={{ width: "100%", height: 260, backgroundColor: theme.rowBg }}
+                    contentFit="cover"
+                    transition={200}
+                    onError={() => setImageFailed(true)}
+                  />
+                </Pressable>
+              ) : (
+                <View
+                  style={{
+                    width: "100%",
+                    height: 260,
+                    backgroundColor: theme.rowBg,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 24,
                   }}
-                />
-              </Pressable>
+                >
+                  <ThemedText className="text-base font-extrabold text-center">
+                    Photo unavailable
+                  </ThemedText>
+                  <ThemedText variant="muted" className="text-sm text-center mt-2 leading-5">
+                    {`A matching image for "${meal.name}" is not available right now.`}
+                  </ThemedText>
+                </View>
+              )}
             </View>
 
             <View className="px-5 pt-5">
@@ -351,11 +358,13 @@ export default function NutritionMealDetailScreen() {
             </Pressable>
           </View>
 
-          <ZoomableImageModal
-            visible={viewerOpen}
-            uri={displayImageUri}
-            onClose={() => setViewerOpen(false)}
-          />
+          {hasMealImage && mealImageUri ? (
+            <ZoomableImageModal
+              visible={viewerOpen}
+              uri={mealImageUri}
+              onClose={() => setViewerOpen(false)}
+            />
+          ) : null}
         </>
       )}
     </View>

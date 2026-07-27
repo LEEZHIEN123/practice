@@ -14,10 +14,11 @@ import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function ProfileAvatar({ uri, size = 72 }: { uri: string | null; size?: number }) {
+  const { theme } = useThemedScreen();
   return (
     <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
+      className="rounded-full items-center justify-center overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: theme.accent }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
@@ -130,7 +131,8 @@ export function UserProfileModal({
               {!isSelf && isSupportAdmin && onChat ? (
                 <Pressable
                   onPress={onChat}
-                  className="mt-3 flex-row items-center rounded-full px-6 py-2.5 bg-[#52B69A]"
+                  className="mt-3 flex-row items-center rounded-full px-6 py-2.5"
+                  style={{ backgroundColor: theme.accent }}
                 >
                   <Ionicons name="chatbubble-outline" size={18} color="white" />
                   <Text className="text-sm font-extrabold text-white ml-2">Chat</Text>
@@ -139,10 +141,22 @@ export function UserProfileModal({
               {!isSelf && !isSupportAdmin && relation === "friends" && onChat ? (
                 <Pressable
                   onPress={onChat}
-                  className="mt-3 flex-row items-center rounded-full px-6 py-2.5 bg-[#52B69A]"
+                  className="mt-3 flex-row items-center rounded-full px-6 py-2.5"
+                  style={{ backgroundColor: theme.accent }}
                 >
                   <Ionicons name="chatbubble-outline" size={18} color="white" />
                   <Text className="text-sm font-extrabold text-white ml-2">Chat</Text>
+                </Pressable>
+              ) : null}
+              {/* Admin viewing a user profile (friend actions disabled). */}
+              {!isSelf && !isSupportAdmin && !canAddFriend && relation === "none" && onChat ? (
+                <Pressable
+                  onPress={onChat}
+                  className="mt-3 flex-row items-center rounded-full px-6 py-2.5"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  <Ionicons name="chatbubble-outline" size={18} color="white" />
+                  <Text className="text-sm font-extrabold text-white ml-2">Send Messages</Text>
                 </Pressable>
               ) : null}
               {showAddFriend ? (

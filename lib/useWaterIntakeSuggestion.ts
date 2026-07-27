@@ -374,7 +374,13 @@ function snapshotPreviousLocation(cached: CachedSuggestion): PreviousLocationSug
 
 function mapActivityLevel(level?: string | null): WaterActivityLevel {
   if (level === "sedentary" || level === "light") return "low";
-  if (level === "very_active" || level === "extra_active") return "high";
+  if (
+    level === "very_active" ||
+    level === "extra_active" ||
+    level === "super_active"
+  ) {
+    return "high";
+  }
   return "medium";
 }
 

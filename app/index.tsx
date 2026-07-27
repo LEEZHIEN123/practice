@@ -1,13 +1,15 @@
 import { Pressable } from "@/components/Pressable";
 import { checkIsAdmin } from "@/lib/communityService";
+import { warmHomeUserCacheFromUserData } from "@/lib/homeUserCache";
 import { isOnboardingGate } from "@/lib/onboardingGate";
 import { isOnboardingPath, resolvePostAuthRoute } from "@/lib/onboardingRoute";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePathname, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
-import { auth } from "../firebaseConfig";
+import { auth, db } from "../firebaseConfig";
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -57,6 +59,14 @@ export default function WelcomeScreen() {
           if (admin) {
             router.replace("/admin" as any);
             return;
+          }
+          try {
+            const snap = await getDoc(doc(db, "users", user.uid));
+            if (snap.exists()) {
+              await warmHomeUserCacheFromUserData(user.uid, snap.data() as Record<string, unknown>);
+            }
+          } catch {
+            // Home still loads from Firestore / disk cache.
           }
           const next = await resolvePostAuthRoute(user.uid);
           if (isOnboardingGate()) return;

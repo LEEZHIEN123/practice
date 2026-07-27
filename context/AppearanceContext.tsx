@@ -1,10 +1,12 @@
 import {
+  adminAppearanceThemes,
   appearanceThemes,
   loadAppearanceMode,
   saveAppearanceMode,
   type AppearanceMode,
   type AppearanceTheme,
 } from "@/lib/appearance";
+import { isAdminEmail } from "@/lib/communityService";
 import { auth } from "@/firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 import { useColorScheme } from "nativewind";
@@ -22,6 +24,7 @@ type AppearanceContextValue = {
   isDark: boolean;
   theme: AppearanceTheme;
   ready: boolean;
+  isAdminTheme: boolean;
   setAppearance: (mode: AppearanceMode) => Promise<void>;
 };
 
@@ -32,10 +35,14 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   const [mode, setMode] = useState<AppearanceMode>("light");
   const [ready, setReady] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [isAdminTheme, setIsAdminTheme] = useState(() =>
+    isAdminEmail(auth.currentUser?.email)
+  );
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUid(user?.uid ?? null);
+      setIsAdminTheme(isAdminEmail(user?.email));
     });
     return unsub;
   }, []);
@@ -74,11 +81,12 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     () => ({
       mode,
       isDark: mode === "dark",
-      theme: appearanceThemes[mode],
+      theme: isAdminTheme ? adminAppearanceThemes[mode] : appearanceThemes[mode],
       ready,
+      isAdminTheme,
       setAppearance,
     }),
-    [mode, ready, setAppearance]
+    [mode, ready, setAppearance, isAdminTheme]
   );
 
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;

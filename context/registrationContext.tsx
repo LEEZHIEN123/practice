@@ -2,7 +2,12 @@ import React, { createContext, useContext, useMemo, useState } from "react";
 import { isOnboardingGate, setOnboardingGate } from "@/lib/onboardingGate";
 
 type Gender = "male" | "female";
-export type ActivityKey = "sedentary" | "light" | "moderate" | "very_active";
+export type ActivityKey =
+  | "sedentary"
+  | "light"
+  | "moderate"
+  | "very_active"
+  | "super_active";
 export type DietaryPreference = "omnivore" | "vegetarian" | "vegan";
 
 export type PendingAccount = {

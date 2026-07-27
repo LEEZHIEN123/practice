@@ -1461,6 +1461,44 @@ export async function loadLikerProfiles(userIds: string[]): Promise<LikerProfile
   return results;
 }
 
+/** Live profileImage URLs keyed by user id (for feed avatars). */
+export async function loadProfileImageMap(
+  userIds: string[]
+): Promise<Record<string, string | null>> {
+  const profiles = await loadLikerProfiles(userIds);
+  const map: Record<string, string | null> = {};
+  for (const p of profiles) {
+    map[p.id] = p.profileImage;
+  }
+  return map;
+}
+
+/**
+ * Keep denormalized post avatars in sync after the user changes their profile photo.
+ * Comments cannot be updated by authors under current rules — feed uses live map for those surfaces.
+ */
+export async function syncAuthorProfileImageOnPosts(
+  profileImageUrl: string | null
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const snap = await getDocs(
+    query(collection(db, "communityPosts"), where("authorId", "==", user.uid))
+  );
+  if (snap.empty) return;
+
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    const chunk = docs.slice(i, i + 400);
+    for (const d of chunk) {
+      batch.update(d.ref, { authorProfileImage: profileImageUrl });
+    }
+    await batch.commit();
+  }
+}
+
 export async function ensureChatsForFriends(): Promise<void> {
   const user = auth.currentUser;
   if (!user) return;

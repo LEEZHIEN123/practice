@@ -1,0 +1,2750 @@
+{
+  "matched": [
+    {
+      "plan": "Grilled chicken salad with mixed greens",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Lentil soup with whole wheat bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Overnight oats with fruit and chia seeds",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 1,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Lentil soup with wholegrain bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Wholegrain toast with avocado",
+      "recipe": "Avocado Toast (Vegan)",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/tuoOX5LzxEww-9HzfJYHzaCT6cI=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/3605756-4910cb02090848bebfbe1563270f38d9.jpg"
+    },
+    {
+      "plan": "Fruit salad with yogurt",
+      "recipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/P8ZElia8ILnp2sFPvQUKliqnyRk=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1003504-faf9fb343b2d467bb143cef9f505b671.jpg"
+    },
+    {
+      "plan": "Fruit smoothie",
+      "recipe": "Basic Fruit Smoothie",
+      "score": 1.18,
+      "imageUrl": "https://www.allrecipes.com/thmb/UkeuVPlM5KjA520YuyD87dSDG2E=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/23553-basic-fruit-smoothie-ddmfs-1x1-0709-0a157232688a4468be54e8278d9b633f.jpg"
+    },
+    {
+      "plan": "Fruit and cheese",
+      "recipe": "Cream Cheese Fruit Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/Jxf9fOspeG37h-0Zn3YMPzwv25A=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/4463976-760a09d107f04bd3865cfa3554416523.jpg"
+    },
+    {
+      "plan": "Chicken breast salad with vegetables",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Lentil soup with whole-wheat bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Chicken breast salad with mixed greens",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Protein shake with banana",
+      "recipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "score": 1.18,
+      "imageUrl": "https://www.allrecipes.com/thmb/o_l87oGIqY71mamvxApxRV8-47I=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/3618581-b0054e8d05ca4231a3e11626e381d82c.jpg"
+    },
+    {
+      "plan": "Overnight oats with chia seeds and fruit",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 1,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Fruit salad with nuts",
+      "recipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/P8ZElia8ILnp2sFPvQUKliqnyRk=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1003504-faf9fb343b2d467bb143cef9f505b671.jpg"
+    },
+    {
+      "plan": "Beef stew with brown rice",
+      "recipe": "Moroccan Beef and Lentil Stew",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/rYDhUb6ROOT--MmEzWC26HOIPmA=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/7756081-b698229719014b408d930d1c02c7acf4.jpg"
+    },
+    {
+      "plan": "Chicken Caesar salad",
+      "recipe": "Cherry Chicken Salad",
+      "score": 1.047,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Overnight oats with fruit and nuts",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 0.75,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Lentil soup with whole grain bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Beef stew with whole grain bread",
+      "recipe": "Moroccan Beef and Lentil Stew",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/rYDhUb6ROOT--MmEzWC26HOIPmA=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/7756081-b698229719014b408d930d1c02c7acf4.jpg"
+    },
+    {
+      "plan": "Turkey sandwich on whole grain bread",
+      "recipe": "Awesome Turkey Sandwich",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/lR5Ci00nwGYS35KJ_kVMlc9IYOE=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/120683-13e65a3f0d984411a784bb01379d3302.jpg"
+    },
+    {
+      "plan": "Quinoa salad with chicken and vegetables",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Fruit salad",
+      "recipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "score": 1.18,
+      "imageUrl": "https://www.allrecipes.com/thmb/P8ZElia8ILnp2sFPvQUKliqnyRk=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1003504-faf9fb343b2d467bb143cef9f505b671.jpg"
+    },
+    {
+      "plan": "Grilled chicken salad with mixed greens and avocado",
+      "recipe": "Chicken, Avocado and Mango Salad",
+      "score": 0.98,
+      "imageUrl": "https://www.allrecipes.com/thmb/MEEySj0bKm5a6AUlBIGbjQGIyGM=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1119464-d7b2428fffdb4880bfa95887ee7b3c05.jpg"
+    },
+    {
+      "plan": "Vegan overnight oats with berries",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 0.75,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Vegan overnight oats with chia seeds and berries",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 0.833,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Protein smoothie with fruit and spinach",
+      "recipe": "Basic Fruit Smoothie",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/UkeuVPlM5KjA520YuyD87dSDG2E=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/23553-basic-fruit-smoothie-ddmfs-1x1-0709-0a157232688a4468be54e8278d9b633f.jpg"
+    },
+    {
+      "plan": "Black bean burgers with avocado",
+      "recipe": "Black Bean Avocado Salsa",
+      "score": 0.95,
+      "imageUrl": "https://www.allrecipes.com/thmb/Y7XOlshxEjuG4iADMcXbpCey0QA=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5889297-5575d9e6a70a402ca4e2b19ef34d0131.jpg"
+    },
+    {
+      "plan": "Lentil soup with a side of whole-wheat bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Protein shake with milk and banana",
+      "recipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/o_l87oGIqY71mamvxApxRV8-47I=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/3618581-b0054e8d05ca4231a3e11626e381d82c.jpg"
+    },
+    {
+      "plan": "Grilled chicken breast salad with mixed greens and avocado",
+      "recipe": "Chicken, Avocado and Mango Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/MEEySj0bKm5a6AUlBIGbjQGIyGM=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1119464-d7b2428fffdb4880bfa95887ee7b3c05.jpg"
+    },
+    {
+      "plan": "Protein shake with almond butter",
+      "recipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/o_l87oGIqY71mamvxApxRV8-47I=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/3618581-b0054e8d05ca4231a3e11626e381d82c.jpg"
+    },
+    {
+      "plan": "Quinoa salad with grilled chicken and vegetables",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Lentil soup with whole-grain bread",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Chicken breast salad with mixed greens and vegetables",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Turkey sandwich on whole-wheat bread",
+      "recipe": "Awesome Turkey Sandwich",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/lR5Ci00nwGYS35KJ_kVMlc9IYOE=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/120683-13e65a3f0d984411a784bb01379d3302.jpg"
+    },
+    {
+      "plan": "Fruit and vegetable salad",
+      "recipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/P8ZElia8ILnp2sFPvQUKliqnyRk=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1003504-faf9fb343b2d467bb143cef9f505b671.jpg"
+    },
+    {
+      "plan": "Grilled chicken salad with quinoa",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Overnight oats with berries and chia seeds",
+      "recipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "score": 0.8,
+      "imageUrl": "https://www.allrecipes.com/thmb/RlA2mK3v79KL4Xmd7rifcy_pVjs=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/5382785-8660bd96c3ea41fe9bac622d6e5db16b.jpg"
+    },
+    {
+      "plan": "Lentil and vegetable soup",
+      "recipe": "Apricot Lentil Soup",
+      "score": 1.047,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Smoothie with fruit and protein powder",
+      "recipe": "Basic Fruit Smoothie",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/UkeuVPlM5KjA520YuyD87dSDG2E=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/23553-basic-fruit-smoothie-ddmfs-1x1-0709-0a157232688a4468be54e8278d9b633f.jpg"
+    },
+    {
+      "plan": "Chicken and vegetable soup",
+      "recipe": "Lemon Chicken Orzo Soup",
+      "score": 1.047,
+      "imageUrl": "https://www.allrecipes.com/thmb/LQJJnj7TgMX5mcQdmF5toBsZ98I=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1052559-c23be50527614bd393dbdf176cd34d0b.jpg"
+    },
+    {
+      "plan": "Quinoa salad with grilled chicken",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Grilled chicken salad with mixed greens and vegetables",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Chicken breast with mixed greens salad",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Chicken breast salad with mixed greens and avocado",
+      "recipe": "Chicken, Avocado and Mango Salad",
+      "score": 0.98,
+      "imageUrl": "https://www.allrecipes.com/thmb/MEEySj0bKm5a6AUlBIGbjQGIyGM=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1119464-d7b2428fffdb4880bfa95887ee7b3c05.jpg"
+    },
+    {
+      "plan": "Turkey breast sandwich with mixed greens",
+      "recipe": "Awesome Turkey Sandwich",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/lR5Ci00nwGYS35KJ_kVMlc9IYOE=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/120683-13e65a3f0d984411a784bb01379d3302.jpg"
+    },
+    {
+      "plan": "Mixed greens salad with chickpeas and tahini dressing",
+      "recipe": "Freekeh Salad with Tahini Dressing",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/rQm3rmdeldXgaI7AbPBGBf8DWZo=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/6286290-8c42a65b013849758ba551e098a7fd76.jpg"
+    },
+    {
+      "plan": "Chicken salad with whole grain bread",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Quinoa salad with vegetables",
+      "recipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/LH6nPV5zy2m6ulgl8nV0FXu5hfg=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/8824289-cc5dd4da2a2347039c18a0d0b6648304.jpg"
+    },
+    {
+      "plan": "Whole-wheat toast with egg and avocado",
+      "recipe": "Avocado Toast with Egg",
+      "score": 0.98,
+      "imageUrl": "https://www.allrecipes.com/thmb/7-Tno2yJIb9B01pj87eGbAlC1Vo=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/6274187-98cf86c35b0d4f0bb69dad283ac7a8db.jpg"
+    },
+    {
+      "plan": "Lentil soup with a side salad",
+      "recipe": "Apricot Lentil Soup",
+      "score": 0.797,
+      "imageUrl": "https://www.allrecipes.com/thmb/HFjyJA-IdvJeQVHRIO7EJQpdze8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/9442548-3c3b0dac0540498fb9341c5235cfbdae.jpg"
+    },
+    {
+      "plan": "Chicken salad with whole-wheat bread",
+      "recipe": "Cherry Chicken Salad",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/aKCKs0GrF4JY1s3kTEqZgsx8wf0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/39072-ddc963c7bc114cedad71d6420951c314.jpg"
+    },
+    {
+      "plan": "Turkey sandwich with whole-wheat bread",
+      "recipe": "Awesome Turkey Sandwich",
+      "score": 0.78,
+      "imageUrl": "https://www.allrecipes.com/thmb/lR5Ci00nwGYS35KJ_kVMlc9IYOE=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/120683-13e65a3f0d984411a784bb01379d3302.jpg"
+    },
+    {
+      "plan": "Protein smoothie with banana and spinach",
+      "recipe": "Spinach and Banana Power Smoothie",
+      "score": 1.18,
+      "imageUrl": "https://www.allrecipes.com/thmb/7fxIkXzDquL8VytxAU0wlEf-OuM=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/4548861-9766946c2ba1471ca2c8cc51afe1c18b.jpg"
+    },
+    {
+      "plan": "Fruit and nut smoothie",
+      "recipe": "Basic Fruit Smoothie",
+      "score": 0.847,
+      "imageUrl": "https://www.allrecipes.com/thmb/UkeuVPlM5KjA520YuyD87dSDG2E=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/23553-basic-fruit-smoothie-ddmfs-1x1-0709-0a157232688a4468be54e8278d9b633f.jpg"
+    },
+    {
+      "plan": "Stewed fruit and custard or fruit salad with yoghurt and honey",
+      "recipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "score": 0.751,
+      "imageUrl": "https://www.allrecipes.com/thmb/P8ZElia8ILnp2sFPvQUKliqnyRk=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1003504-faf9fb343b2d467bb143cef9f505b671.jpg"
+    },
+    {
+      "plan": "Light creamy chicken soup with bread roll",
+      "recipe": "Lemon Chicken Orzo Soup",
+      "score": 0.88,
+      "imageUrl": "https://www.allrecipes.com/thmb/LQJJnj7TgMX5mcQdmF5toBsZ98I=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/1052559-c23be50527614bd393dbdf176cd34d0b.jpg"
+    }
+  ],
+  "unsplash": [
+    {
+      "plan": "Oatmeal with berries and nuts",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with veggies",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable stir-fry with brown rice",
+      "bestRecipe": "Chef John's Classic Rice Pudding",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Apple with almond butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with granola and fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and vegetable stir-fry",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey chili with brown rice",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Banana with peanut butter",
+      "bestRecipe": "Peanut Butter Banana Smoothie",
+      "bestScore": 0.25,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole wheat toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.183,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa salad with chickpeas and vegetables",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.68,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with cornbread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and nut mix",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil pasta with vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan stir-fry with brown rice",
+      "bestRecipe": "Chef John's Classic Rice Pudding",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Hummus and veggie wrap",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein pancakes with fruit and nuts",
+      "bestRecipe": "Veronica's Apple Pancakes",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice and vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato and broccoli",
+      "bestRecipe": "Chef John's Sweet Potato Biscuits",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein shake",
+      "bestRecipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "bestScore": 0.53,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and chickpea scramble",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan pasta with vegetables and sauce",
+      "bestRecipe": "Gorgonzola Pear Pasta",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and veggie sticks",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea and vegetable curry",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with nuts and seeds",
+      "bestRecipe": "Homemade Old Fashioned Mix",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Black bean salad",
+      "bestRecipe": "Halloumi Three-Bean Salad with Pomegranate-Harissa Vinaigrette",
+      "bestScore": 0.697,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable stir-fry with tofu",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with granola",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on wholegrain bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with steamed vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn",
+      "bestRecipe": "Coconut Oil Popcorn",
+      "bestScore": 0.35,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable stir-fry",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable stew",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.347,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan chili",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Smoothie with protein powder",
+      "bestRecipe": "Simple Summer Smoothie",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with protein powder and fruit",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken breast with brown rice",
+      "bestRecipe": "Vietnamese Grilled Lemongrass Chicken",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and nuts",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with wholegrain toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with roasted vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein bar",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with berries and granola",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon salad with mixed greens and avocado",
+      "bestRecipe": "Blackened Salmon Tacos with Chunky Mango Avocado Salsa",
+      "bestScore": 0.45,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken stir-fry with brown rice",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Apple with peanut butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with sweet potato and broccoli",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with brown rice",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with nuts and dried fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole wheat toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.25,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey sandwich on whole wheat bread with vegetables",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and vegetable stir-fry with brown rice",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with fruit and granola",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegetables and avocado",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan lentil stew with whole wheat bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.033,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu stir-fry with brown rice and vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad with whole wheat bread",
+      "bestRecipe": "Blackened Tuna Steaks with Mango Salsa",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with sweet potato and green beans",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Mixed nuts and seeds",
+      "bestRecipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan pasta with vegetables and tomato sauce",
+      "bestRecipe": "Gorgonzola Pear Pasta",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Apple slices with peanut butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with spinach and avocado",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Black bean burgers with sweet potato fries",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1518013431117-eb1465fa9792?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable curry with brown rice",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu stir-fry with brown rice noodles",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole wheat toast and fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato and asparagus",
+      "bestRecipe": "Chef John's Sweet Potato Biscuits",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole wheat bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix",
+      "bestRecipe": "Homemade Old Fashioned Mix",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with whole wheat bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Black bean burgers with salad",
+      "bestRecipe": "Halloumi Three-Bean Salad with Pomegranate-Harissa Vinaigrette",
+      "bestScore": 0.53,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Apple slices with almond butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with fruit and nuts",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole wheat bread",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.363,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and yogurt",
+      "bestRecipe": "Fruit and Yogurt Smoothie",
+      "bestScore": 0.43,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey meatballs with steamed vegetables",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1574672280600-4accfa113ce9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with avocado and whole-wheat toast",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.183,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato fries",
+      "bestRecipe": "Chef John's Sweet Potato Biscuits",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable stir-fry with brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Pancakes with fruit and syrup",
+      "bestRecipe": "Veronica's Apple Pancakes",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken sandwich with whole-wheat bread",
+      "bestRecipe": "Vietnamese Grilled Lemongrass Chicken",
+      "bestScore": 0.183,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with whole-wheat bread",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich with whole-wheat bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with roasted vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu stir-fry with brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with spinach and avocado toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan chili with brown rice",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich with mixed greens",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.53,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fish with roasted vegetables",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa porridge with fruit and nuts",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.38,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegetables and whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with bacon and whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled salmon with roasted vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Mixed nuts",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with protein powder and berries",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with sweet potato and broccoli",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with nuts and seeds",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole-wheat toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.25,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna with quinoa and roasted vegetables",
+      "bestRecipe": "Blackened Tuna Steaks with Mango Salsa",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with almonds and dried fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit salad with nuts and seeds",
+      "bestRecipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "bestScore": 0.68,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with baked potato and green beans",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein shake with fruit",
+      "bestRecipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with vegetables and whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-wheat bread with a side of mixed greens",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted vegetables and quinoa",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole-wheat toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.183,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with quinoa and steamed vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with baked potato and broccoli",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with dried fruit and nuts",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with veggies and whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice and steamed vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Beef stir-fry with brown rice",
+      "bestRecipe": "Easy Keto Beef Tacos",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole-wheat bread with a side of mixed greens",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.316,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with berries and nuts",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable sticks with hummus",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole wheat toast and avocado",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt with fruit and granola",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad with whole grain bread",
+      "bestRecipe": "Blackened Tuna Steaks with Mango Salsa",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with steamed vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Black bean soup with whole wheat bread",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.283,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato and green beans",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with berries and almonds",
+      "bestRecipe": "Elegant Fig Appetizers with Goat Cheese and Almonds",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted sweet potatoes",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with brown rice and quinoa",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea and vegetable curry with brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with nuts and dried fruits",
+      "bestRecipe": "Homemade Old Fashioned Mix",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole-wheat toast and bacon",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with mashed potatoes and green beans",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with berries",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable soup with whole-wheat bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled tofu with whole-wheat toast and avocado",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable curry with brown rice and quinoa",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.283,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa salad with roasted vegetables",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.68,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Low-fat Greek yogurt with berries",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable scramble with whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice and roasted vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-wheat bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea curry with brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with roasted vegetables and sweet potato",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea salad with mixed greens",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken with roasted vegetables",
+      "bestRecipe": "Vietnamese Grilled Lemongrass Chicken",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa bowl with roasted chickpeas and vegetables",
+      "bestRecipe": "Watermelon Fruit Bowl",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Celery sticks with peanut butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with whole-wheat bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil pasta with tomato sauce",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with protein powder and fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey chili with sweet potato",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan lentil stew with brown rice",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole-wheat bread",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.363,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Trail mix with almonds and dried cranberries",
+      "bestRecipe": "Homemade Old Fashioned Mix",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein bar with nuts",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.055,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein pancakes with fruit and syrup",
+      "bestRecipe": "Veronica's Apple Pancakes",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled tofu with spinach and tomato",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa bowl with roasted vegetables and chickpeas",
+      "bestRecipe": "Watermelon Fruit Bowl",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Black bean burger on whole-wheat bun with avocado",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.279,
+      "imageUrl": "https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu stir-fry with vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Carrot sticks with hummus",
+      "bestRecipe": "Moist Carrot Cake",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegetables and whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea and vegetable pasta bake",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable soup with whole wheat bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast and brown rice with vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with spinach and whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea and vegetable stew",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "String cheese with crackers",
+      "bestRecipe": "Cherry Cream Cheese Cake",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable curry with rice",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt parfait with granola and fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-wheat bread with a side salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken breast with quinoa and steamed vegetables",
+      "bestRecipe": "Vietnamese Grilled Lemongrass Chicken",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice and broccoli",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with a side of whole-wheat bread",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with a side of whole-wheat bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "1 cup oatmeal with berries and nuts",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Peanut butter and banana sandwich",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey sandwich on whole-wheat bread with vegetables",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn with a sprinkle of cinnamon",
+      "bestRecipe": "Easy Apple Cinnamon Muffins",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole-wheat toast and vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "3 eggs with whole-wheat toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.25,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein shake with fruit and spinach",
+      "bestRecipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt with berries and granola",
+      "bestRecipe": "Oat-Free and Gluten-Free Granola Bars (Clean Eating)",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable frittata",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable curry",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with avocado and whole-wheat toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with tomato sauce and spinach",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Nuts and seeds",
+      "bestRecipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with quinoa and roasted vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fish with steamed broccoli",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Mixed nuts and dried fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted vegetables and brown rice",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato fries and a side salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with whole-grain bread",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with marinara sauce and vegetables",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Whole-grain crackers with hummus",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted vegetables and sweet potato",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with fruit and nuts",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable curry with brown rice",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Hummus with carrots and cucumber",
+      "bestRecipe": "Watermelon-Cucumber Agua Fresca",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt with granola and fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein pancakes with fruit",
+      "bestRecipe": "Veronica's Apple Pancakes",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and vegetable fajitas",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole-wheat toast and avocado",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey meatballs with whole-wheat pasta",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with roasted vegetables and brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa porridge with berries and nuts",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.38,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with steamed vegetables and brown rice",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Overnight oats with berries and nuts",
+      "bestRecipe": "Overnight Chia Oats",
+      "bestScore": 0.5,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled salmon with quinoa and roasted vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit with yogurt",
+      "bestRecipe": "Fruit and Yogurt Smoothie",
+      "bestScore": 0.43,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan lentil soup with whole wheat bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken with sweet potato and broccoli",
+      "bestRecipe": "Vietnamese Grilled Lemongrass Chicken",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Baked chicken with roasted vegetables",
+      "bestRecipe": "Chicken Stuffed Baked Avocados",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with avocado and whole wheat toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian pasta with marinara sauce",
+      "bestRecipe": "Gorgonzola Pear Pasta",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Almonds",
+      "bestRecipe": "Elegant Fig Appetizers with Goat Cheese and Almonds",
+      "bestScore": 0.35,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with quinoa and vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potatoes and broccoli",
+      "bestRecipe": "Apricot-Pecan Sweet Potatoes",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad with whole-wheat bread",
+      "bestRecipe": "Blackened Tuna Steaks with Mango Salsa",
+      "bestScore": 0.05,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken stir fry with brown rice and vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil soup with whole-wheat bread and salad",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.463,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-wheat bread with salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with roasted vegetables and sweet potato",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey sandwich on whole-wheat bread with salad",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.463,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Breakfast burrito with eggs and vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable stir fry with brown rice",
+      "bestRecipe": "Chef John's Classic Rice Pudding",
+      "bestScore": 0.1,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-grain bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey breast sandwich on whole-grain bread",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with marinara sauce",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan lentil stew",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.067,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole-grain bread",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.363,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.375,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with protein powder",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and vegetable skewers",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Banana",
+      "bestRecipe": "Baked Banana Chips",
+      "bestScore": 0.35,
+      "imageUrl": "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa salad with grilled tofu",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Hummus with vegetables",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole wheat toast and fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with whole wheat bread",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil pasta with marinara sauce",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with baked potato and salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable lasagna with salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with quinoa and steamed vegetables",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Banana with almond butter",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with roasted vegetables and quinoa",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable scramble with whole-wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with tomato sauce and vegetables",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with vegetable sauce",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Roast beef with mashed potatoes and peas",
+      "bestRecipe": "Easy Keto Beef Tacos",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn with a touch of olive oil",
+      "bestRecipe": "Olive Oil Roasted Eggplant with Lemon",
+      "bestScore": 0.5,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable scramble with wholegrain toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with brown rice",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.18,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with berries and flax seeds",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with wholegrain toast and avocado",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.35,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with vegetables",
+      "bestRecipe": "Cherry Chicken",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt with fruit",
+      "bestRecipe": "Fruit and Yogurt Smoothie",
+      "bestScore": 0.43,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with brown rice and quinoa",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable stir-fry with rice noodles",
+      "bestRecipe": "Reshteh Polo (Persian Noodle Rice)",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and vegetable wrap",
+      "bestRecipe": "Prosciutto-Wrapped Chicken with Figs and Goat Cheese",
+      "bestScore": 0.147,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt parfait with granola",
+      "bestRecipe": "Tart Tropical Parfait",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Oatmeal with protein powder and banana",
+      "bestRecipe": "Apple Cinnamon Oatmeal Muffins",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Beef and vegetable skewers with sweet potato fries",
+      "bestRecipe": "Easy Keto Beef Tacos",
+      "bestScore": 0.283,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit with nuts",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable scramble with avocado toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan chili with whole grain bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole wheat toast and smoked salmon",
+      "bestRecipe": "Smoked Salmon Poke Bowl",
+      "bestScore": 0.136,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable soup with whole grain bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa salad with grilled vegetables",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.68,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit with cottage cheese",
+      "bestRecipe": "Cream Cheese Fruit Salad",
+      "bestScore": 0.547,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and vegetable curry with brown rice and naan bread",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.271,
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fish with roasted vegetables and quinoa",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegetables and avocado toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and yogurt parfait",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Almonds with dried fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Pancakes with fruit and nuts",
+      "bestRecipe": "Veronica's Apple Pancakes",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and rice bowl with vegetables",
+      "bestRecipe": "Papaya-Stuffed Chicken and Basmati Rice",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein shake with fruit and greens",
+      "bestRecipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tempeh stir-fry with brown rice",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Dark chocolate with almonds",
+      "bestRecipe": "Chocolate-Covered Cherries",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1486427944299-d1955d23b34d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil salad with quinoa and avocado",
+      "bestRecipe": "Kale, Quinoa, and Avocado Salad with Lemon Dijon Vinaigrette",
+      "bestScore": 0.48,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Yogurt with granola",
+      "bestRecipe": "Oat-Free and Gluten-Free Granola Bars (Clean Eating)",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable scramble",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole wheat toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with baked potato",
+      "bestRecipe": "Chicken Stuffed Baked Avocados",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with quinoa and steamed broccoli",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Baked chicken with sweet potato and green beans",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with sweet potato and roasted vegetables",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.533,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with quinoa and steamed broccoli",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Baked fish with steamed vegetables",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.7,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan lasagna",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey chili with cornbread",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with granola and berries",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey meatballs with spaghetti squash",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable soup with whole-wheat bread",
+      "bestRecipe": "Mulligatawny Soup",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with asparagus and sweet potato",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with spinach and mushrooms",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn with a sprinkle of parmesan cheese",
+      "bestRecipe": "Saut?ed Swiss Chard with Parmesan Cheese",
+      "bestScore": 0.5,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa breakfast bowl with berries and nuts",
+      "bestRecipe": "Black Bean Breakfast Bowl",
+      "bestScore": 0.58,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Bean burgers with sweet potato fries",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1518013431117-eb1465fa9792?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Protein shake with fruit and nuts",
+      "bestRecipe": "Chocolate Banana Peanut Butter Protein Shake",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1505252585461-04db1eb84625?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole-wheat bread with a side salad",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.459,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetable stir-fry with quinoa",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.005,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole-wheat bread with a side of fruit",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.316,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey chili with whole-wheat bread",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with protein powder",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu and vegetable stir-fry with quinoa",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil loaf with roasted vegetables",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole-wheat toast and fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole-wheat bread with a side of fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa porridge with berries",
+      "bestRecipe": "Porridge",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan pasta with marinara sauce and vegetables",
+      "bestRecipe": "Gorgonzola Pear Pasta",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn with nutritional yeast",
+      "bestRecipe": "Drozdzowka (Polish Yeast Plum Cake)",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chickpea pasta with tomato sauce",
+      "bestRecipe": "Fresh Fig and Prosciutto Pasta Sauce",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu breakfast burrito with avocado",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit and vegetables",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled chicken salad with whole grain bread",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with avocado toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole grain toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil stew with whole grain bread",
+      "bestRecipe": "Moroccan Beef and Lentil Stew",
+      "bestScore": 0.08,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit salad with Greek yogurt",
+      "bestRecipe": "Summer Fruit Salad with a Lemon, Honey, and Mint Dressing",
+      "bestScore": 0.68,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Bean and vegetable stir-fry with brown rice",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.283,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fruit with nuts and seeds",
+      "bestRecipe": "Vegan Overnight Oats with Chia Seeds and Fruit",
+      "bestScore": 0.667,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey chili with whole grain bread",
+      "bestRecipe": "Awesome Turkey Sandwich",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Popcorn with a sprinkle of nutritional yeast",
+      "bestRecipe": "Drozdzowka (Polish Yeast Plum Cake)",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Quinoa salad with roasted vegetables and chickpeas",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.58,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Mixed Nuts and Dried Fruits",
+      "bestRecipe": "Dried Cherry Cake",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu Scramble with Whole Wheat Toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken and Vegetable Wrap on Whole Wheat Tortilla",
+      "bestRecipe": "Prosciutto-Wrapped Chicken with Figs and Goat Cheese",
+      "bestScore": 0.113,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Grilled Steak with Sweet Potato Fries",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek Yogurt with Berries and Nuts",
+      "bestRecipe": "Greek-Style Lemon Roasted Potatoes",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Salmon with roasted sweet potatoes and broccoli",
+      "bestRecipe": "Baked Salmon in Foil",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Greek yogurt with almonds and fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with whole grain toast and avocado",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.063,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole wheat toast and fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole grain bread",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with sweet potato fries and mixed greens",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken salad sandwich on whole grain bread with a side of fruit",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.316,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Beef with sweet potato and green beans",
+      "bestRecipe": "Easy Keto Beef Tacos",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with vegan toast and avocado",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.33,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil pasta with vegan pesto sauce",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna salad sandwich on whole grain bread with a side of salad",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole wheat toast and spinach",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan chili with whole wheat bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast salad with whole-wheat bread",
+      "bestRecipe": "Cherry Chicken Salad",
+      "bestScore": 0.713,
+      "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Hummus and vegetable sticks",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tofu scramble with veggies and avocado toast",
+      "bestRecipe": "Avocado Toast (Vegan)",
+      "bestScore": 0.13,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scrambled eggs with whole-wheat toast and fruit",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Breakfast burrito with beans and veggies",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Lentil and veggie stir-fry with brown rice",
+      "bestRecipe": "Apricot Lentil Soup",
+      "bestScore": 0.283,
+      "imageUrl": "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegan burgers with sweet potato fries",
+      "bestRecipe": "Chef John's Sweet Potato Biscuits",
+      "bestScore": 0.4,
+      "imageUrl": "https://images.unsplash.com/photo-1518013431117-eb1465fa9792?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Steak with baked potato",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Turkey and veggie wrap with whole-wheat tortilla",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken breast with broccoli and sweet potato",
+      "bestRecipe": "Easy Sweet and Sour Chicken",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Eggs with whole grain toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Vegetarian chili with whole grain bread",
+      "bestRecipe": "Granny Franny's Persimmon Curry Chili",
+      "bestScore": 0.28,
+      "imageUrl": "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fortified porridge or cereal and milk",
+      "bestRecipe": "Porridge",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Egg mayo, cheese or tuna mayo sandwich",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Shepherd's pie with creamy mash and olive-oil roasted vegetables",
+      "bestRecipe": "Olive Oil Roasted Eggplant with Lemon",
+      "bestScore": 0.429,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Pate on toast",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Bread/toast with butter or vegetable oil spread and marmalade/jam",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.242,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fortified soup with toast, bread or cheese on toast",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.33,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Pasta with sauce, meat or fish, vegetables, milk/cream and cheese",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Cheese on toast",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Cooked breakfast with scrambled egg, mushrooms, tomato and beans",
+      "bestRecipe": "Jerk Chicken Egg Rolls with Mango-Habanero Sauce",
+      "bestScore": 0.271,
+      "imageUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Milky tea, coffee, hot chocolate or fruit juice",
+      "bestRecipe": "Watermelon and Cucumber Juice with a Spritz of Lime",
+      "bestScore": 0.071,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fortified mash potato with vegetables, meat or fish",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Slice of quiche",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Crumble or sponge with custard (full-fat milk or soy milk/cream)",
+      "bestRecipe": "Chia Coconut Pudding with Coconut Milk",
+      "bestScore": 0.222,
+      "imageUrl": "https://images.unsplash.com/photo-1486427944299-d1955d23b34d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Scotch eggs",
+      "bestRecipe": "Paleo Baked Eggs in Avocado",
+      "bestScore": 0.375,
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Sausage roll or pork pie",
+      "bestRecipe": "Applesauce Pork Chops",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1602470520998-f4a52199a3d6?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Nuts",
+      "bestRecipe": "Quinoa Salad with Broccoli, Nuts, and Pomegranate",
+      "bestScore": 0.23,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Toasted crumpet",
+      "bestRecipe": "Figs and Toasted Almonds Brie",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Mini Cornish pasty",
+      "bestRecipe": "Cornish Game Hens with Garlic and Rosemary",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1602470520998-f4a52199a3d6?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Cheese and onion rolls",
+      "bestRecipe": "Cherry Cream Cheese Cake",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Cheese and crackers",
+      "bestRecipe": "Cherry Cream Cheese Cake",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light fortified porridge with milk and yoghurt",
+      "bestRecipe": "Porridge",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Tuna cucumber sandwich with yoghurt (light)",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Chicken rice with light cheese sauce and vegetables",
+      "bestRecipe": "Chicken Tenders with Balsamic-Fig Sauce",
+      "bestScore": 0.6,
+      "imageUrl": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light cheese and crackers",
+      "bestRecipe": "Cherry Cream Cheese Cake",
+      "bestScore": 0.175,
+      "imageUrl": "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light scrambled eggs with cheese on toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Fish with light creamy sauce and mash",
+      "bestRecipe": "Baked Fish Fillets",
+      "bestScore": 0.317,
+      "imageUrl": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light yoghurt with nuts and dried fruit",
+      "bestRecipe": "Easy Fruit Cobbler",
+      "bestScore": 0.125,
+      "imageUrl": "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light peanut butter banana toast with milk",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light sardines on toast with vegetables",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.297,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light macaroni cheese with chicken or beans",
+      "bestRecipe": "Prosciutto-Wrapped Chicken with Figs and Goat Cheese",
+      "bestScore": 0.3,
+      "imageUrl": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light peanut butter toast",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light cheese omelette with bread",
+      "bestRecipe": "Cream Cheese Banana Bread",
+      "bestScore": 0.667,
+      "imageUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light baked beans and cheese on toast",
+      "bestRecipe": "Grandma's Peach French Toast",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light bean casserole with rice and cheese",
+      "bestRecipe": "Black Bean Avocado Salsa",
+      "bestScore": 0.325,
+      "imageUrl": "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light fruit milkshake",
+      "bestRecipe": "Watermelon Milkshake",
+      "bestScore": 0.355,
+      "imageUrl": "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light fortified porridge with nut butter and banana",
+      "bestRecipe": "Extreme Banana Nut Bread 'EBNB'",
+      "bestScore": 0.5,
+      "imageUrl": "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light egg mayo sandwich with yoghurt",
+      "bestRecipe": null,
+      "bestScore": 0,
+      "imageUrl": "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light shepherd pie with mash and vegetables",
+      "bestRecipe": "Apple Pie by Grandma Ople",
+      "bestScore": 0.305,
+      "imageUrl": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80"
+    },
+    {
+      "plan": "Light nuts with cheese crackers",
+      "bestRecipe": "Cherry Cream Cheese Cake",
+      "bestScore": 0.117,
+      "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80"
+    }
+  ],
+  "stats": {
+    "mealRows": 547,
+    "matchedRows": 73,
+    "unsplashRows": 474,
+    "uniqueMatchedNames": 57,
+    "uniqueUnsplashNames": 399,
+    "minScore": 0.72
+  }
+}

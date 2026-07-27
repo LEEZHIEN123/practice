@@ -1,8 +1,13 @@
-import { resolveFoodImageUrl } from "./foodImages";
+import { resolveNutritionGuidanceImage } from "./foodImages";
 import nutritionPlanDataset from "./nutritionPlanDataset.json";
 import { durationDays, type GoalKey, type PlanDuration } from "./workoutPlan";
 
-export type NutritionActivityKey = "sedentary" | "light" | "moderate" | "very_active";
+export type NutritionActivityKey =
+  | "sedentary"
+  | "light"
+  | "moderate"
+  | "very_active"
+  | "super_active";
 export type NutritionDietaryKey = "omnivore" | "vegetarian" | "vegan";
 export type NutritionBmiCategory = "Underweight" | "Normal" | "Overweight" | "Obese";
 
@@ -14,7 +19,7 @@ export type NutritionMealSuggestion = {
   fatG: number;
   ingredients: string[];
   directions: string[];
-  imageUrl?: string;
+  imageUrl?: string | null;
 };
 
 export type NutritionDaySchedule = {
@@ -84,13 +89,15 @@ export function normalizeNutritionActivity(
   if (raw === "light" || raw === "lightly_active") return "light";
   if (raw === "moderate" || raw === "moderately_active") return "moderate";
   if (raw === "very_active" || raw === "extra_active") return "very_active";
+  if (raw === "super_active") return "super_active";
 
   const m = Number(activityMultiplier);
   if (!Number.isFinite(m) || m <= 0) return null;
   if (m <= 1.25) return "sedentary";
   if (m <= 1.4) return "light";
   if (m <= 1.6) return "moderate";
-  return "very_active";
+  if (m <= 1.8) return "very_active";
+  return "super_active";
 }
 
 export function normalizeNutritionDietary(
@@ -192,6 +199,7 @@ export function nutritionActivityLabel(a: NutritionActivityKey | null | undefine
   if (a === "light") return "Light";
   if (a === "moderate") return "Moderate";
   if (a === "very_active") return "Very Active";
+  if (a === "super_active") return "Super Active";
   return "—";
 }
 
@@ -260,7 +268,8 @@ function lookupDatasetMeal(name: string): DatasetMeal | undefined {
 
 function expandMealSuggestion(meal: NutritionMealSuggestion): NutritionMealSuggestion {
   const fromDataset = lookupDatasetMeal(meal.name);
-  const estimated = estimateMacrosFromCalories(meal.name, meal.calories || fromDataset?.cal || 0);
+  const displayName = expandCookingAbbreviations(meal.name || fromDataset?.n || "");
+  const estimated = estimateMacrosFromCalories(displayName, meal.calories || fromDataset?.cal || 0);
   const proteinG =
     typeof meal.proteinG === "number" && Number.isFinite(meal.proteinG)
       ? meal.proteinG
@@ -279,11 +288,15 @@ function expandMealSuggestion(meal: NutritionMealSuggestion): NutritionMealSugge
       : typeof fromDataset?.f === "number"
         ? fromDataset.f
         : estimated.fatG;
-  const imageUrl = resolveFoodImageUrl(meal.name || fromDataset?.n || "");
+  // Keep an already-resolved image (archive restore) — avoids slow All Nutrition scans on switch.
+  const imageUrl =
+    meal.imageUrl !== undefined
+      ? meal.imageUrl
+      : resolveNutritionGuidanceImage(displayName).url;
 
   return {
     ...meal,
-    name: expandCookingAbbreviations(meal.name),
+    name: displayName,
     calories: meal.calories || fromDataset?.cal || 0,
     proteinG,
     carbsG,
@@ -329,7 +342,7 @@ function mealFromId(id: number): NutritionMealSuggestion {
     fatG: typeof m.f === "number" ? m.f : estimated.fatG,
     ingredients: Array.isArray(m.i) ? m.i : [],
     directions: Array.isArray(m.d) ? m.d : [],
-    imageUrl: resolveFoodImageUrl(m.n),
+    imageUrl: undefined,
   });
 }
 
@@ -355,7 +368,8 @@ function parseKey(key: string): {
     (activity !== "sedentary" &&
       activity !== "light" &&
       activity !== "moderate" &&
-      activity !== "very_active") ||
+      activity !== "very_active" &&
+      activity !== "super_active") ||
     (bmi !== "Underweight" && bmi !== "Normal" && bmi !== "Overweight" && bmi !== "Obese") ||
     (goal !== "gain" && goal !== "maintain" && goal !== "lose") ||
     (diet !== "omnivore" && diet !== "vegetarian" && diet !== "vegan")
@@ -585,8 +599,7 @@ export function nutritionPlanOutOfSync(
     !sample ||
     typeof sample.proteinG !== "number" ||
     typeof sample.carbsG !== "number" ||
-    typeof sample.fatG !== "number" ||
-    !sample.imageUrl
+    typeof sample.fatG !== "number"
   ) {
     return true;
   }

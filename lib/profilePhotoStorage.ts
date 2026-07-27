@@ -1,6 +1,7 @@
 import { auth, db, storage } from "../firebaseConfig";
 import { doc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { syncAuthorProfileImageOnPosts } from "./communityService";
 
 export async function uploadAndSaveProfilePhoto(localUri: string): Promise<string> {
   const user = auth.currentUser;
@@ -16,6 +17,8 @@ export async function uploadAndSaveProfilePhoto(localUri: string): Promise<strin
   await updateDoc(doc(db, "users", user.uid), {
     profileImage: profileImageUrl,
   });
+
+  await syncAuthorProfileImageOnPosts(profileImageUrl).catch(() => {});
 
   return profileImageUrl;
 }

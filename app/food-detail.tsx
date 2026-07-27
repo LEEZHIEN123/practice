@@ -5,7 +5,7 @@ import { MacroDonut } from "@/components/nutrition/MacroDonut";
 import { ZoomableImageModal } from "@/components/ZoomableImageModal";
 import { ProfileScreenHeader, ThemedText, useProfileCardStyles } from "@/components/themed/ThemedUi";
 import { getFoodById, isFoodDatasetReady, prefetchFoodDataset, type FoodItem } from "@/lib/foodDataset";
-import { FOOD_IMAGE_FALLBACK, resolveFoodImageSource, resolveFoodImageUrl } from "@/lib/foodImages";
+import { FOOD_IMAGE_FALLBACK, resolveDatasetFoodImageSource, resolveDatasetFoodImageUrl } from "@/lib/foodImages";
 import { buildNutritionFavouriteItem } from "@/lib/favourites";
 import { logMealFood } from "@/lib/mealLogService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -67,11 +67,11 @@ export default function FoodDetailScreen() {
   const [logging, setLogging] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const imageSource = useMemo(
-    () => (food ? resolveFoodImageSource(food.name, food.imageUrl) : { uri: FOOD_IMAGE_FALLBACK }),
+    () => (food ? resolveDatasetFoodImageSource(food.imageUrl) : { uri: FOOD_IMAGE_FALLBACK }),
     [food]
   );
   const imageUri = useMemo(
-    () => (food ? resolveFoodImageUrl(food.name, food.imageUrl) : FOOD_IMAGE_FALLBACK),
+    () => (food ? resolveDatasetFoodImageUrl(food.imageUrl) : FOOD_IMAGE_FALLBACK),
     [food]
   );
   const [displayImageSource, setDisplayImageSource] = useState(imageSource);

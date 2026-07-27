@@ -34,26 +34,104 @@ export function workoutPlansByBmiGoalField(band: BmiBandKey, goal: GoalKey, dura
   return `workoutPlansByBmiGoal.${band}.${goal}.${duration}`;
 }
 
+/** Saved plan for a duration, with optional progress (keeps data when switching schedules). */
+export type WorkoutPlanArchiveEntry = {
+  plan: ActiveWorkoutPlan;
+  lastCompletedDay: number | null;
+  lastCompletedAt: string | null;
+};
+
+export type WorkoutPlanPickResult = {
+  plan: ActiveWorkoutPlan;
+  lastCompletedDay: number | null;
+  lastCompletedAt: Date | null;
+  fromArchive: boolean;
+};
+
+function parseWorkoutArchiveLastCompletedAt(value: unknown): Date | null {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  if (value && typeof (value as { toDate?: () => Date }).toDate === "function") {
+    const parsed = (value as { toDate: () => Date }).toDate();
+    return parsed instanceof Date ? parsed : null;
+  }
+  return null;
+}
+
+/** Accept legacy (plan object) or new `{ plan, lastCompletedDay, lastCompletedAt }` shapes. */
+export function normalizeWorkoutPlanArchiveEntry(raw: unknown): WorkoutPlanArchiveEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const nested = obj.plan;
+  if (nested && typeof nested === "object" && Array.isArray((nested as ActiveWorkoutPlan).schedule)) {
+    const lcd = Number(obj.lastCompletedDay);
+    return {
+      plan: nested as ActiveWorkoutPlan,
+      lastCompletedDay: Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null,
+      lastCompletedAt: typeof obj.lastCompletedAt === "string" ? obj.lastCompletedAt : null,
+    };
+  }
+  if (Array.isArray((obj as ActiveWorkoutPlan).schedule)) {
+    return {
+      plan: obj as ActiveWorkoutPlan,
+      lastCompletedDay: null,
+      lastCompletedAt: null,
+    };
+  }
+  return null;
+}
+
+export function buildWorkoutPlanArchiveEntry(
+  plan: ActiveWorkoutPlan,
+  lastCompletedDay: number | null,
+  lastCompletedAt: Date | null
+): WorkoutPlanArchiveEntry {
+  return {
+    plan,
+    lastCompletedDay: lastCompletedDay ?? null,
+    lastCompletedAt: lastCompletedAt ? lastCompletedAt.toISOString() : null,
+  };
+}
+
 /** Banded cache first, then legacy `workoutPlansByGoal` (pre–per-band storage). */
+export function getWorkoutPlanArchiveEntry(
+  data: Record<string, unknown> | undefined,
+  bmi: number,
+  goal: GoalKey,
+  duration: PlanDuration
+): WorkoutPlanArchiveEntry | null {
+  const band = bmiBandKey(bmi);
+  const bandRoot = data?.workoutPlansByBmiGoal as Record<string, unknown> | undefined;
+  const bandGoal = bandRoot?.[band] as Record<string, unknown> | undefined;
+  const bandGoalDur = bandGoal?.[goal] as Record<string, unknown> | undefined;
+  const banded = normalizeWorkoutPlanArchiveEntry(bandGoalDur?.[duration]);
+  if (banded) return banded;
+
+  const legacyRoot = data?.workoutPlansByGoal as Record<string, unknown> | undefined;
+  const legacyGoal = legacyRoot?.[goal] as Record<string, unknown> | undefined;
+  return normalizeWorkoutPlanArchiveEntry(legacyGoal?.[duration]);
+}
+
 export function getWorkoutPlanFromUserDoc(
   data: Record<string, unknown> | undefined,
   bmi: number,
   goal: GoalKey,
   duration: PlanDuration
 ): ActiveWorkoutPlan | null {
-  const band = bmiBandKey(bmi);
-  const bandRoot = data?.workoutPlansByBmiGoal as Record<string, unknown> | undefined;
-  const bandGoal = bandRoot?.[band] as Record<string, unknown> | undefined;
-  const bandGoalDur = bandGoal?.[goal] as Record<string, unknown> | undefined;
-  const banded = bandGoalDur?.[duration] as ActiveWorkoutPlan | undefined;
-  if (banded && typeof banded === "object" && banded.schedule?.length) return banded;
+  return getWorkoutPlanArchiveEntry(data, bmi, goal, duration)?.plan ?? null;
+}
 
-  const legacyRoot = data?.workoutPlansByGoal as Record<string, unknown> | undefined;
-  const legacyGoal = legacyRoot?.[goal] as Record<string, unknown> | undefined;
-  const legacy = legacyGoal?.[duration] as ActiveWorkoutPlan | undefined;
-  if (legacy && typeof legacy === "object" && legacy.schedule?.length) return legacy;
-
-  return null;
+export function canRestoreWorkoutPlan(
+  data: Record<string, unknown> | undefined,
+  bmi: number,
+  goal: GoalKey,
+  duration: PlanDuration
+): boolean {
+  const cached = getWorkoutPlanArchiveEntry(data, bmi, goal, duration);
+  return !!(cached?.plan && !activeWorkoutPlanOutOfSync(cached.plan, bmi, goal));
 }
 
 /** True if stored plan no longer matches BMI+goal rules (e.g. reused cache from another BMI band). */
@@ -130,9 +208,21 @@ export function pickOrGenerateWorkoutPlanForBand(
   bmi: number,
   goal: GoalKey,
   duration: PlanDuration
-): ActiveWorkoutPlan {
-  const cached = getWorkoutPlanFromUserDoc(data, bmi, goal, duration);
-  if (cached && !activeWorkoutPlanOutOfSync(cached, bmi, goal)) return cached;
-  return generateActiveWorkoutPlan({ duration, bmi, goal });
+): WorkoutPlanPickResult {
+  const cached = getWorkoutPlanArchiveEntry(data, bmi, goal, duration);
+  if (cached?.plan && !activeWorkoutPlanOutOfSync(cached.plan, bmi, goal)) {
+    return {
+      plan: cached.plan,
+      lastCompletedDay: cached.lastCompletedDay,
+      lastCompletedAt: parseWorkoutArchiveLastCompletedAt(cached.lastCompletedAt),
+      fromArchive: true,
+    };
+  }
+  return {
+    plan: generateActiveWorkoutPlan({ duration, bmi, goal }),
+    lastCompletedDay: null,
+    lastCompletedAt: null,
+    fromArchive: false,
+  };
 }
 

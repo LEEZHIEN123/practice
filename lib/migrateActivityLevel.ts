@@ -16,14 +16,15 @@ export async function migrateExtraActiveActivityLevel(uid: string): Promise<void
 
 export function normalizeActivityLevel(
   level: string | null | undefined
-): "sedentary" | "light" | "moderate" | "very_active" | null {
+): "sedentary" | "light" | "moderate" | "very_active" | "super_active" | null {
   if (!level) return null;
   if (level === "extra_active") return "very_active";
   if (
     level === "sedentary" ||
     level === "light" ||
     level === "moderate" ||
-    level === "very_active"
+    level === "very_active" ||
+    level === "super_active"
   ) {
     return level;
   }

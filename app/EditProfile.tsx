@@ -6,6 +6,8 @@ import {
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { syncAuthorProfileImageOnPosts } from "@/lib/communityService";
+import { saveHomeUserCache } from "@/lib/homeUserCache";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { ImageEditor } from "expo-dynamic-image-crop";
@@ -31,7 +33,8 @@ type ActivityKey =
   | "sedentary"
   | "light"
   | "moderate"
-  | "very_active";
+  | "very_active"
+  | "super_active";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -39,13 +42,14 @@ export default function EditProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, screenStyle, cardStyle } = useThemedScreen();
-  const { inputStyle, rowStyle, placeholderColor } = useProfileCardStyles();
+  const { inputStyle, rowStyle, placeholderColor, modalCardStyle } = useProfileCardStyles();
 
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userBio, setUserBio] = useState("");
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [gender, setGender] = useState<"male" | "female">("male");
+  const [photoSourceVisible, setPhotoSourceVisible] = useState(false);
 
   const [age, setAge] = useState(28);
   const [height, setHeight] = useState(175.0);
@@ -97,6 +101,13 @@ export default function EditProfile() {
         multiplier: 1.725,
         icon: "fitness-outline" as IoniconName,
       },
+      {
+        key: "super_active" as const,
+        title: "Super Active",
+        subtitle: "Very hard exercise or physically demanding work",
+        multiplier: 1.9,
+        icon: "flash-outline" as IoniconName,
+      },
     ],
     []
   );
@@ -113,18 +124,29 @@ export default function EditProfile() {
     return Number((weightKg / (heightM * heightM)).toFixed(1));
   };
 
-  const requestPermission = async () => {
+  const requestLibraryPermission = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
         "Permission needed",
         "We need access to your photo library."
       );
+      return false;
     }
+    return true;
+  };
+
+  const requestCameraPermission = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "We need access to your camera.");
+      return false;
+    }
+    return true;
   };
 
   useEffect(() => {
-    requestPermission();
+    void requestLibraryPermission();
 
     const loadProfile = async () => {
       const user = auth.currentUser;
@@ -172,18 +194,36 @@ export default function EditProfile() {
     loadProfile();
   }, []);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: false,
-      quality: 1,
-    });
+  const pickImage = async (useCamera: boolean) => {
+    const allowed = useCamera
+      ? await requestCameraPermission()
+      : await requestLibraryPermission();
+    if (!allowed) return;
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          quality: 1,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: false,
+          quality: 1,
+        });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      const selected = result.assets[0];
-      setEditorImage(selected.uri);
+      setEditorImage(result.assets[0].uri);
       setEditorVisible(true);
     }
+  };
+
+  const openPhotoSourcePicker = () => {
+    setPhotoSourceVisible(true);
+  };
+
+  const choosePhotoSource = (useCamera: boolean) => {
+    setPhotoSourceVisible(false);
+    void pickImage(useCamera);
   };
 
   const rotateLeft = async () => {
@@ -344,6 +384,11 @@ export default function EditProfile() {
           profileImageUrl = await getDownloadURL(objectRef);
         } catch (e) {
           console.log("Profile image upload failed:", e);
+          Alert.alert(
+            "Photo upload failed",
+            "Could not upload your profile picture. Check your connection and try again."
+          );
+          return;
         }
       }
 
@@ -360,6 +405,18 @@ export default function EditProfile() {
         activityLevel: pickedActivity?.key ?? null,
         activityMultiplier: pickedActivity?.multiplier ?? null,
       });
+
+      await saveHomeUserCache(user.uid, {
+        name: userName.trim().slice(0, 14),
+        profileImage:
+          typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")
+            ? profileImageUrl
+            : null,
+      });
+
+      if (typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")) {
+        await syncAuthorProfileImageOnPosts(profileImageUrl).catch(() => {});
+      }
 
       Alert.alert(
         "Profile Updated",
@@ -407,7 +464,7 @@ export default function EditProfile() {
 
         <View className="items-center mb-6">
           <View className="relative">
-            <Pressable onPress={pickImage}>
+            <Pressable onPress={openPhotoSourcePicker}>
               <View
                 className="w-36 h-36 rounded-full border-4 items-center justify-center overflow-hidden"
                 style={{ borderColor: theme.accentSoft, backgroundColor: theme.rowBg }}
@@ -427,7 +484,7 @@ export default function EditProfile() {
             </Pressable>
 
             <Pressable
-              onPress={pickImage}
+              onPress={openPhotoSourcePicker}
               className="absolute bottom-1 right-1 w-11 h-11 rounded-full items-center justify-center border-2"
               style={{ backgroundColor: theme.accent, borderColor: theme.cardBg }}
             >
@@ -436,7 +493,7 @@ export default function EditProfile() {
           </View>
 
           <ThemedText variant="secondary" className="text-sm mt-3 mb-3">
-            Tap photo icon to change profile picture
+            Tap photo to use camera or gallery
           </ThemedText>
 
           <Pressable
@@ -756,6 +813,66 @@ export default function EditProfile() {
           </Text>
         </Pressable>
       </View>
+
+      <Modal
+        visible={photoSourceVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoSourceVisible(false)}
+      >
+        <View className="flex-1 items-center justify-center" style={{ backgroundColor: theme.modalOverlay }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
+            onPress={() => setPhotoSourceVisible(false)}
+            style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View
+            className="rounded-2xl px-4 pt-4 pb-2"
+            style={[
+              modalCardStyle,
+              {
+                width: 300,
+                maxWidth: "84%",
+              },
+            ]}
+          >
+            <ThemedText className="text-base font-extrabold mb-3">
+              Change profile picture
+            </ThemedText>
+
+            <View className="items-end pr-1">
+              <Pressable
+                onPress={() => choosePhotoSource(true)}
+                className="py-2.5 px-1"
+                hitSlop={4}
+              >
+                <ThemedText variant="accent" className="text-[15px] font-bold text-right">
+                  Take Photo
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => choosePhotoSource(false)}
+                className="py-2.5 px-1"
+                hitSlop={4}
+              >
+                <ThemedText variant="accent" className="text-[15px] font-bold text-right">
+                  Choose from Gallery
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => setPhotoSourceVisible(false)}
+                className="py-2.5 px-1 mb-1"
+                hitSlop={4}
+              >
+                <ThemedText variant="muted" className="text-[15px] font-bold text-right">
+                  Cancel
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={editorVisible} animationType="slide" transparent={false}>
         <View className="flex-1" style={{ backgroundColor: "#000000" }}>

@@ -32,6 +32,7 @@ import {
 } from "@/lib/mealLogHistory";
 import { logMealFood } from "@/lib/mealLogService";
 import { fetchFoodByBarcode, type ScannedFoodProduct } from "@/lib/openFoodFacts";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,10 +42,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
-    Dimensions,
     FlatList,
     Image,
-    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -414,13 +413,17 @@ function MealLogSection({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { segmentTrackStyle, segmentActiveStyle } = useThemedScreen();
-  const scrollRef = useRef<ScrollView>(null);
+  const { scrollRef, scrollFieldIntoView, scrollBottomPad, keyboardHeight, onScroll } =
+    useScrollFieldAboveKeyboard(160, {
+      gapAboveKeyboard: 28,
+      // Include keyboard height in padding so the form can scroll above it.
+      withKeyboardAvoidingView: false,
+    });
   const foodNameRef = useRef<TextInput>(null);
   const foodNameWrapRef = useRef<View>(null);
   const caloriesWrapRef = useRef<View>(null);
-  const scrollYRef = useRef(0);
-  const pendingScrollWrapRef = useRef<View | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const macrosWrapRef = useRef<View>(null);
+  const descriptionWrapRef = useRef<View>(null);
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
@@ -441,30 +444,6 @@ function MealLogSection({
   const [detailItem, setDetailItem] = useState<MealHistoryEntry | null>(null);
   const [subTab, setSubTab] = useState<"log" | "history">("log");
 
-  const scrollFieldIntoView = useCallback(
-    (wrapRef: React.RefObject<View | null>) => {
-      pendingScrollWrapRef.current = wrapRef.current;
-      const run = () => {
-        const wrap = pendingScrollWrapRef.current;
-        if (!wrap) return;
-        wrap.measureInWindow((_x, y, _w, h) => {
-          const kb = keyboardHeight > 0 ? keyboardHeight : 280;
-          const screenHeight = Dimensions.get("window").height;
-          const fieldBottom = y + h;
-          const visibleBottom = screenHeight - kb - 16;
-          if (fieldBottom > visibleBottom) {
-            scrollRef.current?.scrollTo({
-              y: scrollYRef.current + (fieldBottom - visibleBottom),
-              animated: true,
-            });
-          }
-        });
-      };
-      setTimeout(run, Platform.OS === "ios" ? 80 : 180);
-    },
-    [keyboardHeight]
-  );
-
   const focusFoodNameField = useCallback(() => {
     setSubTab("log");
     setTimeout(() => {
@@ -472,13 +451,7 @@ function MealLogSection({
       foodNameRef.current?.focus();
       scrollFieldIntoView(foodNameWrapRef);
     }, Platform.OS === "ios" ? 100 : 250);
-  }, [scrollFieldIntoView]);
-
-  const scrollToField = useCallback(() => {
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, Platform.OS === "ios" ? 50 : 150);
-  }, []);
+  }, [scrollFieldIntoView, scrollRef]);
 
   const runPhotoAnalysis = useCallback(async (uri: string) => {
     if (!isGeminiConfigured()) {
@@ -511,43 +484,87 @@ function MealLogSection({
   const handleMealPhotoChange = useCallback(
     async (uri: string | null) => {
       setImageUri(uri);
-      if (!uri || logMode !== "ai") return;
+      if (!uri) {
+        if (logMode === "ai") {
+          setFoodName("");
+          setCaloriesText("");
+          setProteinText("");
+          setCarbsText("");
+          setFatText("");
+          setDescriptionSections([""]);
+        }
+        return;
+      }
+      if (logMode !== "ai") return;
       await runPhotoAnalysis(uri);
     },
     [logMode, runPhotoAnalysis]
   );
 
-  const handleLogModeChange = useCallback(
-    (mode: "manual" | "ai") => {
-      setLogMode(mode);
-      if (mode === "ai" && imageUri && isGeminiConfigured()) {
-        void runPhotoAnalysis(imageUri);
-      }
-    },
-    [imageUri, runPhotoAnalysis]
-  );
-
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      pendingScrollWrapRef.current = null;
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
+  const clearLogFormFields = useCallback(() => {
+    setFoodName("");
+    setCaloriesText("");
+    setProteinText("");
+    setCarbsText("");
+    setFatText("");
+    setDescriptionSections([""]);
+    setImageUri(null);
   }, []);
 
-  useEffect(() => {
-    if (keyboardHeight > 0 && pendingScrollWrapRef.current) {
-      scrollFieldIntoView({ current: pendingScrollWrapRef.current });
-    }
-  }, [keyboardHeight, scrollFieldIntoView]);
+  const isLogFormBlank = useCallback(() => {
+    const hasDescription = descriptionSections.some((s) => s.trim().length > 0);
+    return (
+      !imageUri &&
+      !foodName.trim() &&
+      !caloriesText.trim() &&
+      !proteinText.trim() &&
+      !carbsText.trim() &&
+      !fatText.trim() &&
+      !hasDescription
+    );
+  }, [
+    imageUri,
+    foodName,
+    caloriesText,
+    proteinText,
+    carbsText,
+    fatText,
+    descriptionSections,
+  ]);
+
+  const handleLogModeChange = useCallback(
+    (mode: "manual" | "ai") => {
+      if (mode === logMode) return;
+      if (mode === "ai" && !isGeminiConfigured()) return;
+
+      const applySwitch = () => {
+        clearLogFormFields();
+        setLogMode(mode);
+      };
+
+      if (isLogFormBlank()) {
+        applySwitch();
+        return;
+      }
+
+      const switchingToAi = mode === "ai";
+      Alert.alert(
+        switchingToAi ? "Switch to AI analyse?" : "Switch to Manual?",
+        switchingToAi
+          ? "Switching will clear any meal details you entered. Continue?"
+          : "Switching will clear the analysed photo and filled meal details. Continue?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch",
+            style: "destructive",
+            onPress: applySwitch,
+          },
+        ]
+      );
+    },
+    [logMode, clearLogFormFields, isLogFormBlank]
+  );
 
   const refreshHistory = useCallback(async (uid: string | null) => {
     setHistoryLoading(true);
@@ -662,13 +679,7 @@ function MealLogSection({
   };
 
   const clearLogForm = () => {
-    setFoodName("");
-    setCaloriesText("");
-    setProteinText("");
-    setCarbsText("");
-    setFatText("");
-    setDescriptionSections([""]);
-    setImageUri(null);
+    clearLogFormFields();
     setMealType("breakfast");
   };
 
@@ -777,14 +788,14 @@ function MealLogSection({
   return (
     <View className="flex-1">
       <View className="px-3 mb-4">
-        <View className="rounded-full p-1 flex-row" style={segmentTrackStyle}>
+        <View className="rounded-full p-1.5 flex-row" style={segmentTrackStyle}>
           <Pressable
             onPress={() => setSubTab("log")}
-            className="flex-1 rounded-full py-2.5 items-center"
+            className="flex-1 rounded-full py-3 items-center"
             style={subTab === "log" ? segmentActiveStyle : undefined}
           >
             <Text
-              className="text-sm font-extrabold"
+              className="text-base font-extrabold"
               style={{ color: subTab === "log" ? theme.accentText : theme.textMuted }}
             >
               Log meal
@@ -792,11 +803,11 @@ function MealLogSection({
           </Pressable>
           <Pressable
             onPress={() => setSubTab("history")}
-            className="flex-1 rounded-full py-2.5 items-center"
+            className="flex-1 rounded-full py-3 items-center"
             style={subTab === "history" ? segmentActiveStyle : undefined}
           >
             <Text
-              className="text-sm font-extrabold"
+              className="text-base font-extrabold"
               style={{ color: subTab === "history" ? theme.accentText : theme.textMuted }}
             >
               History
@@ -808,19 +819,20 @@ function MealLogSection({
       {subTab === "log" ? (
         <KeyboardAvoidingView
           className="flex-1"
-          behavior="padding"
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 100 : 0}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 88 : 0}
         >
           <ScrollView
             ref={scrollRef}
             className="flex-1 px-3"
             contentContainerStyle={{
-              paddingBottom: Math.max(keyboardHeight, insets.bottom) + 32,
+              paddingBottom: scrollBottomPad + (keyboardHeight > 0 ? 24 : 0),
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
             onScroll={(event) => {
-              scrollYRef.current = event.nativeEvent.contentOffset.y;
+              onScroll(event.nativeEvent.contentOffset.y);
             }}
             scrollEventThrottle={16}
           >
@@ -879,7 +891,7 @@ function MealLogSection({
                 />
               </View>
 
-              <View className="mb-3">
+              <View ref={macrosWrapRef} className="mb-3">
                 <ThemedText variant="muted" className="text-xs mb-2">
                   Macros (optional)
                 </ThemedText>
@@ -891,7 +903,7 @@ function MealLogSection({
                     <TextInput
                       value={proteinText}
                       onChangeText={setProteinText}
-                      onFocus={scrollToField}
+                      onFocus={() => scrollFieldIntoView(macrosWrapRef)}
                       keyboardType="decimal-pad"
                       className="rounded-xl px-3 py-3 text-base"
                       style={inputStyle}
@@ -906,7 +918,7 @@ function MealLogSection({
                     <TextInput
                       value={carbsText}
                       onChangeText={setCarbsText}
-                      onFocus={scrollToField}
+                      onFocus={() => scrollFieldIntoView(macrosWrapRef)}
                       keyboardType="decimal-pad"
                       className="rounded-xl px-3 py-3 text-base"
                       style={inputStyle}
@@ -921,7 +933,7 @@ function MealLogSection({
                     <TextInput
                       value={fatText}
                       onChangeText={setFatText}
-                      onFocus={scrollToField}
+                      onFocus={() => scrollFieldIntoView(macrosWrapRef)}
                       keyboardType="decimal-pad"
                       className="rounded-xl px-3 py-3 text-base"
                       style={inputStyle}
@@ -932,14 +944,16 @@ function MealLogSection({
                 </View>
               </View>
 
-              <MealDescriptionSections
-                sections={descriptionSections}
-                onChange={setDescriptionSections}
-                onFocus={scrollToField}
-                inputStyle={inputStyle}
-                placeholderColor={placeholderColor}
-                theme={theme}
-              />
+              <View ref={descriptionWrapRef}>
+                <MealDescriptionSections
+                  sections={descriptionSections}
+                  onChange={setDescriptionSections}
+                  onFocus={() => scrollFieldIntoView(descriptionWrapRef)}
+                  inputStyle={inputStyle}
+                  placeholderColor={placeholderColor}
+                  theme={theme}
+                />
+              </View>
 
               <Pressable
                 onPress={logFromForm}

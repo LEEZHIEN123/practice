@@ -1,13 +1,15 @@
 import { Pressable } from "@/components/Pressable";
 import {
-    ProfileScreenHeader,
-    ThemedCard,
-    ThemedScreen,
-    ThemedText,
-    useProfileCardStyles,
+  ProfileScreenHeader,
+  ThemedCard,
+  ThemedScreen,
+  ThemedText,
+  useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
+import { useThemedScreen } from "@/lib/useThemedScreen";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import {
   buildLatestWeightByDay,
   buildWeightBucketSeries,
@@ -17,26 +19,24 @@ import {
   syncWeightAutoFillAtMidnight,
   type WeightLogRow,
 } from "@/lib/weightAutoFill";
-import { useThemedScreen } from "@/lib/useThemedScreen";
-import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDocs,
-    increment,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    Timestamp,
-    updateDoc,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  increment,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, ScrollView, TextInput, View } from "react-native";
@@ -1369,7 +1369,9 @@ export default function ProgressDetailsScreen() {
               <View className="flex-row items-center justify-between gap-3">
                 <View className="flex-1 pr-2">
                   <ThemedText className="text-base tracking-[0.12em] font-extrabold">WORKOUT RECORD</ThemedText>
-                  <ThemedText variant="muted" className="text-xs font-bold mt-1">{title}</ThemedText>
+                  <ThemedText variant="secondary" className="text-sm font-extrabold mt-1.5">
+                    {title}
+                  </ThemedText>
                   {manageMode ? (
                     <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
                       Tap trash to delete
@@ -1704,7 +1706,9 @@ export default function ProgressDetailsScreen() {
               <View className="flex-row items-center justify-between gap-3">
                 <View className="flex-1 pr-2">
                   <ThemedText className="text-base tracking-[0.12em] font-extrabold">MEAL RECORD</ThemedText>
-                  <ThemedText variant="muted" className="text-xs font-bold mt-1">{title}</ThemedText>
+                  <ThemedText variant="secondary" className="text-sm font-extrabold mt-1.5">
+                    {title}
+                  </ThemedText>
                   {manageMode ? (
                     <ThemedText variant="accent" className="text-xs font-extrabold mt-1">
                       Tap trash to delete

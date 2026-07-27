@@ -102,7 +102,8 @@ export function ReReviewReasonModal({ visible, onClose, onSubmit }: ReReviewReas
               <Pressable
                 onPress={() => void handleSubmit()}
                 disabled={submitting}
-                className="flex-1 rounded-full py-3.5 items-center bg-[#52B69A]"
+                className="flex-1 rounded-full py-3.5 items-center"
+                style={{ backgroundColor: theme.accent }}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />

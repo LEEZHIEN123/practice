@@ -78,6 +78,7 @@ import {
     isSupportAdminPlaceholder,
     loadFriendRelations,
     loadLikerProfiles,
+    loadProfileImageMap,
     rejectFriendRequest,
     resolveFriendRequestNotificationByRequestId,
     sendFriendRequest,
@@ -282,6 +283,7 @@ export default function CommunityScreen() {
 
   const [posts, setPosts] = useState<CommunityPost[]>(bootstrap.posts);
   const [postsHydrated, setPostsHydrated] = useState(bootstrap.postsHydrated);
+  const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
   const [friendRelations, setFriendRelations] = useState<Record<string, FriendRelation>>({});
   const [chats, setChats] = useState<ChatConversation[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -473,6 +475,22 @@ export default function CommunityScreen() {
       handleFirestoreError
     );
   }, [currentUserId, handleFirestoreError]);
+
+  /** Prefer live users/{uid}.profileImage so updated photos show on old posts. */
+  useEffect(() => {
+    const authorIds = [...new Set(posts.map((p) => p.authorId).filter(Boolean))];
+    if (authorIds.length === 0) {
+      setAuthorAvatarById({});
+      return;
+    }
+    let cancelled = false;
+    void loadProfileImageMap(authorIds).then((map) => {
+      if (!cancelled) setAuthorAvatarById(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [posts]);
 
   useEffect(() => {
     const openPostId = params.openPostId ? String(params.openPostId) : "";
@@ -1182,7 +1200,13 @@ export default function CommunityScreen() {
                     >
                     <View className="flex-row items-center">
                         <Pressable onPress={() => void openUserProfile(post.authorId)}>
-                          <ProfileAvatar uri={post.authorProfileImage} />
+                          <ProfileAvatar
+                            uri={
+                              (isOwnPost ? myProfileImage : null) ??
+                              authorAvatarById[post.authorId] ??
+                              post.authorProfileImage
+                            }
+                          />
                         </Pressable>
                         <Pressable
                           onPress={() => void openUserProfile(post.authorId)}
@@ -1315,6 +1339,7 @@ export default function CommunityScreen() {
                         currentUserId={currentUserId}
                         adminUid={adminUid}
                         friendIds={friendIdSet}
+                        authorAvatarById={authorAvatarById}
                         onSeeMore={() => openPostDetail(post.id)}
                         onOpenProfile={(userId) => void openUserProfile(userId)}
                       />

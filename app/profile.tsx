@@ -9,10 +9,12 @@ import {
   deleteAccountAfterReauth,
   reauthenticateWithPassword,
 } from "@/lib/deleteUserAccount";
+import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { subscribeProfileWorkoutStats } from "@/lib/profileStats";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import {
   bmiBandKey,
+  buildWorkoutPlanArchiveEntry,
   calcBmi,
   pickOrGenerateWorkoutPlanForBand,
   type PlanDuration,
@@ -30,7 +32,7 @@ import {
 } from "@/lib/nutritionPlan";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
+import { signOut, updatePassword } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
@@ -77,6 +79,14 @@ export default function ProfileScreen() {
   const [deletePassword, setDeletePassword] = useState("");
   const [showDeletePassword, setShowDeletePassword] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [changePasswordVisible, setChangePasswordVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [appearanceVisible, setAppearanceVisible] = useState(false);
   const [profileViewerVisible, setProfileViewerVisible] = useState(false);
 
@@ -184,12 +194,13 @@ export default function ProfileScreen() {
               const desiredDuration = data?.planDuration as PlanDuration | undefined;
 
               if (desiredDuration && bmi) {
-                const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, newKey, desiredDuration);
+                const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, newKey, desiredDuration).plan;
                 const band = bmiBandKey(bmi);
                 updates.planDuration = plan.duration;
                 updates.planDurationChosenAt = serverTimestamp();
                 updates.activeWorkoutPlan = plan;
-                updates[workoutPlansByBmiGoalField(band, newKey, plan.duration)] = plan;
+                updates[workoutPlansByBmiGoalField(band, newKey, plan.duration)] =
+                  buildWorkoutPlanArchiveEntry(plan, null, null);
               }
 
               const existingNutritionPlan =
@@ -293,6 +304,62 @@ export default function ProfileScreen() {
     setShowDeletePassword(false);
   };
 
+  const closeChangePasswordModal = () => {
+    setChangePasswordVisible(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const handleChangePassword = async () => {
+    const user = auth.currentUser;
+    if (!user?.email) {
+      Alert.alert(
+        "Cannot change password",
+        "This account cannot change password from the app. Please contact support."
+      );
+      return;
+    }
+    if (!currentPassword.trim()) {
+      Alert.alert("Password required", "Please enter your current password.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert("Weak password", "New password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Mismatch", "New passwords do not match.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      Alert.alert("Same password", "Choose a new password that is different from your current one.");
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      await reauthenticateWithPassword(user, currentPassword.trim());
+      await updatePassword(user, newPassword);
+      closeChangePasswordModal();
+      Alert.alert("Password updated", "Your password has been changed successfully.");
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+        Alert.alert("Wrong password", "Current password is incorrect.");
+      } else if (code === "auth/weak-password") {
+        Alert.alert("Weak password", "Please choose a stronger password.");
+      } else {
+        Alert.alert("Error", firebaseAuthErrorMessage(e));
+      }
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const handleDeletePasswordContinue = async () => {
     const user = auth.currentUser;
     if (!user?.email) {
@@ -372,6 +439,7 @@ export default function ProfileScreen() {
       >
         <ProfileScreenHeader
           title="Profile"
+          titleClassName="text-3xl"
           onBack={() => {
             // Tab switches use replace(), so router.back() can leave the app
             // (e.g. launch/login). Return to the previous main tab instead.
@@ -552,6 +620,25 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
+            onPress={() => setChangePasswordVisible(true)}
+            className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
+            style={rowStyle}
+          >
+            <View className="flex-row items-center flex-1">
+              <View
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="key-outline" size={20} color={theme.accent} />
+              </View>
+              <Text className="text-base font-bold ml-3" style={{ color: theme.textPrimary }}>
+                Change password
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={theme.iconMuted} />
+          </Pressable>
+
+          <Pressable
             onPress={() => setDeletePasswordModal(true)}
             className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-6 shadow-sm"
             style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder, borderWidth: 1 }}
@@ -692,6 +779,126 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      <Modal
+        visible={changePasswordVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !changingPassword && closeChangePasswordModal()}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1"
+        >
+          <Pressable
+            className="flex-1 bg-black/50 justify-center px-6"
+            onPress={() => !changingPassword && closeChangePasswordModal()}
+          >
+            <Pressable
+              className="rounded-3xl p-6"
+              style={{ backgroundColor: theme.modalBg, borderColor: theme.cardBorder, borderWidth: 1 }}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text className="text-lg font-extrabold" style={{ color: theme.textPrimary }}>
+                Change password
+              </Text>
+              <Text className="text-sm mt-2 leading-5" style={{ color: theme.textMuted }}>
+                Enter your current password, then choose a new one.
+              </Text>
+
+              {(
+                [
+                  {
+                    label: "Current password",
+                    value: currentPassword,
+                    setValue: setCurrentPassword,
+                    show: showCurrentPassword,
+                    setShow: setShowCurrentPassword,
+                  },
+                  {
+                    label: "New password",
+                    value: newPassword,
+                    setValue: setNewPassword,
+                    show: showNewPassword,
+                    setShow: setShowNewPassword,
+                  },
+                  {
+                    label: "Confirm new password",
+                    value: confirmPassword,
+                    setValue: setConfirmPassword,
+                    show: showConfirmPassword,
+                    setShow: setShowConfirmPassword,
+                  },
+                ] as const
+              ).map((field) => (
+                <View key={field.label} className="mt-4">
+                  <Text className="text-xs font-bold mb-1.5 ml-1" style={{ color: theme.textMuted }}>
+                    {field.label}
+                  </Text>
+                  <View
+                    className="rounded-2xl pl-4 pr-2 py-1 flex-row items-center"
+                    style={{
+                      backgroundColor: theme.rowBg,
+                      borderColor: theme.cardBorder,
+                      borderWidth: 1,
+                    }}
+                  >
+                    <TextInput
+                      value={field.value}
+                      onChangeText={field.setValue}
+                      secureTextEntry={!field.show}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholder={field.label}
+                      placeholderTextColor={theme.textMuted}
+                      editable={!changingPassword}
+                      className="flex-1 py-3 pr-2 text-base"
+                      style={{ color: theme.textPrimary }}
+                    />
+                    <Pressable
+                      onPress={() => field.setShow((v) => !v)}
+                      disabled={changingPassword}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      className="p-2 rounded-xl"
+                    >
+                      <Ionicons
+                        name={field.show ? "eye-off-outline" : "eye-outline"}
+                        size={22}
+                        color={theme.iconMuted}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+
+              <View className="flex-row gap-3 mt-5">
+                <Pressable
+                  onPress={closeChangePasswordModal}
+                  disabled={changingPassword}
+                  className="flex-1 py-3.5 rounded-2xl items-center"
+                  style={{ backgroundColor: theme.rowBg }}
+                >
+                  <Text className="font-bold" style={{ color: theme.textSecondary }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleChangePassword()}
+                  disabled={changingPassword}
+                  className="flex-1 py-3.5 rounded-2xl items-center justify-center active:opacity-90"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  {changingPassword ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="font-bold text-white">Update</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal

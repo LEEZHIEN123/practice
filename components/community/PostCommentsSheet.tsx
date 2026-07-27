@@ -8,6 +8,7 @@ import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import {
   addComment,
   deleteComment,
+  loadProfileImageMap,
   subscribeComments,
   threadedComments,
 } from "@/lib/communityService";
@@ -73,6 +74,7 @@ export function PostCommentsSheet({
   const { cardStyle, theme } = useThemedScreen();
   const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [comments, setComments] = useState<CommunityComment[]>([]);
+  const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [menuComment, setMenuComment] = useState<CommunityComment | null>(null);
@@ -96,8 +98,19 @@ export function PostCommentsSheet({
       setReplyingTo(null);
       setMenuComment(null);
       setText("");
+      setAuthorAvatarById({});
+      return;
     }
-  }, [visible]);
+    const ids = [...new Set(comments.map((c) => c.authorId).filter(Boolean))];
+    if (ids.length === 0) return;
+    let cancelled = false;
+    void loadProfileImageMap(ids).then((map) => {
+      if (!cancelled) setAuthorAvatarById(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, comments]);
 
   const handleSend = async () => {
     if (!post || !text.trim()) return;
@@ -216,10 +229,14 @@ export function PostCommentsSheet({
                   <View className="flex-row items-center">
                     {onOpenProfile ? (
                       <Pressable onPress={() => onOpenProfile(comment.authorId)}>
-                        <ProfileAvatar uri={comment.authorProfileImage} />
+                        <ProfileAvatar
+                          uri={authorAvatarById[comment.authorId] ?? comment.authorProfileImage}
+                        />
                       </Pressable>
                     ) : (
-                      <ProfileAvatar uri={comment.authorProfileImage} />
+                      <ProfileAvatar
+                        uri={authorAvatarById[comment.authorId] ?? comment.authorProfileImage}
+                      />
                     )}
                     <View className="flex-1 ml-3">
                       <View className="flex-row items-start justify-between gap-2">
@@ -297,7 +314,7 @@ export function PostCommentsSheet({
                     <ThemedText variant="secondary" className="text-sm mt-2 leading-6">
                       {comment.text}
                     </ThemedText>
-                    <ThemedText className="text-xs font-bold mt-2" style={{ color: "#2563eb" }}>
+                    <ThemedText className="text-xs font-bold mt-2" style={{ color: theme.accentText }}>
                       Reply
                     </ThemedText>
                   </Pressable>
@@ -380,7 +397,7 @@ export function PostCommentsSheet({
                 onPress={() => void handleSend()}
                 disabled={sending || !text.trim()}
                 className="w-11 h-11 rounded-full items-center justify-center"
-                style={{ backgroundColor: text.trim() ? "#52B69A" : theme.iconMuted }}
+                style={{ backgroundColor: text.trim() ? theme.accent : theme.iconMuted }}
               >
                 {sending ? (
                   <ActivityIndicator color="white" size="small" />

@@ -1,6 +1,7 @@
 import { AdminCommunityHub } from "@/components/community/AdminCommunityHub";
 import { ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
 import { checkIsAdmin, isAdminEmail, syncAdminConfig } from "@/lib/communityService";
+import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
@@ -14,6 +15,7 @@ function canEnterAdminImmediately(): boolean {
 
 export default function AdminScreen() {
   const router = useRouter();
+  const { theme } = useThemedScreen();
   const [ready, setReady] = useState(canEnterAdminImmediately);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function AdminScreen() {
   if (!ready) {
     return (
       <ThemedScreen className="items-center justify-center">
-        <ActivityIndicator size="large" color="#52B69A" />
+        <ActivityIndicator size="large" color={theme.accent} />
         <ThemedText variant="muted" className="text-sm mt-3">
           Loading admin panel…
         </ThemedText>

@@ -1,16 +1,22 @@
-/** Curated food images — custom local assets when available, else Unsplash. */
+/**
+ * Food images for personalized nutrition guidance and All Nutrition library.
+ *
+ * Personalized nutrition resolution order:
+ * 1. All Nutrition recipe dataset — only when the recipe name confidently matches
+ * 2. Curated Unsplash License URL — only when the meal name matches a dish keyword
+ * 3. No image (UI shows a blank placeholder + message)
+ */
 
-import { Image } from "react-native";
-import { FOOD_IMAGE_ASSETS, type FoodImageAssetKey } from "./foodImageAssets";
+import { FOOD_INDEX } from "./foodDataset";
 
+/** Unsplash License fallback used by All Nutrition when a dataset URL is missing. */
 export const FOOD_IMAGE_FALLBACK =
   "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80";
 
 type CuratedEntry = {
   keys: string[];
+  /** Must be an `images.unsplash.com` Unsplash License URL. */
   url: string;
-  /** Prefer a custom generated asset that matches the dish type. */
-  assetKey?: FoodImageAssetKey;
 };
 
 /** When the meal name contains these, keys that also contain them outrank ingredients. */
@@ -93,7 +99,6 @@ const CURATED: CuratedEntry[] = [
   {
     keys: ["overnight oats", "oatmeal", "porridge", "rolled oats", "oat"],
     url: "https://images.unsplash.com/photo-1650294411710-c43f289dd5dc?auto=format&fit=crop&w=800&q=80",
-    assetKey: "oatmeal",
   },
 
   // Pancakes / waffles before generic fruit
@@ -114,7 +119,6 @@ const CURATED: CuratedEntry[] = [
       "tofu breakfast",
     ],
     url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
-    assetKey: "tofu",
   },
 
   // Eggs
@@ -132,14 +136,12 @@ const CURATED: CuratedEntry[] = [
       "egg",
     ],
     url: "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80",
-    assetKey: "eggs",
   },
 
   // Yogurt / dairy snacks
   {
     keys: ["greek yogurt", "yogurt", "yoghurt", "parfait", "cottage cheese"],
     url: "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=800&q=80",
-    assetKey: "yogurt",
   },
 
   // Smoothies / shakes
@@ -162,7 +164,6 @@ const CURATED: CuratedEntry[] = [
       "sandwich",
     ],
     url: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80",
-    assetKey: "wrap",
   },
 
   // Salads
@@ -188,26 +189,22 @@ const CURATED: CuratedEntry[] = [
   {
     keys: ["lentil soup", "vegetable soup", "chicken soup", "black bean soup", "soup", "stew", "chowder", "broth"],
     url: "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80",
-    assetKey: "soup",
   },
   {
     keys: ["turkey chili", "vegetarian chili", "vegan chili", "chili"],
     url: "https://images.unsplash.com/photo-1638324912294-8efe1c2c8786?auto=format&fit=crop&w=800&q=80",
-    assetKey: "chili",
   },
 
   // Curry (distinct from chili)
   {
     keys: ["chickpea curry", "lentil curry", "vegetable curry", "curry"],
     url: "https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80",
-    assetKey: "curry",
   },
 
   // Stir-fry / fajitas / skewers
   {
     keys: ["stir-fry", "stir fry", "stirfry", "fajita", "skewer"],
     url: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80",
-    assetKey: "stirfry",
   },
 
   // Pasta / noodles / lasagna / meatballs with pasta
@@ -226,7 +223,6 @@ const CURATED: CuratedEntry[] = [
   {
     keys: ["black bean burger", "lentil burger", "veggie burger", "bean burger", "vegan burger", "vegan black bean"],
     url: "https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=800&q=80",
-    assetKey: "veggieBurger",
   },
   {
     keys: ["burger", "cheeseburger"],
@@ -249,41 +245,34 @@ const CURATED: CuratedEntry[] = [
       "hummus",
     ],
     url: "https://images.unsplash.com/photo-1571066811602-fff401a37f4b?auto=format&fit=crop&w=800&q=80",
-    assetKey: "hummus",
   },
 
   // Wraps / burritos / toast
   {
     keys: ["wrap", "burrito", "taco", "quesadilla", "bagel"],
     url: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80",
-    assetKey: "wrap",
   },
   {
     keys: ["avocado toast", "toast with avocado", "toast"],
     url: "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80",
-    assetKey: "avocadoToast",
   },
 
   // Proteins before generic rice/quinoa sides
   {
     keys: ["salmon", "tuna", "shrimp", "prawn", "seafood", "cod", "tilapia", "fish"],
     url: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80",
-    assetKey: "salmon",
   },
   {
     keys: ["chicken breast", "grilled chicken", "baked chicken", "chicken"],
     url: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80",
-    assetKey: "chicken",
   },
   {
     keys: ["turkey meatball", "turkey sandwich", "turkey breast", "turkey"],
     url: "https://images.unsplash.com/photo-1574672280600-4accfa113ce9?auto=format&fit=crop&w=800&q=80",
-    assetKey: "turkey",
   },
   {
     keys: ["steak", "roast beef", "beef stew", "beef stir", "beef"],
     url: "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80",
-    assetKey: "steak",
   },
   {
     keys: ["pork", "bacon", "ham"],
@@ -292,26 +281,22 @@ const CURATED: CuratedEntry[] = [
   {
     keys: ["tempeh", "tofu"],
     url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
-    assetKey: "tofu",
   },
 
   // Rice / grain bowls (after protein mains)
   {
     keys: ["quinoa breakfast", "quinoa porridge", "quinoa bowl", "rice bowl", "grain bowl", "burrito bowl", "bowl", "risotto", "pilaf"],
     url: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80",
-    assetKey: "bowl",
   },
   {
     keys: ["brown rice", "quinoa", "rice"],
     url: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80",
-    assetKey: "bowl",
   },
 
   // Avocado (standalone)
   {
     keys: ["avocado"],
     url: "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80",
-    assetKey: "avocadoToast",
   },
 
   // Fruit + nut butter (must stay above bare peanut/almond → nuts/trail mix)
@@ -325,7 +310,6 @@ const CURATED: CuratedEntry[] = [
       "apple with almond",
     ],
     url: "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80",
-    assetKey: "applePeanutButter",
   },
   {
     keys: [
@@ -335,7 +319,6 @@ const CURATED: CuratedEntry[] = [
       "banana with almond",
     ],
     url: "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=800&q=80",
-    assetKey: "bananaPeanutButter",
   },
   {
     keys: [
@@ -351,7 +334,6 @@ const CURATED: CuratedEntry[] = [
       "nut butter",
     ],
     url: "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80",
-    assetKey: "applePeanutButter",
   },
 
   // Trail mix
@@ -371,33 +353,28 @@ const CURATED: CuratedEntry[] = [
       "nut mix",
     ],
     url: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80",
-    assetKey: "trailMix",
   },
 
   // Bars
   {
     keys: ["protein bar", "energy bar"],
     url: "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=800&q=80",
-    assetKey: "proteinBar",
   },
 
   // Popcorn
   {
     keys: ["popcorn"],
     url: "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80",
-    assetKey: "popcorn",
   },
 
   // Plain nuts
   {
     keys: ["mixed nuts", "granola", "almonds", "peanuts", "dark chocolate with almond", "nuts", "nut"],
     url: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80",
-    assetKey: "almonds",
   },
   {
     keys: ["almond", "peanut"],
     url: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80",
-    assetKey: "almonds",
   },
 
   // Fruit snacks
@@ -408,12 +385,10 @@ const CURATED: CuratedEntry[] = [
   {
     keys: ["banana"],
     url: "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=800&q=80",
-    assetKey: "bananaPeanutButter",
   },
   {
     keys: ["apple"],
     url: "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?auto=format&fit=crop&w=800&q=80",
-    assetKey: "apple",
   },
 
   // Potatoes / fries
@@ -422,9 +397,15 @@ const CURATED: CuratedEntry[] = [
     url: "https://images.unsplash.com/photo-1518013431117-eb1465fa9792?auto=format&fit=crop&w=800&q=80",
   },
 
+  // Lentil mains before generic bean / vegetable
+  {
+    keys: ["lentil loaf", "lentil soup", "lentil stew", "lentil curry", "lentil"],
+    url: "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80",
+  },
+
   // Beans / lentils / chickpeas (after soups/burgers/curries)
   {
-    keys: ["chickpea", "lentil", "black bean", "bean"],
+    keys: ["chickpea", "black bean", "bean"],
     url: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80",
   },
 
@@ -451,20 +432,10 @@ const CURATED: CuratedEntry[] = [
     keys: ["coffee", "latte", "tea", "juice"],
     url: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80",
   },
-
-  // Generic breakfast last
-  {
-    keys: ["breakfast"],
-    url: "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&fit=crop&w=800&q=80",
-  },
 ];
 
-const RELIABLE_HOSTS = new Set([
-  "images.unsplash.com",
-  "www.allrecipes.com",
-  "allrecipes.com",
-  "imagesvc.meredithcorp.io",
-]);
+/** Hosts allowed for personalized nutrition food photos (Unsplash License). */
+const UNSPLASH_HOSTS = new Set(["images.unsplash.com"]);
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -532,88 +503,376 @@ function dishTypeBoost(name: string, key: string): number {
   return boost;
 }
 
-function findBestCuratedEntry(name: string): CuratedEntry | null {
+/** Side / garnish keywords — must not outrank a main food in the meal name. */
+const SIDE_OR_GARNISH_KEYS = new Set([
+  "vegetable",
+  "veggie",
+  "fruit",
+  "berries",
+  "berry",
+  "rice",
+  "potato",
+  "cheese",
+  "cracker",
+  "bread",
+]);
+
+function nameHasDishType(name: string): boolean {
+  return DISH_TYPES.some((d) => name.includes(d)) || SECONDARY_DISH_TYPES.some((d) => name.includes(d));
+}
+
+function keyCoversNameDishType(name: string, key: string): boolean {
+  for (const dish of DISH_TYPES) {
+    if (name.includes(dish) && key.includes(dish)) return true;
+  }
+  for (const dish of SECONDARY_DISH_TYPES) {
+    if (name.includes(dish) && key.includes(dish)) return true;
+  }
+  if (key.includes("salad") && name.includes("salad") && isPrimarySalad(name)) return true;
+  return false;
+}
+
+function guidanceCuratedScore(name: string, key: string, entryIndex: number): number {
+  const trimmed = key.trim().toLowerCase();
+  let score = trimmed.length * 100 + dishTypeBoost(name, trimmed) - entryIndex;
+
+  // Never let a side garnish beat the actual dish / protein.
+  if (SIDE_OR_GARNISH_KEYS.has(trimmed)) {
+    score -= 2500;
+  }
+
+  // If the meal names a dish form, require the key to reflect that dish.
+  if (nameHasDishType(name) && !keyCoversNameDishType(name, trimmed)) {
+    // Allow compound keys like "chicken salad" / "apple with peanut".
+    const compoundOk =
+      trimmed.split(/\s+/).length >= 2 && keyMatches(name, trimmed) && dishTypeBoost(name, trimmed) >= 3000;
+    if (!compoundOk) {
+      return -1;
+    }
+  }
+
+  // Bare protein keys are fine only when the name has no dish type.
+  for (const protein of PROTEIN_MAINS) {
+    if (trimmed === protein || trimmed === `${protein}s`) {
+      if (nameHasDishType(name) && !keyCoversNameDishType(name, trimmed)) {
+        return -1;
+      }
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Curated Unsplash match for personalized nutrition — keyed to the meal name.
+ * Rejects weak side-ingredient matches that do not represent the dish.
+ */
+function findBestGuidanceCuratedEntry(name: string): CuratedEntry | null {
   const lower = String(name || "").toLowerCase();
   if (!lower.trim()) return null;
 
   let best: CuratedEntry | null = null;
   let bestScore = -1;
+  let bestKey = "";
 
   for (let i = 0; i < CURATED.length; i++) {
     const entry = CURATED[i]!;
     for (const key of entry.keys) {
       if (!keyMatches(lower, key)) continue;
-      const score = key.trim().length * 100 + dishTypeBoost(lower, key) - i;
+      const score = guidanceCuratedScore(lower, key, i);
+      if (score < 0) continue;
       if (score > bestScore) {
         bestScore = score;
         best = entry;
+        bestKey = key;
       }
     }
   }
 
+  // Require a minimum confidence so tiny accidental keys do not win.
+  if (bestScore < 400) return null;
+  void bestKey;
   return best;
 }
 
-function assetUri(assetKey: FoodImageAssetKey): string | null {
-  try {
-    const resolved = Image.resolveAssetSource(FOOD_IMAGE_ASSETS[assetKey]);
-    return resolved?.uri ?? null;
-  } catch {
-    return null;
-  }
+function findBestCuratedEntry(name: string): CuratedEntry | null {
+  return findBestGuidanceCuratedEntry(name);
 }
 
-export function curatedFoodImageUrl(name: string): string {
-  const entry = findBestCuratedEntry(name);
-  if (!entry) return FOOD_IMAGE_FALLBACK;
-  if (entry.assetKey) {
-    const local = assetUri(entry.assetKey);
-    if (local) return local;
-  }
-  return entry.url;
+export function curatedFoodImageUrl(name: string): string | null {
+  const entry = findBestGuidanceCuratedEntry(name);
+  return entry?.url ?? null;
 }
 
-/** Prefer recipe-dataset / RECEPI.csv URL when provided; else curated local/Unsplash; else fallback. */
-export function resolveFoodImageSource(name: string, preferred?: string | null) {
-  const datasetUrl = preferred?.trim();
-  if (datasetUrl && /^https?:\/\//i.test(datasetUrl)) {
-    return { uri: datasetUrl };
-  }
-  const entry = findBestCuratedEntry(name);
-  if (entry?.assetKey) {
-    return FOOD_IMAGE_ASSETS[entry.assetKey];
-  }
-  return { uri: entry?.url ?? FOOD_IMAGE_FALLBACK };
-}
+export type ResolveFoodImageOptions = {
+  /**
+   * When true, accept any https preferred URL (e.g. All Nutrition / Allrecipes).
+   * Used by the All Nutrition library only.
+   */
+  allowCommercialHosts?: boolean;
+};
 
-export function isReliableFoodImageUrl(url: string | null | undefined): boolean {
-  if (!url || typeof url !== "string") return false;
-  // Bundled custom food photos (Metro / native asset URIs).
-  if (url.startsWith("file:") || url.startsWith("asset:") || url.includes("/assets/food/")) {
-    return true;
-  }
+function isUnsplashLicenseUrl(url: string): boolean {
   if (!/^https:\/\//i.test(url)) return false;
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return RELIABLE_HOSTS.has(host);
+    return UNSPLASH_HOSTS.has(new URL(url).hostname.toLowerCase());
   } catch {
     return false;
   }
 }
 
+const NAME_STOP_WORDS = new Set([
+  "with",
+  "and",
+  "or",
+  "a",
+  "an",
+  "the",
+  "of",
+  "in",
+  "to",
+  "for",
+  "on",
+  "fresh",
+  "homemade",
+  "easy",
+  "best",
+  "recipe",
+  "recipes",
+  "served",
+  "mixed",
+  "whole",
+  "wheat",
+  "grain",
+  "grains",
+]);
+
+const MATCH_DISH_TYPES = [
+  "overnight oats",
+  "protein shake",
+  "trail mix",
+  "french toast",
+  "stir-fry",
+  "stir fry",
+  "salad",
+  "soup",
+  "chili",
+  "curry",
+  "oatmeal",
+  "yogurt",
+  "smoothie",
+  "shake",
+  "sandwich",
+  "wrap",
+  "burger",
+  "pasta",
+  "bowl",
+  "toast",
+  "scramble",
+  "omelet",
+  "omelette",
+  "pancake",
+  "pizza",
+  "taco",
+  "burrito",
+  "hummus",
+  "popcorn",
+  "muffin",
+  "oats",
+] as const;
+
+function normalizeFoodName(name: string): string {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function foodNameTokens(name: string): string[] {
+  return normalizeFoodName(name)
+    .split(/[\s-]+/)
+    .filter((t) => t.length > 1 && !NAME_STOP_WORDS.has(t));
+}
+
+function dishTypesInName(name: string): string[] {
+  const lower = normalizeFoodName(name);
+  return MATCH_DISH_TYPES.filter((d) => lower.includes(d));
+}
+
+function allNutritionNameScore(planName: string, recipeName: string): number {
+  const pn = normalizeFoodName(planName);
+  const rn = normalizeFoodName(recipeName);
+  if (!pn || !rn) return 0;
+  if (pn === rn) return 1;
+
+  const planTokens = foodNameTokens(planName);
+  const recipeTokens = foodNameTokens(recipeName);
+  if (rn.includes(pn) && planTokens.length >= 3) return 0.98;
+  if (pn.includes(rn) && recipeTokens.length >= 3) return 0.95;
+
+  if (planTokens.length < 2 || recipeTokens.length === 0) return 0;
+  const recipeSet = new Set(recipeTokens);
+  const shared = planTokens.filter((t) => recipeSet.has(t));
+  // Every significant plan token must appear in the recipe name.
+  if (shared.length !== planTokens.length) return 0;
+
+  const planDishes = dishTypesInName(pn);
+  const recipeDishes = dishTypesInName(rn);
+  if (planDishes.length && !planDishes.every((d) => rn.includes(d))) return 0;
+  // Reject when the recipe is a specific dish form the plan name does not claim.
+  if (recipeDishes.length && !planDishes.length) return 0;
+  for (const d of recipeDishes) {
+    const covered = planDishes.some((p) => p.includes(d) || d.includes(p));
+    if (!covered) return 0;
+  }
+
+  return 0.85 + shared.length * 0.02;
+}
+
+type AllNutritionMatch = { url: string; recipeName: string; score: number };
+
+export type NutritionGuidanceImage = {
+  url: string | null;
+  source: "all_nutrition" | "unsplash" | null;
+};
+
+let allNutritionCache: { name: string; imageUrl: string }[] | null = null;
+let allNutritionExactIndex: Map<string, { name: string; imageUrl: string }> | null = null;
+const guidanceImageMemo = new Map<string, NutritionGuidanceImage>();
+
+function allNutritionEntries(): { name: string; imageUrl: string }[] {
+  if (!allNutritionCache) {
+    allNutritionCache = FOOD_INDEX.filter(
+      (f): f is typeof f & { imageUrl: string } =>
+        typeof f.imageUrl === "string" && /^https:\/\//i.test(f.imageUrl.trim())
+    ).map((f) => ({ name: f.name, imageUrl: f.imageUrl.trim() }));
+    allNutritionExactIndex = new Map(
+      allNutritionCache.map((entry) => [normalizeFoodName(entry.name), entry])
+    );
+  }
+  return allNutritionCache;
+}
+
+/** Strict name match against All Nutrition recipe titles. */
+export function matchAllNutritionImage(name: string): AllNutritionMatch | null {
+  const target = String(name || "").trim();
+  if (!target) return null;
+
+  allNutritionEntries();
+  const exact = allNutritionExactIndex?.get(normalizeFoodName(target));
+  if (exact) {
+    return { url: exact.imageUrl, recipeName: exact.name, score: 1 };
+  }
+
+  let best: AllNutritionMatch | null = null;
+  for (const entry of allNutritionCache!) {
+    const score = allNutritionNameScore(target, entry.name);
+    if (score < 0.85) continue;
+    if (!best || score > best.score) {
+      best = { url: entry.imageUrl, recipeName: entry.name, score };
+    }
+  }
+  return best;
+}
+
 /**
- * Prefer recipe-dataset `imageUrl` (from RECEPI.csv) when present.
- * Otherwise use local curated assets / Unsplash for known meal names.
+ * Personalized nutrition guidance image:
+ * All Nutrition dataset (strict name match) → Unsplash curated (name/dish match) → none.
+ * Never returns an image that does not match keywords in the meal name.
  */
-export function resolveFoodImageUrl(name: string, preferred?: string | null): string {
+export function resolveNutritionGuidanceImage(name: string): NutritionGuidanceImage {
+  const cleaned = String(name || "").trim();
+  if (!cleaned) return { url: null, source: null };
+
+  const memoKey = cleaned.toLowerCase();
+  const memoized = guidanceImageMemo.get(memoKey);
+  if (memoized) return memoized;
+
+  const allNutrition = matchAllNutritionImage(cleaned);
+  if (allNutrition) {
+    const result: NutritionGuidanceImage = { url: allNutrition.url, source: "all_nutrition" };
+    guidanceImageMemo.set(memoKey, result);
+    return result;
+  }
+  const unsplash = curatedFoodImageUrl(cleaned);
+  const result: NutritionGuidanceImage = unsplash
+    ? { url: unsplash, source: "unsplash" }
+    : { url: null, source: null };
+  guidanceImageMemo.set(memoKey, result);
+  return result;
+}
+
+/**
+ * Resolve an image source for a meal/food name.
+ * Personalized nutrition should prefer resolveNutritionGuidanceImage.
+ */
+export function resolveFoodImageSource(
+  name: string,
+  preferred?: string | null,
+  options?: ResolveFoodImageOptions
+) {
   const datasetUrl = preferred?.trim();
-  if (datasetUrl && /^https?:\/\//i.test(datasetUrl)) {
+  if (datasetUrl && /^https:\/\//i.test(datasetUrl) && options?.allowCommercialHosts) {
+    return { uri: datasetUrl };
+  }
+
+  const guidance = resolveNutritionGuidanceImage(name);
+  if (guidance.url) return { uri: guidance.url };
+  if (datasetUrl && isUnsplashLicenseUrl(datasetUrl)) {
+    return { uri: datasetUrl };
+  }
+  return { uri: FOOD_IMAGE_FALLBACK };
+}
+
+/** True for Unsplash License hosts only. */
+export function isCopyrightFriendlyFoodImageUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") return false;
+  return isUnsplashLicenseUrl(url);
+}
+
+/** @deprecated Use isCopyrightFriendlyFoodImageUrl */
+export function isReliableFoodImageUrl(url: string | null | undefined): boolean {
+  return isCopyrightFriendlyFoodImageUrl(url);
+}
+
+/**
+ * Resolve an image URL for a meal/food name.
+ * For personalized nutrition, prefer resolveNutritionGuidanceImage (may be null).
+ */
+export function resolveFoodImageUrl(
+  name: string,
+  preferred?: string | null,
+  options?: ResolveFoodImageOptions
+): string {
+  const datasetUrl = preferred?.trim();
+  if (datasetUrl && /^https:\/\//i.test(datasetUrl) && options?.allowCommercialHosts) {
     return datasetUrl;
   }
-  const entry = findBestCuratedEntry(name);
-  if (entry?.assetKey) {
-    const local = assetUri(entry.assetKey);
-    if (local) return local;
+  const guidance = resolveNutritionGuidanceImage(name);
+  if (guidance.url) return guidance.url;
+  if (datasetUrl && isUnsplashLicenseUrl(datasetUrl)) {
+    return datasetUrl;
   }
-  return entry?.url ?? FOOD_IMAGE_FALLBACK;
+  return FOOD_IMAGE_FALLBACK;
+}
+
+/**
+ * All Nutrition: always use the recipe dataset `imageUrl` when present.
+ * Does not remap through curated Unsplash matching.
+ */
+export function resolveDatasetFoodImageSource(imageUrl?: string | null) {
+  const url = imageUrl?.trim();
+  if (url && /^https:\/\//i.test(url)) {
+    return { uri: url };
+  }
+  return { uri: FOOD_IMAGE_FALLBACK };
+}
+
+export function resolveDatasetFoodImageUrl(imageUrl?: string | null): string {
+  const url = imageUrl?.trim();
+  if (url && /^https:\/\//i.test(url)) {
+    return url;
+  }
+  return FOOD_IMAGE_FALLBACK;
 }

@@ -65,10 +65,11 @@ import { auth } from "../firebaseConfig";
 import { SUPPORT_CHAT_WELCOME_MESSAGE } from "@/lib/communityTypes";
 
 function ProfileAvatar({ uri, size = 32 }: { uri: string | null; size?: number }) {
+  const { theme } = useThemedScreen();
   return (
     <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
+      className="rounded-full items-center justify-center overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: theme.accent }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
@@ -190,13 +191,14 @@ export default function CommunityChatScreen() {
   const chatName = params.name ?? "Friend";
   const chatImage = params.image ? String(params.image) : null;
   const isSupport = params.isSupport === "1";
-  const otherUserId = params.otherUserId ? String(params.otherUserId) : "";
+  const paramOtherUserId = params.otherUserId ? String(params.otherUserId) : "";
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [myDisplayName, setMyDisplayName] = useState("You");
   const [myProfileImage, setMyProfileImage] = useState<string | null>(null);
   const [participantImages, setParticipantImages] = useState<Record<string, string | null>>({});
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
+  const [resolvedOtherUserId, setResolvedOtherUserId] = useState(paramOtherUserId);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [adminUid, setAdminUid] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -216,6 +218,11 @@ export default function CommunityChatScreen() {
   const [profileData, setProfileData] = useState<Awaited<ReturnType<typeof getPublicUserProfile>> | null>(null);
   const [profileRelation, setProfileRelation] = useState<"none" | "friends" | "pending_outgoing" | "pending_incoming">("none");
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
+  const [headerAvatarUri, setHeaderAvatarUri] = useState<string | null>(
+    params.image ? String(params.image) : null
+  );
+
+  const otherUserId = paramOtherUserId || resolvedOtherUserId;
 
   const displayChatName = useMemo(
     () => displayCommunityUserName(otherUserId, chatName, adminUid),
@@ -324,14 +331,52 @@ export default function CommunityChatScreen() {
   }, [isSupportAdminUser, chatId, isAdminUser]);
 
   useEffect(() => {
+    setResolvedOtherUserId(paramOtherUserId);
+  }, [paramOtherUserId, chatId]);
+
+  useEffect(() => {
+    setHeaderAvatarUri(chatImage);
+  }, [chatImage, chatId]);
+
+  useEffect(() => {
+    if (!otherUserId) return;
+    let cancelled = false;
+    void getPublicUserProfile(otherUserId)
+      .then((profile) => {
+        if (!cancelled && profile.profileImage) {
+          setHeaderAvatarUri(profile.profileImage);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [otherUserId]);
+
+  useEffect(() => {
     if (!chatId) return;
     const unsub = subscribeChatMeta(chatId, (chat) => {
       if (!chat) return;
       setParticipantImages(chat.participantImages);
       setParticipantNames(chat.participantNames);
+      if (!paramOtherUserId && currentUserId) {
+        const other =
+          chat.participants.find((id) => id !== currentUserId) ??
+          Object.keys(chat.participantNames).find((id) => id !== currentUserId) ??
+          "";
+        if (other) setResolvedOtherUserId(other);
+      }
+      if (currentUserId) {
+        const other =
+          (paramOtherUserId ||
+            chat.participants.find((id) => id !== currentUserId) ||
+            "") as string;
+        const liveImage = other ? chat.participantImages[other] : null;
+        if (liveImage) setHeaderAvatarUri(liveImage);
+      }
     });
     return unsub;
-  }, [chatId]);
+  }, [chatId, currentUserId, paramOtherUserId]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -383,7 +428,11 @@ export default function CommunityChatScreen() {
 
   const senderImage = (senderId: string) => {
     if (senderId === currentUserId) return myProfileImage;
-    return participantImages[senderId] ?? (senderId !== currentUserId ? chatImage : null);
+    return (
+      participantImages[senderId] ??
+      (senderId === otherUserId ? headerAvatarUri : null) ??
+      chatImage
+    );
   };
 
   const cancelComposerModes = () => {
@@ -629,7 +678,7 @@ export default function CommunityChatScreen() {
               disabled={!otherUserId || otherUserId === currentUserId}
               className="flex-1 flex-row items-center ml-2 mr-2 min-w-0"
             >
-              <ProfileAvatar uri={chatImage} size={40} />
+              <ProfileAvatar uri={headerAvatarUri ?? chatImage} size={40} />
               <ThemedText className="text-xl font-extrabold flex-1 ml-3" numberOfLines={1}>
                 {displayChatName}
               </ThemedText>
@@ -707,7 +756,14 @@ export default function CommunityChatScreen() {
                 key={message.id}
                 className={`flex-row items-end gap-2 ${isMe ? "justify-end" : "justify-start"}`}
               >
-                {!isMe ? <ProfileAvatar uri={avatar} size={32} /> : null}
+                {!isMe ? (
+                  <Pressable
+                    onPress={() => void openOtherProfile()}
+                    disabled={!otherUserId || otherUserId === currentUserId}
+                  >
+                    <ProfileAvatar uri={avatar} size={32} />
+                  </Pressable>
+                ) : null}
                 <View className={`max-w-[78%] ${isMe ? "items-end" : "items-start"}`}>
                   <Pressable
                     onLongPress={() => {
@@ -967,7 +1023,7 @@ export default function CommunityChatScreen() {
         loading={profileLoading}
         isSelf={otherUserId === currentUserId}
         isSupportAdmin={isSupportAdminUser}
-        canAddFriend={!isSupportAdminUser}
+        canAddFriend={!isSupportAdminUser && !isAdminUser}
         onClose={() => {
           setProfileVisible(false);
           setProfileData(null);

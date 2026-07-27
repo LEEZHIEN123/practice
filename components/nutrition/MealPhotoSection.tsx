@@ -4,7 +4,7 @@ import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
-import { Alert, ActivityIndicator, Image, Modal, View } from "react-native";
+import { Alert, ActivityIndicator, Image, Modal, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type MealPhotoSectionProps = {
@@ -112,10 +112,10 @@ export function MealPhotoSection({
               className="absolute inset-0 rounded-2xl items-center justify-center"
               style={{ backgroundColor: "rgba(15, 23, 42, 0.55)" }}
             >
-              <ActivityIndicator color="#ffffff" size="large" />
-              <ThemedText className="text-white text-sm font-extrabold mt-3">
-                Analyzing nutrition…
-              </ThemedText>
+              <ActivityIndicator color="#9ca3af" size="large" />
+              <Text className="text-sm font-extrabold mt-3" style={{ color: "#9ca3af" }}>
+                Analysing Food
+              </Text>
             </View>
           ) : null}
           <Pressable

@@ -5,7 +5,11 @@ import { Pressable } from "@/components/Pressable";
 import { ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityComment } from "@/lib/communityTypes";
-import { subscribeComments, subscribePendingCommunityCommentIds } from "@/lib/communityService";
+import {
+  loadProfileImageMap,
+  subscribeComments,
+  subscribePendingCommunityCommentIds,
+} from "@/lib/communityService";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useEffect, useMemo, useState } from "react";
@@ -47,6 +51,7 @@ type PostCommentsPreviewProps = {
   currentUserId?: string | null;
   adminUid?: string | null;
   friendIds?: Set<string>;
+  authorAvatarById?: Record<string, string | null>;
   onSeeMore: () => void;
   onOpenProfile?: (userId: string) => void;
 };
@@ -57,12 +62,14 @@ export function PostCommentsPreview({
   currentUserId = null,
   adminUid = null,
   friendIds,
+  authorAvatarById,
   onSeeMore,
   onOpenProfile,
 }: PostCommentsPreviewProps) {
   const { theme, textPrimary } = useThemedScreen();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [pendingReviewCommentIds, setPendingReviewCommentIds] = useState<string[]>([]);
+  const [liveAvatars, setLiveAvatars] = useState<Record<string, string | null>>({});
   const friendSet = friendIds ?? new Set<string>();
 
   useEffect(() => {
@@ -75,6 +82,21 @@ export function PostCommentsPreview({
     return unsub;
   }, [postId]);
 
+  useEffect(() => {
+    const ids = [...new Set(comments.map((c) => c.authorId).filter(Boolean))];
+    if (ids.length === 0) {
+      setLiveAvatars({});
+      return;
+    }
+    let cancelled = false;
+    void loadProfileImageMap(ids).then((map) => {
+      if (!cancelled) setLiveAvatars(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [comments]);
+
   // Subscription is oldest→newest; show the latest three on the community feed.
   const preview = useMemo(() => comments.slice(-3), [comments]);
   const totalCount = Math.max(commentCount, comments.length);
@@ -86,6 +108,10 @@ export function PostCommentsPreview({
       {preview.map((comment) => {
         const isMe = Boolean(currentUserId && comment.authorId === currentUserId);
         const isFriend = !isMe && friendSet.has(comment.authorId);
+        const avatarUri =
+          liveAvatars[comment.authorId] ??
+          authorAvatarById?.[comment.authorId] ??
+          comment.authorProfileImage;
         const nameRow = (
           <CommunityAuthorName
             authorId={comment.authorId}
@@ -110,10 +136,10 @@ export function PostCommentsPreview({
             <View className="flex-row items-start">
               {onOpenProfile ? (
                 <Pressable onPress={() => onOpenProfile(comment.authorId)} hitSlop={6}>
-                  <CommentAvatar uri={comment.authorProfileImage} />
+                  <CommentAvatar uri={avatarUri} />
                 </Pressable>
               ) : (
-                <CommentAvatar uri={comment.authorProfileImage} />
+                <CommentAvatar uri={avatarUri} />
               )}
               <View className="flex-1 ml-2">
                 {onOpenProfile ? (

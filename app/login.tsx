@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
+import { warmHomeUserCacheFromUserData } from "@/lib/homeUserCache";
 import { resolvePostAuthRoute } from "@/lib/onboardingRoute";
 import { useLightScreen } from "@/lib/useLightScreen";
 import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
@@ -10,7 +11,9 @@ import { useRouter } from "expo-router";
 import {
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
+    signOut,
 } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { useRef, useState } from "react";
 import {
     ActivityIndicator,
@@ -24,7 +27,12 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { auth } from "../firebaseConfig";
+import { auth, db } from "../firebaseConfig";
+
+type LoginMode = "user" | "admin";
+
+const ADMIN_BLUE = "#2563eb";
+const ADMIN_BLUE_DARK = "#1d4ed8";
 
 export default function Login() {
   const router = useRouter();
@@ -49,6 +57,7 @@ export default function Login() {
   const passwordWrapRef = useRef<View>(null);
   const forgotEmailWrapRef = useRef<View>(null);
 
+  const [loginMode, setLoginMode] = useState<LoginMode>("user");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,8 +69,23 @@ export default function Login() {
   const [passwordError, setPasswordError] = useState("");
   const [forgotEmailError, setForgotEmailError] = useState("");
 
+  const isAdminMode = loginMode === "admin";
+  const accentColor = isAdminMode ? ADMIN_BLUE : theme.accent;
+  const accentTextColor = isAdminMode ? ADMIN_BLUE : theme.accentText;
+  const gradientColors: [string, string] = isAdminMode
+    ? [ADMIN_BLUE, ADMIN_BLUE_DARK]
+    : [theme.accent, theme.accentText];
+
   const isValidEmailFormat = (v: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  };
+
+  const switchMode = (mode: LoginMode) => {
+    if (mode === loginMode) return;
+    setLoginMode(mode);
+    setEmailError("");
+    setPasswordError("");
+    setForgotVisible(false);
   };
 
   const validateLoginFields = () => {
@@ -93,13 +117,45 @@ export default function Login() {
     try {
       setLoading(true);
       await signInWithEmailAndPassword(auth, cleanEmail, password);
-      if (isAdminEmail(cleanEmail)) {
+
+      if (isAdminMode) {
+        if (!isAdminEmail(cleanEmail)) {
+          await signOut(auth);
+          Alert.alert(
+            "Admin only",
+            "Only the admin account can sign in here. Use the User tab for a regular account."
+          );
+          return;
+        }
         void syncAdminConfig().catch(() => {});
         router.replace("/admin" as any);
-      } else {
-        const uid = auth.currentUser?.uid;
-        const next = uid ? await resolvePostAuthRoute(uid) : "/home";
+        return;
+      }
+
+      if (isAdminEmail(cleanEmail)) {
+        await signOut(auth);
+        Alert.alert(
+          "Admin account",
+          "Admin accounts must sign in from the Admin tab."
+        );
+        return;
+      }
+
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        // Warm greeting cache before Home mounts so "Hello, …" has no wait.
+        try {
+          const snap = await getDoc(doc(db, "users", uid));
+          if (snap.exists()) {
+            await warmHomeUserCacheFromUserData(uid, snap.data() as Record<string, unknown>);
+          }
+        } catch {
+          // Home will still load from Firestore.
+        }
+        const next = await resolvePostAuthRoute(uid);
         router.replace(next as any);
+      } else {
+        router.replace("/home" as any);
       }
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
@@ -110,12 +166,16 @@ export default function Login() {
       } else if (code === "auth/user-not-found") {
         Alert.alert(
           "Account not found",
-          "This email is not registered yet. Tap Register to create an account first."
+          isAdminMode
+            ? "This email is not registered as an admin account."
+            : "This email is not registered yet. Tap Register to create an account first."
         );
       } else if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
         Alert.alert(
           "Wrong password",
-          "The password is incorrect. Use Forgot Password to reset it, or register if you have not created this account yet."
+          isAdminMode
+            ? "The password is incorrect. Please try again."
+            : "The password is incorrect. Use Forgot Password to reset it, or register if you have not created this account yet."
         );
       } else if (code === "auth/too-many-requests") {
         Alert.alert("Too many attempts", "Please wait a few minutes and try again.");
@@ -138,6 +198,10 @@ export default function Login() {
 
     if (!cleanEmail) {
       setForgotEmailError("Please enter your email.");
+      return;
+    }
+    if (isAdminEmail(cleanEmail)) {
+      setForgotEmailError("Admin accounts cannot reset password from this app.");
       return;
     }
     setForgotEmailError("");
@@ -191,29 +255,73 @@ export default function Login() {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        <View className="items-center mb-6">
+        <View className="items-center mb-5">
           <View
             className="w-28 h-28 rounded-full items-center justify-center shadow-lg"
             style={cardStyle}
           >
-            <Ionicons name="person" size={50} color={theme.accent} />
+            <Ionicons
+              name={isAdminMode ? "shield-checkmark" : "person"}
+              size={50}
+              color={accentColor}
+            />
           </View>
         </View>
 
         <Text className="text-3xl font-bold text-center mb-2" style={textPrimary}>
-          Login
+          {isAdminMode ? "Admin Login" : "Login"}
         </Text>
 
-        <Text className="text-center text-lg mb-8" style={textSecondary}>
-          Welcome back!{"\n"}Please enter your email and password to login.
+        <Text className="text-center text-lg mb-4 leading-6" style={textSecondary}>
+          {isAdminMode
+            ? "Sign in with the admin account\nto manage the app."
+            : "Welcome back!\nPlease enter your email and password to login."}
         </Text>
 
-        <View ref={emailWrapRef} className="mb-5">
+        <View
+          className="flex-row mb-4 rounded-full p-1"
+          style={{
+            backgroundColor: theme.rowBg,
+            borderWidth: 1,
+            borderColor: theme.cardBorder,
+          }}
+        >
+          <Pressable
+            onPress={() => switchMode("user")}
+            className="flex-1 rounded-full py-3 items-center"
+            style={
+              !isAdminMode
+                ? { backgroundColor: theme.accent }
+                : undefined
+            }
+          >
+            <Text
+              className="font-extrabold"
+              style={{ color: !isAdminMode ? "#ffffff" : theme.textSecondary }}
+            >
+              User
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => switchMode("admin")}
+            className="flex-1 rounded-full py-3 items-center"
+            style={isAdminMode ? { backgroundColor: ADMIN_BLUE } : undefined}
+          >
+            <Text
+              className="font-extrabold"
+              style={{ color: isAdminMode ? "#ffffff" : theme.textSecondary }}
+            >
+              Admin
+            </Text>
+          </Pressable>
+        </View>
+
+        <View ref={emailWrapRef} className="mb-3">
           <Text className="mb-2 ml-2" style={textPrimary}>
             Email Address
           </Text>
           <TextInput
-            placeholder="hello123@gmail.com"
+            placeholder={isAdminMode ? "admin@email.com" : "hello123@gmail.com"}
             placeholderTextColor={placeholderColor}
             value={email}
             onChangeText={(v) => {
@@ -226,22 +334,24 @@ export default function Login() {
             className="rounded-xl px-4 py-4"
             style={inputStyle}
           />
-          {!!emailError && (
+          {!!emailError ? (
             <Text className="text-red-500 text-xs mt-1 ml-2">{emailError}</Text>
-          )}
+          ) : null}
         </View>
 
-        <View ref={passwordWrapRef} className="mb-6">
+        <View ref={passwordWrapRef} className="mb-3">
           <View className="flex-row justify-between items-center mb-2">
             <Text className="ml-2" style={textPrimary}>
               Password
             </Text>
 
-            <Pressable onPress={openForgotPassword} hitSlop={10}>
-              <Text className="font-semibold" style={textAccent}>
-                Forgot Password?
-              </Text>
-            </Pressable>
+            {!isAdminMode ? (
+              <Pressable onPress={openForgotPassword} hitSlop={10}>
+                <Text className="font-semibold" style={textAccent}>
+                  Forgot Password?
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           <View className="relative">
@@ -271,38 +381,46 @@ export default function Login() {
               />
             </Pressable>
           </View>
-          {!!passwordError && (
+          {!!passwordError ? (
             <Text className="text-red-500 text-xs mt-1 ml-2">{passwordError}</Text>
-          )}
+          ) : null}
         </View>
 
         <Pressable
           onPress={login}
-          className={`rounded-full overflow-hidden mb-6 ${loading ? "opacity-60" : "opacity-100"}`}
+          className={`rounded-full overflow-hidden mb-3 ${loading ? "opacity-60" : "opacity-100"}`}
           disabled={loading}
         >
           <LinearGradient
-            colors={[theme.accent, theme.accentText]}
+            colors={gradientColors}
             className="py-4 items-center rounded-2xl"
           >
             {loading ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text className="text-white text-lg font-semibold">Login</Text>
+              <Text className="text-white text-lg font-semibold">
+                {isAdminMode ? "Admin Login" : "Login"}
+              </Text>
             )}
           </LinearGradient>
         </Pressable>
 
-        <Text className="text-center" style={textSecondary}>
-          New here?{" "}
-          <Text className="font-semibold" style={textAccent} onPress={() => router.push("/register")}>
-            Click Here to Register
+        {!isAdminMode ? (
+          <Text className="text-center" style={textSecondary}>
+            New here?{" "}
+            <Text className="font-semibold" style={textAccent} onPress={() => router.push("/register")}>
+              Click Here to Register
+            </Text>
           </Text>
-        </Text>
+        ) : (
+          <Text className="text-center text-sm" style={{ color: accentTextColor }}>
+            Only the designated admin email can access this section.
+          </Text>
+        )}
       </ScrollView>
 
       <Modal
-        visible={forgotVisible}
+        visible={forgotVisible && !isAdminMode}
         transparent
         animationType="fade"
         onRequestClose={() => setForgotVisible(false)}

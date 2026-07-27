@@ -14,6 +14,7 @@ import { plansEqual, sanitizeActiveWorkoutPlan } from "@/lib/workoutCatalog";
 import {
   activeWorkoutPlanOutOfSync,
   bmiBandKey,
+  buildWorkoutPlanArchiveEntry,
   calcBmi,
   pickOrGenerateWorkoutPlanForBand,
   workoutPlansByBmiGoalField,
@@ -29,12 +30,17 @@ import {
   type ActiveNutritionPlan,
 } from "@/lib/nutritionPlan";
 import { writeNutritionPlanCache } from "@/lib/nutritionPlanCache";
+import {
+  getHomeUserCacheSync,
+  loadHomeUserCache,
+  saveHomeUserCache,
+} from "@/lib/homeUserCache";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
@@ -87,7 +93,8 @@ export default function HomeScreen() {
   const tabBarPadding = useBottomTabBarScrollPadding();
   const [dayRoll, setDayRoll] = useState(0);
   const dayKey = useMemo(() => formatCalendarDayKey(new Date(), calendarTz), [calendarTz, dayRoll]);
-  const [userName, setUserName] = useState("");
+  const cachedUser = getHomeUserCacheSync(auth.currentUser?.uid);
+  const [userName, setUserName] = useState(cachedUser?.name ?? "");
   const [gender, setGender] = useState<"male" | "female" | null>(null);
   const [age, setAge] = useState<number>(0);
   const [heightCm, setHeightCm] = useState<number>(0);
@@ -99,10 +106,13 @@ export default function HomeScreen() {
   const [pendingDuration, setPendingDuration] = useState<PlanDuration>("week");
   const [planPickerVisible, setPlanPickerVisible] = useState(false);
   const [planPickerTarget, setPlanPickerTarget] = useState<"workout" | "nutrition">("workout");
+  /** Schedule length picker on Home is first-login only. */
+  const [homePlanSchedulePrompted, setHomePlanSchedulePrompted] = useState(false);
+  const homeSchedulePromptStartedRef = useRef(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [consumedToday, setConsumedToday] = useState(0);
   const [burnedToday, setBurnedToday] = useState(0);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(cachedUser?.profileImage ?? null);
 
   const bmi = useMemo(() => calcBmi(weightKg, heightCm), [heightCm, weightKg]);
 
@@ -171,7 +181,7 @@ export default function HomeScreen() {
         setSavingPlan(true);
         const snap = await getDoc(doc(db, "users", user.uid));
         const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
-        const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, recommendedPlan, duration);
+        const plan = pickOrGenerateWorkoutPlanForBand(data, bmi, recommendedPlan, duration).plan;
         const band = bmiBandKey(bmi);
 
         const mult =
@@ -217,6 +227,7 @@ export default function HomeScreen() {
 
         setPlanDuration(duration);
         setNutritionPlanDuration(duration);
+        setHomePlanSchedulePrompted(true);
         setPlanPickerVisible(false);
         router.push((target === "nutrition" ? "/meal-plan" : "/workout-plan") as any);
 
@@ -226,13 +237,18 @@ export default function HomeScreen() {
           planDurationChosenAt: serverTimestamp(),
           nutritionPlanDuration: duration,
           nutritionPlanDurationChosenAt: serverTimestamp(),
+          homePlanSchedulePrompted: true,
           activeWorkoutPlan: plan,
           activeNutritionPlan: nutritionPlan,
           activePlanLastCompletedDay: null,
           activePlanLastCompletedAt: null,
           activeNutritionPlanLastCompletedDay: null,
           activeNutritionPlanLastCompletedAt: null,
-          [workoutPlansByBmiGoalField(band, recommendedPlan, duration)]: plan,
+          [workoutPlansByBmiGoalField(band, recommendedPlan, duration)]: buildWorkoutPlanArchiveEntry(
+            plan,
+            null,
+            null
+          ),
         } as any).catch((e) => {
           console.log("Failed to save plan:", e);
           Alert.alert("Error", "Failed to save your plan. Please try again.");
@@ -251,13 +267,29 @@ export default function HomeScreen() {
     const user = auth.currentUser;
     if (!user) return;
 
+    // Fill greeting immediately from disk cache if memory was cold.
+    void loadHomeUserCache(user.uid).then((cached) => {
+      if (!cached) return;
+      if (cached.name) setUserName((prev) => prev || cached.name);
+      if (cached.profileImage) setProfileImage((prev) => prev ?? cached.profileImage);
+    });
+
     const unsub = onSnapshot(
       doc(db, "users", user.uid),
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;
 
-        if (typeof data?.name === "string") setUserName(data.name);
+        if (typeof data?.name === "string") {
+          setUserName(data.name);
+          void saveHomeUserCache(user.uid, {
+            name: data.name,
+            profileImage:
+              typeof data?.profileImage === "string" && data.profileImage.length > 0
+                ? data.profileImage
+                : null,
+          });
+        }
         if (data?.gender === "male" || data?.gender === "female") setGender(data.gender);
         if (typeof data?.age === "number") setAge(data.age);
         if (typeof data?.height === "number") setHeightCm(data.height);
@@ -283,6 +315,16 @@ export default function HomeScreen() {
           // Older accounts: inherit workout schedule until nutrition is changed separately.
           setNutritionPlanDuration(data.planDuration);
         }
+
+        // First-login schedule prompt: already chosen, or already shown once.
+        const alreadyPrompted =
+          data?.homePlanSchedulePrompted === true ||
+          data?.planDurationChosenAt != null ||
+          data?.planDuration === "week" ||
+          data?.planDuration === "biweekly" ||
+          data?.planDuration === "monthly";
+        setHomePlanSchedulePrompted(Boolean(alreadyPrompted));
+
         if (typeof data?.profileImage === "string" && data.profileImage.length > 0) setProfileImage(data.profileImage);
         else setProfileImage(null);
 
@@ -326,11 +368,15 @@ export default function HomeScreen() {
             rawPlan.duration === "monthly";
 
           if (bmiLive != null && goalLive && durOk && activeWorkoutPlanOutOfSync(rawPlan, bmiLive, goalLive)) {
-            const next = pickOrGenerateWorkoutPlanForBand(data, bmiLive, goalLive, rawPlan.duration);
+            const next = pickOrGenerateWorkoutPlanForBand(data, bmiLive, goalLive, rawPlan.duration).plan;
             const band = bmiBandKey(bmiLive);
             void updateDoc(doc(db, "users", user.uid), {
               activeWorkoutPlan: next,
-              [workoutPlansByBmiGoalField(band, goalLive, rawPlan.duration)]: next,
+              [workoutPlansByBmiGoalField(band, goalLive, rawPlan.duration)]: buildWorkoutPlanArchiveEntry(
+                next,
+                null,
+                null
+              ),
             } as any);
           } else {
             const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
@@ -347,6 +393,24 @@ export default function HomeScreen() {
 
     return () => unsub();
   }, []);
+
+  // Show schedule length picker only once — first time on Home with no plan yet.
+  useEffect(() => {
+    if (homeSchedulePromptStartedRef.current) return;
+    if (homePlanSchedulePrompted || planDuration) return;
+    if (!recommendedPlan || !bmi) return;
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    homeSchedulePromptStartedRef.current = true;
+    setPlanPickerTarget("workout");
+    setPlanPickerVisible(true);
+    setHomePlanSchedulePrompted(true);
+    void updateDoc(doc(db, "users", user.uid), {
+      homePlanSchedulePrompted: true,
+    } as any).catch(() => {});
+  }, [bmi, homePlanSchedulePrompted, planDuration, recommendedPlan]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user: User | null) => {
@@ -646,7 +710,8 @@ export default function HomeScreen() {
                   const u = auth.currentUser;
                   if (u) void bumpWorkoutPlanDay(u.uid);
 
-                  if (!planDuration) {
+                  // Schedule picker only on first login; later visits open the plan directly.
+                  if (!planDuration && !homePlanSchedulePrompted) {
                     setPlanPickerTarget("workout");
                     setPlanPickerVisible(true);
                     return;
@@ -686,8 +751,8 @@ export default function HomeScreen() {
                 className="mt-28 rounded-full overflow-hidden"
                 style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}
                 onPress={() => {
-                  // First schedule choice (from either button) sets both plans.
-                  if (!planDuration && !nutritionPlanDuration) {
+                  // Schedule picker only on first login; later visits open the plan directly.
+                  if (!planDuration && !nutritionPlanDuration && !homePlanSchedulePrompted) {
                     setPlanPickerTarget("nutrition");
                     setPlanPickerVisible(true);
                     return;
@@ -710,7 +775,7 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* Plan duration picker (first time) */}
+      {/* Plan duration picker (first login only) */}
       <Modal visible={planPickerVisible} transparent animationType="fade" onRequestClose={() => setPlanPickerVisible(false)}>
         <View className="flex-1 items-center justify-center bg-black/40 px-6">
           <View className="w-full rounded-3xl p-6" style={cardStyle}>
@@ -783,7 +848,16 @@ export default function HomeScreen() {
 
             <Pressable
               disabled={savingPlan}
-              onPress={() => setPlanPickerVisible(false)}
+              onPress={() => {
+                setPlanPickerVisible(false);
+                const user = auth.currentUser;
+                if (user) {
+                  setHomePlanSchedulePrompted(true);
+                  void updateDoc(doc(db, "users", user.uid), {
+                    homePlanSchedulePrompted: true,
+                  } as any).catch(() => {});
+                }
+              }}
               className="mt-5 py-3 rounded-full items-center border active:opacity-90"
               style={cardStyle}
             >

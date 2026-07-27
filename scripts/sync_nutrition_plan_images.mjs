@@ -1,6 +1,6 @@
 /**
- * Rewrite nutritionPlanDataset.json meal `img` URLs from meal names
- * so stored images match personalized nutrition guidance dishes.
+ * Rewrite nutritionPlanDataset.json meal `img` URLs to Unsplash License
+ * photos only (`images.unsplash.com`). No AI-generated or Allrecipes images.
  *
  * Run: node scripts/sync_nutrition_plan_images.mjs
  */

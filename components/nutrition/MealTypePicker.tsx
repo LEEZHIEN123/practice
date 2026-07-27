@@ -9,6 +9,7 @@ import {
   type MealHistoryFilter,
 } from "@/lib/manualMealTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { Ionicons } from "@expo/vector-icons";
 import { ScrollView, Text, View } from "react-native";
 
 export type MealLogMode = "manual" | "ai";
@@ -68,6 +69,22 @@ export function MealLogModePicker({
         <ThemedText variant="muted" className="text-xs mt-2">
           AI analysis is unavailable. Enter meal details manually.
         </ThemedText>
+      ) : value === "ai" ? (
+        <View
+          className="mt-3 rounded-2xl px-3 py-2.5 flex-row items-start"
+          style={{ backgroundColor: theme.accentSoft, borderWidth: 1, borderColor: theme.accent }}
+        >
+          <Ionicons
+            name="bulb-outline"
+            size={16}
+            color={theme.accentText}
+            style={{ marginTop: 1, marginRight: 8 }}
+          />
+          <ThemedText variant="secondary" className="flex-1 text-xs leading-4">
+            Tip: AI results are suggestions only and may be inaccurate. Please review and edit
+            the meal details before saving.
+          </ThemedText>
+        </View>
       ) : null}
     </View>
   );

@@ -23,6 +23,7 @@ import { isGeminiConfigured, sendCoachMessage, type CoachChatTurn } from "@/lib/
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -135,11 +136,18 @@ export default function AICoachScreen() {
   const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
   const coachContextRef = useRef<Awaited<ReturnType<typeof fetchCoachUserContext>> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const pendingArchiveRef = useRef<StoredChatMessage[] | null>(null);
-  const pendingSessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>(messages);
-  const sessionIdStateRef = useRef<string | null>(null);
+  const hydratedRef = useRef(false);
+  const uidRef = useRef<string | null>(null);
   messagesRef.current = messages;
+  uidRef.current = uid;
+  hydratedRef.current = hydrated;
+
+  const persistActive = useCallback(async (nextUid?: string | null) => {
+    const id = nextUid ?? uidRef.current;
+    if (!id) return;
+    await saveActiveChat(id, sessionIdRef.current, messagesRef.current);
+  }, []);
 
   useEffect(() => {
     if (!uid || uid === "guest") {
@@ -157,49 +165,48 @@ export default function AICoachScreen() {
       setUid(id);
       void (async () => {
         const active = await loadActiveChat(id);
-        const archives = await loadArchivedChats(id);
-        sessionIdRef.current = active.sessionId;
-        sessionIdStateRef.current = active.sessionId;
+        let archives = await loadArchivedChats(id);
+        let sessionId = active.sessionId;
+        let nextMessages = active.messages;
 
-        if (hasUserMessages(active.messages) && !active.sessionId) {
-          const newId = makeChatSessionId();
-          sessionIdRef.current = newId;
-          sessionIdStateRef.current = newId;
-          const synced = await upsertHistorySession(id, newId, active.messages);
-          setArchivedSessions(synced);
-          await saveActiveChat(id, newId, active.messages);
-        } else {
-          setArchivedSessions(archives);
+        // Legacy active chats without a session id still belong in History.
+        if (hasUserMessages(nextMessages) && !sessionId) {
+          sessionId = makeChatSessionId();
+          archives = await upsertHistorySession(id, sessionId, nextMessages);
+          await saveActiveChat(id, sessionId, nextMessages);
         }
 
-        setMessages(active.messages);
+        sessionIdRef.current = sessionId;
+        setArchivedSessions(archives);
+        setMessages(nextMessages);
+        messagesRef.current = nextMessages;
         setHydrated(true);
       })();
     });
     return unsub;
   }, []);
 
+  // Keep AsyncStorage in sync while chatting.
   useEffect(() => {
     if (!hydrated || !uid) return;
-    const current = messagesRef.current;
-    const sessionId = sessionIdStateRef.current;
-
-    if (!hasUserMessages(current) && pendingArchiveRef.current) {
-      void saveActiveChat(uid, pendingSessionIdRef.current, pendingArchiveRef.current);
-      return;
-    }
-    void saveActiveChat(uid, sessionId, current);
+    void saveActiveChat(uid, sessionIdRef.current, messages);
   }, [messages, hydrated, uid]);
 
-  useEffect(() => {
-    return () => {
-      if (!uid) return;
-      const current = messagesRef.current;
-      if (!hasUserMessages(current) && pendingArchiveRef.current) {
-        void saveActiveChat(uid, pendingSessionIdRef.current, pendingArchiveRef.current);
-      }
-    };
-  }, [uid]);
+  // Persist the exact on-screen chat when leaving (back / blur / unmount).
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        const id = uidRef.current;
+        if (!id || !hydratedRef.current) return;
+        const current = messagesRef.current;
+        const sessionId = sessionIdRef.current;
+        void saveActiveChat(id, sessionId, current);
+        if (sessionId && hasUserMessages(current)) {
+          void upsertHistorySession(id, sessionId, current);
+        }
+      };
+    }, [])
+  );
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -207,28 +214,44 @@ export default function AICoachScreen() {
     });
   }, []);
 
-  const historyForApi = useCallback((): CoachChatTurn[] => {
-    return messages
+  const historyForApi = useCallback((chat: ChatMessage[]): CoachChatTurn[] => {
+    return chat
       .filter((m) => m.id !== "welcome")
       .map((m) => ({ role: m.role, text: m.text }));
-  }, [messages]);
+  }, []);
 
   const openHistory = useCallback(async () => {
     if (!uid) return;
-    const archives = await loadArchivedChats(uid);
-    setArchivedSessions(archives);
+    // Flush current chat into history first so the list stays complete.
+    if (sessionIdRef.current && hasUserMessages(messagesRef.current)) {
+      const archives = await upsertHistorySession(
+        uid,
+        sessionIdRef.current,
+        messagesRef.current
+      );
+      setArchivedSessions(archives);
+    } else {
+      setArchivedSessions(await loadArchivedChats(uid));
+    }
     setHistoryVisible(true);
   }, [uid]);
 
   const resumeSession = useCallback(
-    (session: ArchivedChatSession) => {
+    async (session: ArchivedChatSession) => {
       if (!uid) return;
-      pendingArchiveRef.current = null;
-      pendingSessionIdRef.current = null;
+      // Archive whatever is on screen before switching.
+      if (
+        sessionIdRef.current &&
+        sessionIdRef.current !== session.id &&
+        hasUserMessages(messagesRef.current)
+      ) {
+        await upsertHistorySession(uid, sessionIdRef.current, messagesRef.current);
+      }
       sessionIdRef.current = session.id;
-      sessionIdStateRef.current = session.id;
+      messagesRef.current = session.messages;
       setMessages(session.messages);
-      void saveActiveChat(uid, session.id, session.messages);
+      await saveActiveChat(uid, session.id, session.messages);
+      setArchivedSessions(await loadArchivedChats(uid));
       setHistoryVisible(false);
       scrollToBottom();
     },
@@ -244,11 +267,14 @@ export default function AICoachScreen() {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            void deleteArchivedChat(uid, sessionId).then((archives) => {
+            void deleteArchivedChat(uid, sessionId).then(async (archives) => {
               setArchivedSessions(archives);
               if (sessionIdRef.current === sessionId) {
                 sessionIdRef.current = null;
-                sessionIdStateRef.current = null;
+                const fresh = defaultWelcomeMessages();
+                messagesRef.current = fresh;
+                setMessages(fresh);
+                await saveActiveChat(uid, null, fresh);
               }
             });
           },
@@ -260,22 +286,22 @@ export default function AICoachScreen() {
 
   const handleNewChat = useCallback(async () => {
     if (!uid || sending) return;
-    if (hasUserMessages(messages)) {
-      pendingArchiveRef.current = messages;
-      pendingSessionIdRef.current = sessionIdRef.current;
+    if (sessionIdRef.current && hasUserMessages(messagesRef.current)) {
+      const archives = await upsertHistorySession(
+        uid,
+        sessionIdRef.current,
+        messagesRef.current
+      );
+      setArchivedSessions(archives);
     }
     sessionIdRef.current = null;
-    sessionIdStateRef.current = null;
     const fresh = defaultWelcomeMessages();
+    messagesRef.current = fresh;
     setMessages(fresh);
     setInput("");
-    if (pendingArchiveRef.current) {
-      await saveActiveChat(uid, pendingSessionIdRef.current, pendingArchiveRef.current);
-    } else {
-      await saveActiveChat(uid, null, fresh);
-    }
+    await saveActiveChat(uid, null, fresh);
     scrollToBottom();
-  }, [uid, sending, messages, scrollToBottom]);
+  }, [uid, sending, scrollToBottom]);
 
   const sendText = useCallback(
     async (text: string) => {
@@ -299,49 +325,91 @@ export default function AICoachScreen() {
 
       if (!sessionIdRef.current) {
         sessionIdRef.current = makeChatSessionId();
-        sessionIdStateRef.current = sessionIdRef.current;
       }
 
-      if (pendingArchiveRef.current) {
-        pendingArchiveRef.current = null;
-        pendingSessionIdRef.current = null;
-      }
-
-      setMessages((prev) => [...prev, userMsg]);
+      const withUser = [...messagesRef.current, userMsg];
+      messagesRef.current = withUser;
+      setMessages(withUser);
       setInput("");
       setSending(true);
       scrollToBottom();
+      if (uid) {
+        await saveActiveChat(uid, sessionIdRef.current, withUser);
+      }
 
       try {
         let context = coachContextRef.current;
-        if (uid && uid !== "guest") {
-          context = await fetchCoachUserContext(uid, calendarTz);
-          coachContextRef.current = context;
+        if (uid && uid !== "guest" && !context) {
+          try {
+            context = await Promise.race([
+              fetchCoachUserContext(uid, calendarTz),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+            ]);
+            if (context) coachContextRef.current = context;
+          } catch {
+            context = null;
+          }
+        } else if (uid && uid !== "guest") {
+          void fetchCoachUserContext(uid, calendarTz)
+            .then((ctx) => {
+              coachContextRef.current = ctx;
+            })
+            .catch(() => {});
         }
-        const reply = await sendCoachMessage(historyForApi(), trimmed, context);
+
+        // Prior turns only — sendCoachMessage appends the new user message itself.
+        const priorTurns = historyForApi(withUser.slice(0, -1));
+        const assistantId = makeId();
+        let sawPartial = false;
+        const reply = await sendCoachMessage(priorTurns, trimmed, context, (partial) => {
+          sawPartial = true;
+          const streamingMsg: ChatMessage = {
+            id: assistantId,
+            role: "assistant",
+            text: partial,
+            createdAt: Date.now(),
+          };
+          const live = [...withUser, streamingMsg];
+          messagesRef.current = live;
+          setMessages(live);
+          scrollToBottom();
+        });
         const assistantMsg: ChatMessage = {
-          id: makeId(),
+          id: assistantId,
           role: "assistant",
           text: reply,
           createdAt: Date.now(),
         };
-        const fullMessages = [...messages, userMsg, assistantMsg];
+        const fullMessages = sawPartial
+          ? messagesRef.current.map((m) => (m.id === assistantId ? assistantMsg : m))
+          : [...withUser, assistantMsg];
+        messagesRef.current = fullMessages;
         setMessages(fullMessages);
         if (uid && sessionIdRef.current) {
-          const archives = await upsertHistorySession(uid, sessionIdRef.current, fullMessages);
+          await saveActiveChat(uid, sessionIdRef.current, fullMessages);
+          const archives = await upsertHistorySession(
+            uid,
+            sessionIdRef.current,
+            fullMessages
+          );
           setArchivedSessions(archives);
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Could not reach Gemini. Please try again.";
         Alert.alert("Chat error", msg);
-        setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+        const rolledBack = messagesRef.current.filter((m) => m.id !== userMsg.id);
+        messagesRef.current = rolledBack;
+        setMessages(rolledBack);
         setInput(trimmed);
+        if (uid) {
+          await saveActiveChat(uid, sessionIdRef.current, rolledBack);
+        }
       } finally {
         setSending(false);
         scrollToBottom();
       }
     },
-    [calendarTz, historyForApi, messages, scrollToBottom, sending, uid]
+    [calendarTz, historyForApi, scrollToBottom, sending, uid]
   );
 
   useEffect(() => {
@@ -385,7 +453,9 @@ export default function AICoachScreen() {
         <View className="px-3">
           <ProfileScreenHeader
             title="AI Chatbot"
-            onBack={() => router.back()}
+            onBack={() => {
+              void persistActive().finally(() => router.back());
+            }}
             rightSlot={
               <View className="flex-row items-center">
                 <Pressable

@@ -204,6 +204,11 @@ export default function MealPlanScreen() {
   const durationWriteSeqRef = useRef(0);
   const planRef = useRef<ActiveNutritionPlan | null>(null);
   planRef.current = plan;
+  const userDataRef = useRef<Record<string, unknown>>({});
+  const lastCompletedDayRef = useRef<number | null>(null);
+  lastCompletedDayRef.current = lastCompletedDay;
+  const lastCompletedAtRef = useRef<Date | null>(null);
+  lastCompletedAtRef.current = lastCompletedAt;
 
   const applyPlanLocally = (
     next: ActiveNutritionPlan,
@@ -212,9 +217,11 @@ export default function MealPlanScreen() {
       lastCompletedDay?: number | null;
       lastCompletedAt?: Date | null;
       dailyCalorieTarget?: number | null;
-    }
+    },
+    options?: { skipHeavyExpand?: boolean }
   ) => {
-    const expanded = expandNutritionPlanText(next);
+    // Archived plans already have resolved meal fields — skip expensive re-expand on switch.
+    const expanded = options?.skipHeavyExpand ? next : expandNutritionPlanText(next);
     planRef.current = expanded;
     setPlan(expanded);
     if (extras?.duration) setPendingDuration(extras.duration);
@@ -250,6 +257,7 @@ export default function MealPlanScreen() {
 
     const unsub = onSnapshot(doc(db, "users", user.uid), (snap) => {
       const data = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
+      userDataRef.current = data;
       const nutritionDuration =
         data.nutritionPlanDuration === "week" ||
         data.nutritionPlanDuration === "biweekly" ||
@@ -614,50 +622,58 @@ export default function MealPlanScreen() {
 
     const previous = current;
     const previousDuration = pendingDuration;
-    const previousLastCompletedDay = lastCompletedDay;
-    const previousLastCompletedAt = lastCompletedAt;
+    const previousLastCompletedDay = lastCompletedDayRef.current;
+    const previousLastCompletedAt = lastCompletedAtRef.current;
     const writeSeq = ++durationWriteSeqRef.current;
     setPickerVisible(false);
+
+    const data = { ...userDataRef.current };
+    const archivePatch = previous
+      ? nutritionPlanArchiveUpdateFields(
+          previous,
+          previousLastCompletedDay,
+          previousLastCompletedAt
+        )
+      : {};
+    // Merge archive patch into the in-memory snapshot so restore can see the plan we just left.
+    const mergedData = { ...data, ...archivePatch };
+    userDataRef.current = mergedData;
+
+    const pickParams = {
+      data: mergedData,
+      duration: nextDuration,
+      bmi: previous?.bmi ?? null,
+      goal: previous?.goal ?? null,
+      dietaryPreference: previous?.dietaryPreference ?? null,
+      activityLevel: previous?.activityLevel ?? null,
+    };
+    const canRestore = canRestoreNutritionPlan(pickParams);
+    if (!canRestore) {
+      setGeneratingPlan(true);
+    }
+
+    const { plan: next, lastCompletedDay: lcd, lastCompletedAt: lca, fromArchive } =
+      pickOrGenerateNutritionPlan({
+        ...pickParams,
+        dailyCalorieTarget: dailyCalorieTargetRef.current,
+      });
+
+    // Update UI immediately (no await) — Firestore write happens in the background.
     syncingRef.current = true;
+    applyPlanLocally(
+      next,
+      {
+        duration: nextDuration,
+        lastCompletedDay: lcd,
+        lastCompletedAt: lca,
+      },
+      { skipHeavyExpand: fromArchive }
+    );
+    setGeneratingPlan(false);
 
     void (async () => {
       try {
         const userRef = doc(db, "users", user.uid);
-        const snap = await getDoc(userRef);
-        const data = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
-        const archivePatch = previous
-          ? nutritionPlanArchiveUpdateFields(
-              previous,
-              previousLastCompletedDay,
-              previousLastCompletedAt
-            )
-          : {};
-        const mergedData = { ...data, ...archivePatch };
-        const pickParams = {
-          data: mergedData,
-          duration: nextDuration,
-          bmi: previous?.bmi ?? null,
-          goal: previous?.goal ?? null,
-          dietaryPreference: previous?.dietaryPreference ?? null,
-          activityLevel: previous?.activityLevel ?? null,
-        };
-        if (!canRestoreNutritionPlan(pickParams)) {
-          setGeneratingPlan(true);
-        }
-        const { plan: next, lastCompletedDay: lcd, lastCompletedAt: lca } =
-          pickOrGenerateNutritionPlan({
-            ...pickParams,
-            dailyCalorieTarget: dailyCalorieTargetRef.current,
-          });
-
-        if (writeSeq !== durationWriteSeqRef.current) return;
-
-        applyPlanLocally(next, {
-          duration: nextDuration,
-          lastCompletedDay: lcd,
-          lastCompletedAt: lca,
-        });
-
         await updateDoc(userRef, {
           ...archivePatch,
           nutritionPlanDuration: nextDuration,
@@ -668,20 +684,23 @@ export default function MealPlanScreen() {
         } as any);
       } catch (e) {
         console.log("Failed to switch nutrition plan:", e);
-        if (writeSeq === durationWriteSeqRef.current) {
-          if (previous) {
-            applyPlanLocally(previous, {
+        if (writeSeq !== durationWriteSeqRef.current) return;
+        if (previous) {
+          applyPlanLocally(
+            previous,
+            {
               duration: previousDuration,
               lastCompletedDay: previousLastCompletedDay,
               lastCompletedAt: previousLastCompletedAt,
-            });
-          } else {
-            planRef.current = null;
-            setPlan(null);
-            setPendingDuration(previousDuration);
-          }
-          Alert.alert("Error", "Could not switch your nutrition schedule. Please try again.");
+            },
+            { skipHeavyExpand: true }
+          );
+        } else {
+          planRef.current = null;
+          setPlan(null);
+          setPendingDuration(previousDuration);
         }
+        Alert.alert("Error", "Could not switch your nutrition schedule. Please try again.");
       } finally {
         if (writeSeq === durationWriteSeqRef.current) {
           syncingRef.current = false;
@@ -887,7 +906,7 @@ export default function MealPlanScreen() {
           <View className="w-full rounded-3xl p-6" style={modalCardStyle}>
             <ThemedText className="text-2xl font-extrabold">Switch plan</ThemedText>
             <ThemedText variant="muted" className="mt-2 leading-6">
-              Choose a different nutrition schedule. This will not change your workout plan.
+              Choose a different duration and confirm to switch.
             </ThemedText>
 
             <View className="mt-5 gap-3">
@@ -935,8 +954,8 @@ export default function MealPlanScreen() {
             <Pressable
               onPress={() => {
                 Alert.alert(
-                  "Switch nutrition schedule?",
-                  "Your nutrition guidance length will change. Your workout plan stays the same.",
+                  "Switch plan?",
+                  "Your personalised nutrition plan will change. Continue?",
                   [
                     { text: "Cancel", style: "cancel" },
                     {

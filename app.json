@@ -7,15 +7,15 @@
     "icon": "./assets/images/fitness-logo.jpg",
     "scheme": "practice",
     "userInterfaceStyle": "automatic",
-    "infoPlist": {
-      "NSPhotoLibraryUsageDescription": "We use your photo library for profile pictures, meal photos, and community post images.",
-      "NSCameraUsageDescription": "We use the camera for barcode scanning, meal photos, and community post images.",
-      "NSMotionUsageDescription": "We use motion data to track your steps.",
-      "NSLocationWhenInUseUsageDescription": "We use your location to fetch local weather and suggest daily water intake."
-    },
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "We use your photo library for profile pictures, meal photos, and community post images.",
+        "NSCameraUsageDescription": "We use the camera for profile pictures, barcode scanning, meal photos, and community post images.",
+        "NSMotionUsageDescription": "We use motion data to track your steps.",
+        "NSLocationWhenInUseUsageDescription": "We use your location to fetch local weather and suggest daily water intake."
+      }
     },
     "android": {
       "permissions": [
@@ -54,9 +54,10 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to scan barcodes and take meal or community post photos."
+          "cameraPermission": "Allow $(PRODUCT_NAME) to take profile pictures, scan barcodes, and capture meal or community post photos."
         }
       ],
+      "expo-notifications",
       [
         "expo-location",
         {

@@ -2,7 +2,7 @@ import { FavouriteButton } from "@/components/FavouriteButton";
 import { Pressable } from "@/components/Pressable";
 import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import type { FoodListItem } from "@/lib/foodDataset";
-import { FOOD_IMAGE_FALLBACK, resolveFoodImageSource, resolveFoodImageUrl } from "@/lib/foodImages";
+import { FOOD_IMAGE_FALLBACK, resolveDatasetFoodImageSource, resolveDatasetFoodImageUrl } from "@/lib/foodImages";
 import { buildNutritionFavouriteItem } from "@/lib/favourites";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -35,12 +35,12 @@ function FoodLibraryRow({
   );
 
   const primarySource = useMemo(
-    () => resolveFoodImageSource(food.name, food.imageUrl),
-    [food.imageUrl, food.name]
+    () => resolveDatasetFoodImageSource(food.imageUrl),
+    [food.imageUrl]
   );
   const primaryUri = useMemo(
-    () => resolveFoodImageUrl(food.name, food.imageUrl),
-    [food.imageUrl, food.name]
+    () => resolveDatasetFoodImageUrl(food.imageUrl),
+    [food.imageUrl]
   );
   const [source, setSource] = useState(primarySource);
   const [failedOnce, setFailedOnce] = useState(false);

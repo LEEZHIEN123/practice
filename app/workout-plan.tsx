@@ -12,7 +12,9 @@ import { useThemedScreen } from "@/lib/useThemedScreen";
 import { plansEqual, sanitizeActiveWorkoutPlan, type WorkoutType } from "@/lib/workoutCatalog";
 import {
     bmiBandKey,
+    buildWorkoutPlanArchiveEntry,
     calcBmi,
+    canRestoreWorkoutPlan,
     durationDays,
     generateActiveWorkoutPlan,
     pickOrGenerateWorkoutPlanForBand,
@@ -24,11 +26,11 @@ import { useRouter } from "expo-router";
 import {
     collection,
     doc,
-    getDoc,
     limit,
     onSnapshot,
     query,
     serverTimestamp,
+    Timestamp,
     updateDoc,
     where,
 } from "firebase/firestore";
@@ -91,6 +93,13 @@ export default function WorkoutPlanScreen() {
   const [day1EarliestAtFromLogs, setDay1EarliestAtFromLogs] = useState<Date | null>(null);
   const [day1EarliestAtFromSessions, setDay1EarliestAtFromSessions] = useState<Date | null>(null);
   const rolloverInFlightRef = useRef(false);
+  const userDataRef = useRef<Record<string, unknown>>({});
+  const planRef = useRef<ActiveWorkoutPlan | null>(null);
+  planRef.current = plan;
+  const lastCompletedDayRef = useRef<number | null>(null);
+  lastCompletedDayRef.current = lastCompletedDay;
+  const lastCompletedAtRef = useRef<Date | null>(null);
+  lastCompletedAtRef.current = lastCompletedAt;
 
   useEffect(() => {
     const id = setInterval(() => setCalendarTick((n) => n + 1), 60_000);
@@ -185,6 +194,7 @@ export default function WorkoutPlanScreen() {
       doc(db, "users", user.uid),
       (snap) => {
         const data = snap.exists() ? (snap.data() as any) : {};
+        userDataRef.current = data;
         const rawPlan = (data?.activeWorkoutPlan as ActiveWorkoutPlan) ?? null;
         const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
         if (rawPlan && fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
@@ -245,7 +255,11 @@ export default function WorkoutPlanScreen() {
         const band = bmiBandKey(userBmi);
         await updateDoc(doc(db, "users", user.uid), {
           activeWorkoutPlan: next,
-          [workoutPlansByBmiGoalField(band, resolvedGoal, plan.duration)]: next,
+          [workoutPlansByBmiGoalField(band, resolvedGoal, plan.duration)]: buildWorkoutPlanArchiveEntry(
+            next,
+            null,
+            null
+          ),
           activePlanLastCompletedDay: null,
           activePlanLastCompletedAt: null,
         } as any);
@@ -323,32 +337,69 @@ export default function WorkoutPlanScreen() {
 
   const unlockedMaxDay = todayPlanDay ?? 1;
 
-  const saveDuration = async (duration: PlanDuration) => {
+  const saveDuration = (duration: PlanDuration) => {
     const user = auth.currentUser;
     if (!user) return;
     if (!userBmi || !goal) {
       Alert.alert("Missing info", "Please complete your profile (height/weight/goal) first.");
       return;
     }
+    const current = planRef.current;
+    if (current?.duration === duration) {
+      setPickerVisible(false);
+      return;
+    }
+
     try {
       setPickerVisible(false);
-      setBusy(true);
-      const snap = await getDoc(doc(db, "users", user.uid));
-      const udata = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
-      const next = pickOrGenerateWorkoutPlanForBand(udata, userBmi, goal, duration);
+      const udata = { ...userDataRef.current };
       const band = bmiBandKey(userBmi);
-      await updateDoc(doc(db, "users", user.uid), {
+      const archiveCurrent =
+        current && goal
+          ? {
+              [workoutPlansByBmiGoalField(band, goal, current.duration)]: buildWorkoutPlanArchiveEntry(
+                current,
+                lastCompletedDayRef.current,
+                lastCompletedAtRef.current
+              ),
+            }
+          : {};
+      const mergedData = { ...udata, ...archiveCurrent };
+      userDataRef.current = mergedData;
+
+      const canRestore = canRestoreWorkoutPlan(mergedData, userBmi, goal, duration);
+      if (!canRestore) setBusy(true);
+
+      const picked = pickOrGenerateWorkoutPlanForBand(mergedData, userBmi, goal, duration);
+
+      // Instant UI switch — Firestore save continues in the background.
+      setPlan(picked.plan);
+      setPendingDuration(duration);
+      setLastCompletedDay(picked.lastCompletedDay);
+      setLastCompletedAt(picked.lastCompletedAt);
+      setBusy(false);
+
+      void updateDoc(doc(db, "users", user.uid), {
+        ...archiveCurrent,
         planDuration: duration,
         planDurationChosenAt: serverTimestamp(),
-        activeWorkoutPlan: next,
-        activePlanLastCompletedDay: null,
-        activePlanLastCompletedAt: null,
-        [workoutPlansByBmiGoalField(band, goal, duration)]: next,
-      } as any);
+        activeWorkoutPlan: picked.plan,
+        activePlanLastCompletedDay: picked.lastCompletedDay,
+        activePlanLastCompletedAt: picked.lastCompletedAt
+          ? Timestamp.fromDate(picked.lastCompletedAt)
+          : null,
+        [workoutPlansByBmiGoalField(band, goal, duration)]: buildWorkoutPlanArchiveEntry(
+          picked.plan,
+          picked.lastCompletedDay,
+          picked.lastCompletedAt
+        ),
+      } as any).catch((e) => {
+        console.log("Failed to switch plan:", e);
+        Alert.alert("Error", "Could not switch your plan. Please try again.");
+      });
     } catch (e) {
       console.log("Failed to switch plan:", e);
       Alert.alert("Error", "Could not switch your plan. Please try again.");
-    } finally {
       setBusy(false);
     }
   };

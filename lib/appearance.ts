@@ -88,6 +88,50 @@ export const appearanceThemes: Record<AppearanceMode, AppearanceTheme> = {
   },
 };
 
+/** Blue palette for the admin side of the app. */
+export const adminAppearanceThemes: Record<AppearanceMode, AppearanceTheme> = {
+  light: {
+    screenBg: "#e8eefb",
+    cardBg: "#ffffff",
+    cardBorder: "#dbe3f0",
+    rowBg: "#f4f7fc",
+    textPrimary: "#111827",
+    textSecondary: "#4b5563",
+    textMuted: "#6b7280",
+    iconMuted: "#9ca3af",
+    accent: "#2563eb",
+    accentSoft: "#dbeafe",
+    accentText: "#1d4ed8",
+    danger: "#ef4444",
+    dangerSoft: "#fef2f2",
+    modalOverlay: "rgba(0,0,0,0.5)",
+    modalBg: "#ffffff",
+    statCardBg: "#ffffff",
+    navBg: "#ffffff",
+    navBorder: "#dbe3f0",
+  },
+  dark: {
+    screenBg: "#0b1220",
+    cardBg: "#182234",
+    cardBorder: "#334155",
+    rowBg: "#1e293b",
+    textPrimary: "#f8fafc",
+    textSecondary: "#cbd5e1",
+    textMuted: "#94a3b8",
+    iconMuted: "#64748b",
+    accent: "#3b82f6",
+    accentSoft: "#1e3a5f",
+    accentText: "#93c5fd",
+    danger: "#f87171",
+    dangerSoft: "#3f1d1d",
+    modalOverlay: "rgba(0,0,0,0.72)",
+    modalBg: "#111827",
+    statCardBg: "#1e293b",
+    navBg: "#0f172a",
+    navBorder: "#334155",
+  },
+};
+
 const DARK_IMAGE_OVERLAY_BOOST = 0.18;
 const MAX_IMAGE_CARD_OVERLAY_OPACITY = 0.72;
 

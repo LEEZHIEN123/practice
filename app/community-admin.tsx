@@ -98,7 +98,7 @@ export default function CommunityAdminScreen() {
   if (isAdmin === null) {
     return (
       <ThemedScreen className="items-center justify-center">
-        <ActivityIndicator size="large" color="#52B69A" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedScreen>
     );
   }
@@ -112,7 +112,8 @@ export default function CommunityAdminScreen() {
         </ThemedText>
         <Pressable
           onPress={() => router.back()}
-          className="mt-6 rounded-full bg-[#52B69A] px-8 py-3"
+          className="mt-6 rounded-full px-8 py-3"
+          style={{ backgroundColor: theme.accent }}
         >
           <ThemedText className="text-sm font-extrabold text-white">Go Back</ThemedText>
         </Pressable>

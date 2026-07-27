@@ -23,39 +23,57 @@ export function useScrollFieldAboveKeyboard(
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
   const pendingScrollWrapRef = useRef<View | null>(null);
+  const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const runScrollForPending = useCallback(() => {
+    const wrap = pendingScrollWrapRef.current;
+    const scroll = scrollRef.current;
+    if (!wrap || !scroll) return;
+
+    wrap.measureInWindow((_x, y, _w, h) => {
+      const kb = keyboardHeightRef.current;
+      const screenHeight = Dimensions.get("window").height;
+      // Prefer live keyboard height; fall back so first focus still lifts the field.
+      const reservedKb = kb > 0 ? kb : Platform.OS === "ios" ? 336 : 300;
+      const fieldBottom = y + h;
+      const visibleBottom = screenHeight - reservedKb - gapAboveKeyboard;
+      const delta = fieldBottom - visibleBottom;
+      if (delta > 2) {
+        scroll.scrollTo({
+          y: Math.max(0, scrollYRef.current + delta),
+          animated: true,
+        });
+      }
+    });
+  }, [gapAboveKeyboard]);
 
   const scrollFieldIntoView = useCallback(
     (wrapRef: React.RefObject<View | null>) => {
       pendingScrollWrapRef.current = wrapRef.current;
-      const run = () => {
-        const wrap = pendingScrollWrapRef.current;
-        if (!wrap) return;
-        wrap.measureInWindow((_x, y, _w, h) => {
-          const kb = keyboardHeight > 0 ? keyboardHeight : 280;
-          const screenHeight = Dimensions.get("window").height;
-          const fieldBottom = y + h;
-          const visibleBottom = screenHeight - kb - gapAboveKeyboard;
-          if (fieldBottom > visibleBottom) {
-            scrollRef.current?.scrollTo({
-              y: scrollYRef.current + (fieldBottom - visibleBottom),
-              animated: true,
-            });
-          }
-        });
-      };
-      setTimeout(run, Platform.OS === "ios" ? 80 : 180);
+      // Multiple passes: before keyboard, mid-animation, after settle.
+      requestAnimationFrame(runScrollForPending);
+      setTimeout(runScrollForPending, Platform.OS === "ios" ? 50 : 80);
+      setTimeout(runScrollForPending, Platform.OS === "ios" ? 220 : 280);
+      setTimeout(runScrollForPending, Platform.OS === "ios" ? 420 : 480);
     },
-    [keyboardHeight, gapAboveKeyboard]
+    [runScrollForPending]
   );
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const showSub = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
+      const next = event.endCoordinates.height;
+      keyboardHeightRef.current = next;
+      setKeyboardHeight(next);
+      // Keyboard just appeared — keep the focused field above it.
+      requestAnimationFrame(runScrollForPending);
+      setTimeout(runScrollForPending, 80);
+      setTimeout(runScrollForPending, 200);
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardHeightRef.current = 0;
       setKeyboardHeight(0);
       pendingScrollWrapRef.current = null;
     });
@@ -63,13 +81,7 @@ export function useScrollFieldAboveKeyboard(
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
-
-  useEffect(() => {
-    if (keyboardHeight > 0 && pendingScrollWrapRef.current) {
-      scrollFieldIntoView({ current: pendingScrollWrapRef.current });
-    }
-  }, [keyboardHeight, scrollFieldIntoView]);
+  }, [runScrollForPending]);
 
   const scrollBottomPad = withKeyboardAvoidingView
     ? insets.bottom + extraBottomPad

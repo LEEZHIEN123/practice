@@ -40,6 +40,7 @@ import {
   getPostsByAuthor,
   getPublicUserProfile,
   loadLikerProfiles,
+  loadProfileImageMap,
   purgeAdminQueueForMissingPosts,
   subscribeChats,
   subscribeFriendsList,
@@ -68,7 +69,7 @@ import {
 } from "@/lib/communityTypes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -133,8 +134,8 @@ function commentFromCommunityReport(report: CommunityReport): CommunityComment {
 function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
   return (
     <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
+      className="rounded-full items-center justify-center overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: "#93c5fd" }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
@@ -251,7 +252,18 @@ function AdminTabHeader({
   const { textPrimary } = useThemedScreen();
   return (
     <View className="flex-row items-center mb-5">
-      <Text className="text-3xl font-extrabold flex-1" style={textPrimary}>
+      <Text
+        className="flex-1"
+        numberOfLines={2}
+        style={[
+          textPrimary,
+          {
+            fontSize: 30,
+            lineHeight: 36,
+            fontWeight: "800",
+          },
+        ]}
+      >
         {title}
       </Text>
       {right}
@@ -381,21 +393,46 @@ export function AdminCommunityHub() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
   const [appearanceVisible, setAppearanceVisible] = useState(false);
+  const [avatarById, setAvatarById] = useState<Record<string, string | null>>({});
 
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
+
+  const avatarFor = useCallback(
+    (userId: string | null | undefined, fallback?: string | null) => {
+      if (!userId) return fallback ?? null;
+      const live = avatarById[userId];
+      if (live !== undefined) return live;
+      return fallback ?? null;
+    },
+    [avatarById]
+  );
 
   useEffect(() => {
     const user = auth.currentUser;
     setCurrentUserId(user?.uid ?? null);
     if (user?.email) setMyEmail(user.email);
     void syncAdminConfig().catch(() => {});
+  }, []);
+
+  const refreshMyProfile = useCallback(() => {
     void getCurrentUserProfile()
-      .then(({ profile }) => {
+      .then(({ uid, profile }) => {
         setMyName(profile.name);
         setMyProfileImage(profile.profileImage);
+        setAvatarById((prev) => ({ ...prev, [uid]: profile.profileImage }));
       })
       .catch(() => {});
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshMyProfile();
+    }, [refreshMyProfile])
+  );
+
+  useEffect(() => {
+    if (activeTab === "profile") refreshMyProfile();
+  }, [activeTab, refreshMyProfile]);
 
   const handleFirestoreErr = useCallback((error: Error) => {
     const code = (error as { code?: string }).code ?? "";
@@ -529,6 +566,65 @@ export function AdminCommunityHub() {
     const unsub = subscribeRegisteredUsers(setUsers, handleFirestoreErr);
     return unsub;
   }, [handleFirestoreErr]);
+
+  /** Prefer live users/{uid}.profileImage so updated photos show across admin surfaces. */
+  useEffect(() => {
+    const ids = new Set<string>();
+    for (const post of posts) {
+      if (post.authorId) ids.add(post.authorId);
+    }
+    for (const post of commentedFilterPosts) {
+      if (post.authorId) ids.add(post.authorId);
+    }
+    for (const chat of chats) {
+      for (const participantId of chat.participants) {
+        if (participantId) ids.add(participantId);
+      }
+    }
+    for (const user of users) {
+      if (user.id) ids.add(user.id);
+    }
+    for (const report of reports) {
+      if (report.reporterId) ids.add(report.reporterId);
+      if (report.targetAuthorId) ids.add(report.targetAuthorId);
+    }
+    for (const request of reReviewRequests) {
+      if (request.requestedBy) ids.add(request.requestedBy);
+      if (request.authorId) ids.add(request.authorId);
+    }
+    if (reportDetailPost?.authorId) ids.add(reportDetailPost.authorId);
+    for (const comment of reportDetailComments) {
+      if (comment.authorId) ids.add(comment.authorId);
+    }
+    if (reportDetailReport?.reporterId) ids.add(reportDetailReport.reporterId);
+    if (reportDetailReport?.targetAuthorId) ids.add(reportDetailReport.targetAuthorId);
+    if (currentUserId) ids.add(currentUserId);
+
+    const userIds = [...ids].filter(Boolean);
+    if (userIds.length === 0) {
+      setAvatarById({});
+      return;
+    }
+    let cancelled = false;
+    void loadProfileImageMap(userIds).then((map) => {
+      if (!cancelled) setAvatarById((prev) => ({ ...prev, ...map }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    posts,
+    commentedFilterPosts,
+    chats,
+    users,
+    reports,
+    reReviewRequests,
+    reportDetailPost?.authorId,
+    reportDetailComments,
+    reportDetailReport?.reporterId,
+    reportDetailReport?.targetAuthorId,
+    currentUserId,
+  ]);
 
   const totalUnreadChats = useMemo(
     () =>
@@ -697,17 +793,54 @@ export function AdminCommunityHub() {
   );
 
   const openCommunityUserProfile = async (userId: string) => {
+    if (!userId) return;
     setProfileUserId(userId);
     setProfileLoading(true);
     setProfileData(null);
     try {
       const profile = await getPublicUserProfile(userId);
-      setProfileData(profile);
+      setProfileData({
+        ...profile,
+        profileImage: profile.profileImage ?? avatarById[userId] ?? null,
+      });
     } catch {
       Alert.alert("Error", "Could not load profile.");
       setProfileUserId(null);
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const openChatWithUserId = async (
+    userId: string,
+    name: string,
+    image?: string | null
+  ) => {
+    if (!userId || userId === currentUserId) return;
+    try {
+      setOpeningChat(true);
+      const chatId = await ensureDirectChat(userId);
+      setUserDetailVisible(false);
+      setSelectedUser(null);
+      setProfileUserId(null);
+      setProfileData(null);
+      switchAdminTab("community");
+      setCommunitySubTab("chat");
+      setHighlightChatId(chatId);
+      router.push({
+        pathname: "/community-chat" as any,
+        params: {
+          chatId,
+          name,
+          image: avatarFor(userId, image) ?? image ?? "",
+          isAdmin: "1",
+          otherUserId: userId,
+        },
+      });
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not open chat.");
+    } finally {
+      setOpeningChat(false);
     }
   };
 
@@ -1021,15 +1154,20 @@ export function AdminCommunityHub() {
           Post
         </Text>
         <View className="flex-row items-center mb-3">
-          <ProfileAvatar uri={reportDetailPost.authorProfileImage} size={44} />
-          <View className="ml-3 flex-1">
-            <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
-              {reportDetailPost.authorName}
-            </Text>
-            <Text className="text-xs mt-0.5" style={textMuted}>
-              {formatPostDisplayTime(reportDetailPost.createdAt)}
-            </Text>
-          </View>
+          <Pressable
+            onPress={() => void openCommunityUserProfile(reportDetailPost.authorId)}
+            className="flex-row items-center flex-1"
+          >
+            <ProfileAvatar uri={avatarFor(reportDetailPost.authorId, reportDetailPost.authorProfileImage)} size={44} />
+            <View className="ml-3 flex-1">
+              <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
+                {reportDetailPost.authorName}
+              </Text>
+              <Text className="text-xs mt-0.5" style={textMuted}>
+                {formatPostDisplayTime(reportDetailPost.createdAt)}
+              </Text>
+            </View>
+          </Pressable>
         </View>
         {reportDetailPost.content ? (
           <Text className="text-sm leading-6" style={textSecondary}>
@@ -1078,15 +1216,20 @@ export function AdminCommunityHub() {
         </Text>
       ) : null}
       <View className="flex-row items-center">
-        <ProfileAvatar uri={comment.authorProfileImage} size={40} />
-        <View className="ml-3 flex-1">
-          <Text className="text-sm font-extrabold" style={textPrimary}>
-            {comment.authorName}
-          </Text>
-          <Text className="text-[10px] mt-0.5" style={textMuted}>
-            {formatChatMessageTime(comment.createdAt)}
-          </Text>
-        </View>
+        <Pressable
+          onPress={() => void openCommunityUserProfile(comment.authorId)}
+          className="flex-row items-center flex-1"
+        >
+          <ProfileAvatar uri={avatarFor(comment.authorId, comment.authorProfileImage)} size={40} />
+          <View className="ml-3 flex-1">
+            <Text className="text-sm font-extrabold" style={textPrimary}>
+              {comment.authorName}
+            </Text>
+            <Text className="text-[10px] mt-0.5" style={textMuted}>
+              {formatChatMessageTime(comment.createdAt)}
+            </Text>
+          </View>
+        </Pressable>
       </View>
       {comment.replyToAuthorName ? (
         <Text className="text-xs font-bold mt-2" style={{ color: theme.accentText }}>
@@ -1105,7 +1248,14 @@ export function AdminCommunityHub() {
             Report
           </Text>
           <Text className="text-sm mt-2 leading-5" style={textSecondary}>
-            By {reportDetailReport.reporterName}: {reportDetailReport.reason}
+            By{" "}
+            <Text
+              style={{ color: theme.accentText, fontWeight: "800" }}
+              onPress={() => void openCommunityUserProfile(reportDetailReport.reporterId)}
+            >
+              {reportDetailReport.reporterName}
+            </Text>
+            : {reportDetailReport.reason}
           </Text>
         </View>
       ) : null}
@@ -1217,28 +1367,7 @@ export function AdminCommunityHub() {
   };
 
   const handleChatWithUser = async (user: RegisteredUser) => {
-    try {
-      setOpeningChat(true);
-      const chatId = await ensureDirectChat(user.id);
-      setUserDetailVisible(false);
-      setSelectedUser(null);
-      switchAdminTab("community");
-      setCommunitySubTab("chat");
-      setHighlightChatId(chatId);
-      router.push({
-        pathname: "/community-chat" as any,
-        params: {
-          chatId,
-          name: user.name,
-          image: user.profileImage ?? "",
-          isAdmin: "1",
-        },
-      });
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not open chat.");
-    } finally {
-      setOpeningChat(false);
-    }
+    await openChatWithUserId(user.id, user.name, user.profileImage);
   };
 
   const handleResendPasswordReset = (user: RegisteredUser) => {
@@ -1450,12 +1579,10 @@ export function AdminCommunityHub() {
 
   const renderCommunityTab = () => (
     <View className="flex-1">
-      <View style={{ backgroundColor: theme.screenBg }}>
-        <View className="px-4">
-          <AdminTabHeader title="Community" right={<AdminBadge />} />
-        </View>
+      <View style={{ backgroundColor: theme.screenBg, paddingHorizontal: 12, paddingTop: 12 }}>
+        <AdminTabHeader title="Community" right={<AdminBadge />} />
 
-        <View className="flex-row mb-3 px-4 gap-2">
+        <View className="flex-row mb-3 gap-2">
           <Pressable
             onPress={() => setCommunitySubTab("feed")}
             className="flex-1 rounded-full py-3.5 items-center justify-center border-2"
@@ -1467,9 +1594,11 @@ export function AdminCommunityHub() {
           >
             <Text
               className={`font-extrabold ${communitySubTab === "feed" ? "text-base" : "text-sm"}`}
-              style={{ color: communitySubTab === "feed" ? "#ffffff" : theme.textSecondary }}
+              style={{
+                color: communitySubTab === "feed" ? "#ffffff" : theme.textSecondary,
+              }}
             >
-              Community
+              Feed
             </Text>
           </Pressable>
           <Pressable
@@ -1483,7 +1612,9 @@ export function AdminCommunityHub() {
           >
             <Text
               className={`font-extrabold ${communitySubTab === "chat" ? "text-base" : "text-sm"}`}
-              style={{ color: communitySubTab === "chat" ? "#ffffff" : theme.textSecondary }}
+              style={{
+                color: communitySubTab === "chat" ? "#ffffff" : theme.textSecondary,
+              }}
             >
               Chat
             </Text>
@@ -1494,9 +1625,10 @@ export function AdminCommunityHub() {
                 }`}
               >
                 <Text
-                  className={`text-[10px] font-extrabold ${
-                    communitySubTab === "chat" ? "text-[#52B69A]" : "text-white"
-                  }`}
+                  className="text-[10px] font-extrabold"
+                  style={{
+                    color: communitySubTab === "chat" ? theme.accent : "#ffffff",
+                  }}
                 >
                   {totalUnreadChats > 9 ? "9+" : totalUnreadChats}
                 </Text>
@@ -1507,14 +1639,14 @@ export function AdminCommunityHub() {
 
         {communitySubTab === "feed" ? (
           tagFilterView && activeTagFilter ? (
-            <View className="flex-row items-center mb-3 px-4">
+            <View className="flex-row items-center mb-3">
               <ThemedBackButton onPress={exitTagView} className="mr-3" />
               <Text className="text-lg font-extrabold" style={textPrimary}>
                 #{activeTagFilter}
               </Text>
             </View>
           ) : (
-            <View className="flex-row items-center gap-2 px-4 mb-3">
+            <View className="flex-row items-center gap-2 mb-3">
               <View className="flex-1">
                 <CommunitySearchBar
                   value={searchQuery}
@@ -1563,11 +1695,11 @@ export function AdminCommunityHub() {
         keyboardShouldPersistTaps="handled"
       >
         {communitySubTab === "feed" ? (
-          <View className="gap-3 px-4 pb-4">
+          <View className="gap-3 px-3 pb-4">
             {!tagFilterView ? (
               <View className="rounded-2xl px-4 py-4" style={cardStyle}>
                 <View className="flex-row items-center">
-                  <ProfileAvatar uri={myProfileImage} />
+                  <ProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} />
                   <View className="flex-1 ml-3">
                     <View className="flex-row items-center">
                       <Text className="text-base font-extrabold" style={textPrimary}>
@@ -1593,7 +1725,7 @@ export function AdminCommunityHub() {
                   onPress={() => void handleCreatePost()}
                   disabled={!postText.trim()}
                   className="mt-3 rounded-full py-3 items-center"
-                  style={{ backgroundColor: postText.trim() ? "#52B69A" : theme.iconMuted }}
+                  style={{ backgroundColor: postText.trim() ? theme.accent : theme.iconMuted }}
                 >
                   <Text className="text-sm font-extrabold text-white">Continue</Text>
                 </Pressable>
@@ -1627,8 +1759,16 @@ export function AdminCommunityHub() {
               return (
                 <View key={post.id} className="rounded-2xl px-4 py-4" style={cardStyle}>
                   <View className="flex-row items-center">
-                    <ProfileAvatar uri={post.authorProfileImage} size={40} />
-                    <View className="flex-1 ml-3">
+                    <Pressable onPress={() => void openCommunityUserProfile(post.authorId)}>
+                      <ProfileAvatar
+                        uri={avatarFor(post.authorId, post.authorProfileImage)}
+                        size={40}
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void openCommunityUserProfile(post.authorId)}
+                      className="flex-1 ml-3"
+                    >
                       <Text className="text-base font-extrabold" style={textPrimary}>
                         {post.authorName}
                         {isOwnPost ? (
@@ -1641,7 +1781,7 @@ export function AdminCommunityHub() {
                       <Text className="text-[10px] mt-0.5" style={textMuted}>
                         {formatPostDisplayTime(post.createdAt)}
                       </Text>
-                    </View>
+                    </Pressable>
                     <Pressable
                       onPress={() => setMenuPost(post)}
                       className="w-9 h-9 rounded-full items-center justify-center"
@@ -1689,14 +1829,14 @@ export function AdminCommunityHub() {
                         <Ionicons
                           name={liked ? "heart" : "heart-outline"}
                           size={20}
-                          color={liked ? "#ef4444" : "#52B69A"}
+                          color={liked ? "#ef4444" : theme.accent}
                         />
                       </Pressable>
                       <Pressable
                         onPress={() => void openLikesModal(post)}
                         hitSlop={{ top: 10, bottom: 10, left: 4, right: 8 }}
                       >
-                        <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+                        <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accent }}>
                           {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                         </Text>
                       </Pressable>
@@ -1705,8 +1845,8 @@ export function AdminCommunityHub() {
                       onPress={() => openPostDetail(post.id)}
                       className="flex-row items-center"
                     >
-                      <Ionicons name="chatbubble-outline" size={18} color="#52B69A" />
-                      <Text className="text-xs text-[#52B69A] font-bold ml-1.5">
+                      <Ionicons name="chatbubble-outline" size={18} color={theme.accent} />
+                      <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accent }}>
                         {post.commentCount}{" "}
                         {post.commentCount === 1 ? "comment" : "comments"}
                       </Text>
@@ -1717,7 +1857,7 @@ export function AdminCommunityHub() {
             })}
           </View>
         ) : (
-          <View className="px-4 gap-0 pb-4">
+          <View className="px-3 gap-0 pb-4">
             {chats.length === 0 ? (
               <View className="px-4 py-8 items-center rounded-2xl" style={surfaceStyle}>
                 <Text className="text-sm text-center" style={textMuted}>
@@ -1736,7 +1876,13 @@ export function AdminCommunityHub() {
                   onPress={() =>
                     router.push({
                       pathname: "/community-chat" as any,
-                      params: { chatId: chat.id, name, image: image ?? "", isAdmin: "1" },
+                      params: {
+                        chatId: chat.id,
+                        name,
+                        image: avatarFor(otherUid, image) ?? "",
+                        isAdmin: "1",
+                        otherUserId: otherUid,
+                      },
                     })
                   }
                   className="flex-row items-center rounded-2xl px-4 py-4 mb-2"
@@ -1747,7 +1893,9 @@ export function AdminCommunityHub() {
                       : undefined,
                   ]}
                 >
-                  <ProfileAvatar uri={image} />
+                  <ProfileAvatar
+                    uri={avatarFor(otherUid, image)}
+                  />
                   <View className="flex-1 ml-3">
                     <View className="flex-row items-center">
                       <Text className="text-base font-extrabold" style={textPrimary}>
@@ -1960,7 +2108,12 @@ export function AdminCommunityHub() {
                         numberOfLines={2}
                       >
                         Request review by{" "}
-                        <Text style={{ color: "#2563eb" }}>{request.requestedByName}</Text>
+                        <Text
+                          style={{ color: theme.accentText }}
+                          onPress={() => void openCommunityUserProfile(request.requestedBy)}
+                        >
+                          {request.requestedByName}
+                        </Text>
                       </Text>
                     </View>
                     <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
@@ -1969,9 +2122,14 @@ export function AdminCommunityHub() {
                         {request.reason || "(No reason provided)"}
                       </Text>
                     </Text>
-                    <Text className="text-xs mt-2" style={textMuted}>
-                      Post author: {request.authorName}
-                    </Text>
+                    <Pressable onPress={() => void openCommunityUserProfile(request.authorId)}>
+                      <Text className="text-xs mt-2" style={textMuted}>
+                        Post author:{" "}
+                        <Text style={{ color: theme.accentText, fontWeight: "800" }}>
+                          {request.authorName}
+                        </Text>
+                      </Text>
+                    </Pressable>
                     <Text
                       className="text-sm mt-3 rounded-xl px-3 py-3 border"
                       style={[
@@ -2002,19 +2160,21 @@ export function AdminCommunityHub() {
                       disabled={busy || reportDeleteMode}
                       className="mt-3 rounded-full py-2.5 items-center border"
                       style={{
-                        backgroundColor: "#eaf7f0",
-                        borderColor: "#b7e4c7",
+                        backgroundColor: theme.accentSoft,
+                        borderColor: theme.accent,
                         opacity: busy || reportDeleteMode ? 0.5 : 1,
                       }}
                     >
-                      <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
+                      <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
+                        View post details
+                      </Text>
                     </Pressable>
                     <View className="flex-row gap-2 mt-3">
                       <Pressable
                         onPress={() => handleApproveReReview(request)}
                         disabled={busy || reportDeleteMode}
                         className="flex-1 rounded-full py-2.5 items-center"
-                        style={{ backgroundColor: "#52B69A", opacity: busy || reportDeleteMode ? 0.5 : 1 }}
+                        style={{ backgroundColor: theme.accent, opacity: busy || reportDeleteMode ? 0.5 : 1 }}
                       >
                         <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                           Restore Post
@@ -2082,7 +2242,12 @@ export function AdminCommunityHub() {
                         numberOfLines={2}
                       >
                         {reportByPrefix}
-                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                        <Text
+                          style={{ color: theme.accentText }}
+                          onPress={() => void openCommunityUserProfile(report.reporterId)}
+                        >
+                          {report.reporterName}
+                        </Text>
                       </Text>
                     </Pressable>
                   ) : (
@@ -2099,7 +2264,12 @@ export function AdminCommunityHub() {
                         numberOfLines={2}
                       >
                         {reportByPrefix}
-                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                        <Text
+                          style={{ color: theme.accentText }}
+                          onPress={() => void openCommunityUserProfile(report.reporterId)}
+                        >
+                          {report.reporterName}
+                        </Text>
                       </Text>
                     </View>
                   )}
@@ -2139,9 +2309,11 @@ export function AdminCommunityHub() {
                     onPress={() => void openReportPostDetail(report)}
                     disabled={cardDisabled}
                     className="mt-3 rounded-full py-2.5 items-center border"
-                    style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
                   >
-                    <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
+                    <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
+                      View post details
+                    </Text>
                   </Pressable>
                   <View className="flex-row gap-2 mt-3">
                     {isReReviewPending ? (
@@ -2150,7 +2322,7 @@ export function AdminCommunityHub() {
                           onPress={() => handleApproveReReviewFromReport(report)}
                           disabled={cardDisabled}
                           className="flex-1 rounded-full py-2.5 items-center"
-                          style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
+                          style={{ backgroundColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
                         >
                           <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                             Restore Post
@@ -2279,7 +2451,12 @@ export function AdminCommunityHub() {
                           : report.source === "admin_direct"
                             ? "Blocked by "
                             : "Reported by "}
-                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                        <Text
+                          style={{ color: theme.accentText }}
+                          onPress={() => void openCommunityUserProfile(report.reporterId)}
+                        >
+                          {report.reporterName}
+                        </Text>
                       </Text>
                     </Pressable>
                   ) : (
@@ -2304,7 +2481,12 @@ export function AdminCommunityHub() {
                           : report.source === "admin_direct"
                             ? "Blocked by "
                             : "Reported by "}
-                        <Text style={{ color: "#2563eb" }}>{report.reporterName}</Text>
+                        <Text
+                          style={{ color: theme.accentText }}
+                          onPress={() => void openCommunityUserProfile(report.reporterId)}
+                        >
+                          {report.reporterName}
+                        </Text>
                       </Text>
                     </View>
                   )}
@@ -2350,9 +2532,11 @@ export function AdminCommunityHub() {
                     onPress={() => void openReportPostDetail(report)}
                     disabled={cardDisabled}
                     className="mt-3 rounded-full py-2.5 items-center border"
-                    style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: cardDisabled ? 0.5 : 1 }}
+                    style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
                   >
-                    <Text className="text-xs font-extrabold text-[#52B69A]">View post details</Text>
+                    <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
+                      View post details
+                    </Text>
                   </Pressable>
                   <View className="flex-row gap-2 mt-3">
                     {isResolved ? (
@@ -2364,7 +2548,7 @@ export function AdminCommunityHub() {
                         }
                         disabled={cardDisabled}
                         className="flex-1 rounded-full py-2.5 items-center"
-                        style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
+                        style={{ backgroundColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
                       >
                         <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                           {report.targetType === "comment" ? "Restore Comment" : "Restore Post"}
@@ -2438,7 +2622,7 @@ export function AdminCommunityHub() {
             style={surfaceStyle}
           >
             <View className="flex-row items-center">
-              <ProfileAvatar uri={user.profileImage} size={40} />
+              <ProfileAvatar uri={avatarFor(user.id, user.profileImage)} size={40} />
               <View className="flex-1 ml-3">
                 <Text className="text-sm font-extrabold" style={textPrimary}>
                   {user.name}
@@ -2463,14 +2647,16 @@ export function AdminCommunityHub() {
                 onPress={() => handleResendPasswordReset(user)}
                 disabled={busy}
                 className="flex-1 rounded-full py-2.5 items-center border flex-row justify-center"
-                style={{ backgroundColor: "#eaf7f0", borderColor: "#b7e4c7", opacity: busy ? 0.6 : 1 }}
+                style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent, opacity: busy ? 0.6 : 1 }}
               >
                 {busy ? (
-                  <ActivityIndicator size="small" color="#52B69A" />
+                  <ActivityIndicator size="small" color={theme.accent} />
                 ) : (
                   <>
-                    <Ionicons name="mail-outline" size={14} color="#52B69A" />
-                    <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
+                    <Ionicons name="mail-outline" size={14} color={theme.accent} />
+                    <Text className="text-xs font-semibold ml-1.5" style={{ color: theme.accentText }}>
+                      Resend password link
+                    </Text>
                   </>
                 )}
               </Pressable>
@@ -2489,6 +2675,7 @@ export function AdminCommunityHub() {
       borderWidth: 1,
     };
     const appearanceLabel = mode === "dark" ? "Dark mode" : "Light mode";
+    const profilePhotoUri = avatarFor(currentUserId, myProfileImage);
 
     return (
     <ScrollView
@@ -2505,11 +2692,18 @@ export function AdminCommunityHub() {
       />
 
       <View className="items-center mb-6">
-        <View className="w-36 h-36 rounded-full border-4 border-[#b7ead1] bg-[#f7ead9] items-center justify-center overflow-hidden">
-          {myProfileImage ? (
-            <Image source={{ uri: myProfileImage }} style={{ width: 144, height: 144 }} contentFit="cover" />
+        <View
+          className="w-36 h-36 rounded-full border-4 items-center justify-center overflow-hidden"
+          style={{ borderColor: theme.accent, backgroundColor: theme.accentSoft }}
+        >
+          {profilePhotoUri ? (
+            <Image
+              source={{ uri: profilePhotoUri }}
+              style={{ width: 144, height: 144 }}
+              contentFit="cover"
+            />
           ) : (
-            <Ionicons name="person" size={56} color="white" />
+            <Ionicons name="person" size={56} color={theme.accent} />
           )}
         </View>
         <View className="flex-row items-center mt-4">
@@ -2647,8 +2841,8 @@ export function AdminCommunityHub() {
             setEditingPost(null);
             setComposerVisible(true);
           }}
-          className="absolute right-5 flex-row items-center rounded-full bg-[#52B69A] px-6 py-4 shadow-lg z-10"
-          style={{ bottom: insets.bottom + 72 }}
+          className="absolute right-5 flex-row items-center rounded-full px-6 py-4 shadow-lg z-10"
+          style={{ bottom: insets.bottom + 72, backgroundColor: theme.accent }}
           accessibilityRole="button"
           accessibilityLabel="New post"
         >
@@ -2746,7 +2940,7 @@ export function AdminCommunityHub() {
             {selectedUser ? (
               <>
                 <View className="items-center mb-5">
-                  <ProfileAvatar uri={selectedUser.profileImage} size={72} />
+                  <ProfileAvatar uri={avatarFor(selectedUser.id, selectedUser.profileImage)} size={72} />
                   <Text className="text-xl font-extrabold mt-3" style={textPrimary}>
                     {selectedUser.name}
                   </Text>
@@ -2791,9 +2985,26 @@ export function AdminCommunityHub() {
                 </View>
 
                 <Pressable
+                  onPress={() => {
+                    const user = selectedUser;
+                    setUserDetailVisible(false);
+                    setSelectedUser(null);
+                    void openCommunityUserProfile(user.id);
+                  }}
+                  className="rounded-full py-3.5 items-center mb-3 flex-row justify-center border"
+                  style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
+                >
+                  <Ionicons name="person-outline" size={18} color={theme.accentText} />
+                  <Text className="text-sm font-extrabold ml-2" style={{ color: theme.accentText }}>
+                    View community profile
+                  </Text>
+                </Pressable>
+
+                <Pressable
                   onPress={() => void handleChatWithUser(selectedUser)}
                   disabled={openingChat}
-                  className="rounded-full py-3.5 items-center bg-[#52B69A] mb-3 flex-row justify-center"
+                  className="rounded-full py-3.5 items-center mb-3 flex-row justify-center"
+                  style={{ backgroundColor: theme.accent }}
                 >
                   {openingChat ? (
                     <ActivityIndicator color="white" />
@@ -2810,13 +3021,15 @@ export function AdminCommunityHub() {
                   disabled={userManagementActionId === selectedUser.id}
                   className="rounded-full py-3 items-center border flex-row justify-center mb-3"
                   style={{
-                    backgroundColor: "#eaf7f0",
-                    borderColor: "#b7e4c7",
+                    backgroundColor: theme.accentSoft,
+                    borderColor: theme.accent,
                     opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
                   }}
                 >
-                  <Ionicons name="mail-outline" size={14} color="#52B69A" />
-                  <Text className="text-xs font-semibold text-[#52B69A] ml-1.5">Resend password link</Text>
+                  <Ionicons name="mail-outline" size={14} color={theme.accent} />
+                  <Text className="text-xs font-semibold ml-1.5" style={{ color: theme.accentText }}>
+                    Resend password link
+                  </Text>
                 </Pressable>
 
                 <Pressable
@@ -2861,7 +3074,7 @@ export function AdminCommunityHub() {
               className="rounded-[28px] px-5 pt-5 pb-6 border"
               style={[
                 modalCardStyle,
-                { borderColor: "#b7e4c7", backgroundColor: theme.modalBg },
+                { borderColor: theme.accent, backgroundColor: theme.modalBg },
               ]}
             >
               <Text className="text-xl font-extrabold" style={textPrimary}>
@@ -2907,7 +3120,8 @@ export function AdminCommunityHub() {
                 <Pressable
                   onPress={() => void handleChangePassword()}
                   disabled={changingPassword}
-                  className="flex-1 rounded-full py-3.5 items-center bg-[#52B69A]"
+                  className="flex-1 rounded-full py-3.5 items-center"
+                  style={{ backgroundColor: theme.accent }}
                 >
                   {changingPassword ? (
                     <ActivityIndicator color="white" />
@@ -2989,6 +3203,17 @@ export function AdminCommunityHub() {
           setProfileData(null);
         }}
         onAddFriend={() => {}}
+        onChat={
+          profileUserId && profileUserId !== currentUserId && profileData
+            ? () => {
+                void openChatWithUserId(
+                  profileUserId,
+                  profileData.name,
+                  profileData.profileImage
+                );
+              }
+            : undefined
+        }
         onOpenPost={(postId) => {
           setProfileUserId(null);
           setProfileData(null);
@@ -3085,7 +3310,7 @@ export function AdminCommunityHub() {
               {
                 width: reportDetailModalWidth,
                 maxHeight: reportDetailModalMaxHeight,
-                borderColor: "#b7e4c7",
+                borderColor: theme.accent,
                 backgroundColor: theme.modalBg,
                 zIndex: 1,
               },
@@ -3129,7 +3354,18 @@ export function AdminCommunityHub() {
                       Report
                     </Text>
                     <Text className="text-sm mt-2 leading-5" style={textSecondary}>
-                      By {reportDetailReport.reporterName}: {reportDetailReport.reason}
+                      By{" "}
+                      <Text
+                        style={{ color: theme.accentText, fontWeight: "800" }}
+                        onPress={() =>
+                          reportDetailReport
+                            ? void openCommunityUserProfile(reportDetailReport.reporterId)
+                            : undefined
+                        }
+                      >
+                        {reportDetailReport.reporterName}
+                      </Text>
+                      : {reportDetailReport.reason}
                     </Text>
                   </View>
                 ) : null}

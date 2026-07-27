@@ -6,7 +6,7 @@ import {
     ThemedText,
     useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
-import { checkIsAdmin } from "@/lib/communityService";
+import { checkIsAdmin, syncAuthorProfileImageOnPosts } from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -17,18 +17,22 @@ import { useEffect, useState } from "react";
 import {
     Alert,
     Image,
+    Modal,
     ScrollView,
+    Text,
     TextInput,
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db, storage } from "../firebaseConfig";
 
+const ADMIN_OPTION_BLUE = "#2563eb";
+
 export default function EditAdminProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useThemedScreen();
-  const { inputStyle, rowStyle, placeholderColor } = useProfileCardStyles();
+  const { inputStyle, rowStyle, placeholderColor, modalCardStyle } = useProfileCardStyles();
 
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -36,6 +40,7 @@ export default function EditAdminProfile() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [photoSourceVisible, setPhotoSourceVisible] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -66,23 +71,46 @@ export default function EditAdminProfile() {
     })();
   }, [router]);
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission needed", "We need access to your photo library.");
+  const pickImage = async (useCamera: boolean) => {
+    const permission = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        useCamera
+          ? "We need access to your camera."
+          : "We need access to your photo library."
+      );
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
       setProfileImage(result.assets[0].uri);
     }
+  };
+
+  const openPhotoSourcePicker = () => {
+    setPhotoSourceVisible(true);
+  };
+
+  const choosePhotoSource = (useCamera: boolean) => {
+    setPhotoSourceVisible(false);
+    void pickImage(useCamera);
   };
 
   const handleSave = async () => {
@@ -111,6 +139,10 @@ export default function EditAdminProfile() {
         bio: userBio.trim().slice(0, 200),
         profileImage: profileImageUrl,
       });
+
+      if (typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")) {
+        await syncAuthorProfileImageOnPosts(profileImageUrl).catch(() => {});
+      }
 
       Alert.alert("Profile updated", "Your admin profile has been saved.");
       router.back();
@@ -179,7 +211,7 @@ export default function EditAdminProfile() {
           </View>
 
           <View className="items-center mb-5">
-            <Pressable onPress={() => void pickImage()}>
+            <Pressable onPress={openPhotoSourcePicker}>
               <View
                 className="w-32 h-32 rounded-full border-4 items-center justify-center overflow-hidden"
                 style={{ borderColor: theme.accent, backgroundColor: theme.accentSoft }}
@@ -187,12 +219,12 @@ export default function EditAdminProfile() {
                 {profileImage ? (
                   <Image source={{ uri: profileImage }} className="w-full h-full" resizeMode="cover" />
                 ) : (
-                  <Ionicons name="person" size={48} color="#52B69A" />
+                  <Ionicons name="person" size={48} color={theme.accent} />
                 )}
               </View>
             </Pressable>
             <ThemedText variant="muted" className="text-sm mt-3">
-              Tap photo to change profile picture
+              Tap photo to use camera or gallery
             </ThemedText>
           </View>
 
@@ -238,13 +270,83 @@ export default function EditAdminProfile() {
         <Pressable
           onPress={() => void handleSave()}
           disabled={loading}
-          className={`bg-[#52B69A] py-4 rounded-full items-center ${loading ? "opacity-60" : ""}`}
+          className={`py-4 rounded-full items-center ${loading ? "opacity-60" : ""}`}
+          style={{ backgroundColor: theme.accent }}
         >
-          <ThemedText className="text-white font-extrabold text-base">
+          <Text className="font-extrabold text-base" style={{ color: "#ffffff" }}>
             {loading ? "Saving..." : "Save changes"}
-          </ThemedText>
+          </Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={photoSourceVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoSourceVisible(false)}
+      >
+        <View className="flex-1 items-center justify-center" style={{ backgroundColor: theme.modalOverlay }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
+            onPress={() => setPhotoSourceVisible(false)}
+            style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View
+            className="rounded-2xl px-4 pt-4 pb-2"
+            style={[
+              modalCardStyle,
+              {
+                width: 280,
+                maxWidth: "82%",
+              },
+            ]}
+          >
+            <ThemedText className="text-lg font-extrabold mb-3">
+              Change profile picture
+            </ThemedText>
+
+            <View className="items-end pr-1">
+              <Pressable
+                onPress={() => choosePhotoSource(true)}
+                className="py-2.5 px-1"
+                hitSlop={4}
+              >
+                <Text
+                  className="text-[15px] font-bold text-right"
+                  style={{ color: ADMIN_OPTION_BLUE }}
+                >
+                  Take Photo
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => choosePhotoSource(false)}
+                className="py-2.5 px-1"
+                hitSlop={4}
+              >
+                <Text
+                  className="text-[15px] font-bold text-right"
+                  style={{ color: ADMIN_OPTION_BLUE }}
+                >
+                  Choose from Gallery
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPhotoSourceVisible(false)}
+                className="py-2.5 px-1 mb-1"
+                hitSlop={4}
+              >
+                <Text
+                  className="text-[15px] font-bold text-right"
+                  style={{ color: ADMIN_OPTION_BLUE }}
+                >
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedScreen>
   );
 }
