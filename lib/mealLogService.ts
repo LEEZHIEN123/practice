@@ -1,7 +1,7 @@
 import { formatCalendarDayKey, getDeviceIanaTimezone } from "@/lib/calendarDay";
 import { upsertMealHistory, descriptionsToLegacyString, normalizeMealDescriptions } from "@/lib/mealLogHistory";
 import { isManualMealType } from "@/lib/manualMealTypes";
-import { auth, db } from "../firebaseConfig";
+import { auth, db, storage } from "../firebaseConfig";
 import {
   addDoc,
   collection,
@@ -13,6 +13,7 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 export type MealLogSource = "dataset" | "barcode" | "search" | "manual";
 
@@ -38,6 +39,62 @@ export type LogMealInput = {
   planCreatedAt?: string | null;
   origin?: "nutritionPlan";
 };
+
+function isRemotePhotoUri(uri: string): boolean {
+  return /^https?:\/\//i.test(uri.trim());
+}
+
+async function localUriToBlob(uri: string): Promise<Blob> {
+  if (uri.startsWith("file://") || uri.startsWith("content://") || uri.startsWith("ph://")) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
+          resolve(xhr.response as Blob);
+          return;
+        }
+        reject(new Error("Could not read meal photo."));
+      };
+      xhr.onerror = () => reject(new Error("Could not read meal photo."));
+      xhr.responseType = "blob";
+      xhr.open("GET", uri, true);
+      xhr.send(null);
+    });
+  }
+
+  const response = await fetch(uri);
+  if (!response.ok) throw new Error("Could not read meal photo.");
+  return response.blob();
+}
+
+/** Upload a local meal photo to Firebase Storage; returns the download URL. */
+export async function uploadMealPhoto(localUri: string): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Sign in to upload meal photos.");
+
+  const trimmed = localUri.trim();
+  if (!trimmed) throw new Error("Meal photo is missing.");
+  if (isRemotePhotoUri(trimmed)) return trimmed;
+
+  const blob = await localUriToBlob(trimmed);
+  if (blob.size < 1) throw new Error("Could not read meal photo.");
+  if (blob.size > 10 * 1024 * 1024) {
+    throw new Error("Meal photo must be smaller than 10 MB.");
+  }
+
+  const objectRef = ref(storage, `users/${user.uid}/mealPhotos/${Date.now()}.jpg`);
+  await uploadBytes(objectRef, blob, {
+    contentType: blob.type || "image/jpeg",
+  });
+  return getDownloadURL(objectRef);
+}
+
+/** Resolve photoUri to a Storage download URL when it is still a local device path. */
+export async function resolveMealPhotoUri(photoUri?: string | null): Promise<string | undefined> {
+  const trimmed = photoUri?.trim();
+  if (!trimmed) return undefined;
+  return uploadMealPhoto(trimmed);
+}
 
 export async function logMealFood(input: LogMealInput): Promise<void> {
   const user = auth.currentUser;
@@ -70,13 +127,15 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
       : null;
   const fromNutritionPlan = input.origin === "nutritionPlan" && planDay != null;
 
+  const photoUri = await resolveMealPhotoUri(input.photoUri);
+
   await addDoc(collection(db, "users", user.uid, "mealLogs"), {
     title,
     calories,
     source: input.source,
     ...(description ? { description } : {}),
     ...(descriptionSections.length > 0 ? { descriptionSections } : {}),
-    ...(input.photoUri ? { photoUri: input.photoUri } : {}),
+    ...(photoUri ? { photoUri } : {}),
     ...(input.category ? { category: input.category } : {}),
     ...(input.foodId ? { foodId: input.foodId } : {}),
     ...(input.barcode ? { barcode: input.barcode } : {}),
@@ -127,7 +186,7 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
       mealType: isManualMealType(input.category) ? input.category : undefined,
       description,
       descriptionSections,
-      photoUri: input.photoUri,
+      photoUri,
     });
   }
 }

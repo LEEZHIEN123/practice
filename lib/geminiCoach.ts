@@ -31,6 +31,10 @@ Decline only non-fitness / non-app topics. When the user asks something unrelate
 **Vary your answers:** Each reply should feel fresh — change wording, examples, structure, and tips when the same or similar question is asked again. Keep facts accurate; do not repeat the same script every time.
 `;
 
+/** Cap history size — large threads make native Gemini calls feel slow. */
+const MAX_HISTORY_TURNS = 8;
+const MAX_HISTORY_CHARS_PER_TURN = 700;
+
 function isExplainStyleQuestion(text: string): boolean {
   const q = text.trim().toLowerCase();
   if (!q) return false;
@@ -114,6 +118,19 @@ function textFromParts(parts: GeminiPart[] | undefined): string {
     .join("");
 }
 
+function truncateTurnText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= MAX_HISTORY_CHARS_PER_TURN) return trimmed;
+  return `${trimmed.slice(0, MAX_HISTORY_CHARS_PER_TURN)}…`;
+}
+
+function compactHistory(history: CoachChatTurn[]): CoachChatTurn[] {
+  return history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
+    role: turn.role,
+    text: truncateTurnText(turn.text),
+  }));
+}
+
 function buildRequestBody(
   history: CoachChatTurn[],
   userMessage: string,
@@ -122,7 +139,7 @@ function buildRequestBody(
 ) {
   const explainMode = isExplainStyleQuestion(userMessage);
   const contents = [
-    ...history.map((turn) => ({
+    ...compactHistory(history).map((turn) => ({
       role: turn.role === "user" ? "user" : "model",
       parts: [{ text: turn.text }],
     })),
@@ -151,108 +168,14 @@ function buildRequestBody(
   };
 }
 
-async function readSseStream(
-  res: Response,
-  onPartial?: (text: string) => void
-): Promise<string> {
-  const body = res.body;
-  if (!body || typeof (body as { getReader?: unknown }).getReader !== "function") {
-    const raw = await res.text();
-    // Non-streaming fallback (some RN environments).
-    const chunks = raw
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trim())
-      .filter((line) => line && line !== "[DONE]");
-    let assembled = "";
-    for (const chunk of chunks) {
-      try {
-        const parsed = JSON.parse(chunk) as GeminiChunk;
-        assembled += textFromParts(parsed.candidates?.[0]?.content?.parts);
-        onPartial?.(assembled);
-      } catch {
-        /* ignore partial parse */
-      }
-    }
-    if (assembled.trim()) return assembled.trim();
-    // Maybe a single JSON generateContent body
-    try {
-      const parsed = JSON.parse(raw) as GeminiChunk;
-      const text = textFromParts(parsed.candidates?.[0]?.content?.parts).trim();
-      if (text) {
-        onPartial?.(text);
-        return text;
-      }
-    } catch {
-      /* ignore */
-    }
-    throw new Error("Gemini returned an empty reply. Please try again.");
-  }
-
-  const reader = (body as ReadableStream<Uint8Array>).getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let assembled = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(payload) as GeminiChunk;
-        const piece = textFromParts(parsed.candidates?.[0]?.content?.parts);
-        if (!piece) continue;
-        assembled += piece;
-        onPartial?.(assembled);
-      } catch {
-        /* ignore bad chunk */
-      }
-    }
-  }
-
-  if (!assembled.trim()) {
-    throw new Error("Gemini returned an empty reply. Please try again.");
-  }
-  return assembled.trim();
-}
-
 async function generateOnce(
   apiKey: string,
   body: Record<string, unknown>,
   signal: AbortSignal,
   onPartial?: (text: string) => void
 ): Promise<string> {
-  // Prefer streaming so the first tokens show quickly (especially on native builds).
-  const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
-  const streamRes = await fetch(streamUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    signal,
-    body: JSON.stringify(body),
-  });
-
-  if (streamRes.ok) {
-    return readSseStream(streamRes, onPartial);
-  }
-
-  const streamErr = await streamRes.text();
-  // If the request body was rejected, bubble up so the caller can retry thinking config.
-  if (streamRes.status === 400) {
-    throw new Error(parseGeminiError(streamErr, streamRes.status));
-  }
-
-  // Fall back to non-streaming when the stream endpoint is unavailable.
+  // Prefer non-streaming on native/dev builds: RN often buffers SSE until complete,
+  // so streamGenerateContent adds overhead without earlier first tokens.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
   const res = await fetch(url, {
     method: "POST",
@@ -265,7 +188,7 @@ async function generateOnce(
   });
   const raw = await res.text();
   if (!res.ok) {
-    throw new Error(parseGeminiError(raw || streamErr, res.status || streamRes.status));
+    throw new Error(parseGeminiError(raw, res.status));
   }
   let data: GeminiChunk;
   try {
@@ -277,6 +200,23 @@ async function generateOnce(
   if (!text) throw new Error("Gemini returned an empty reply. Please try again.");
   onPartial?.(text);
   return text;
+}
+
+/** After the API rejects a thinking config once, prefer the mode that worked. */
+let preferredThinkingMode: "budget" | "level" | "off" = "off";
+
+function isRetryableConfigError(message: string): boolean {
+  const msg = message.toLowerCase();
+  // Gemini often returns a generic INVALID_ARGUMENT for unsupported thinkingConfig.
+  return (
+    msg.includes("thinking") ||
+    msg.includes("budget") ||
+    msg.includes("thinkingconfig") ||
+    msg.includes("thinking_level") ||
+    msg.includes("thinkinglevel") ||
+    msg.includes("invalid argument") ||
+    msg.includes("invalid_argument")
+  );
 }
 
 /** Send conversation history + new user message to Gemini; returns assistant reply text. */
@@ -294,31 +234,30 @@ export async function sendCoachMessage(
   }
 
   const controller = new AbortController();
-  const timeoutMs = 45_000;
+  const timeoutMs = 35_000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    // Prefer disabled/minimal thinking for low latency on native + Expo.
-    const modes: Array<"budget" | "level" | "off"> = ["budget", "level", "off"];
+    // "off" first — gemini-3.5-flash-lite often rejects thinkingBudget/thinkingLevel with
+    // generic "Request contains an invalid argument". Prefer the last mode that worked.
+    const modes = Array.from(
+      new Set<"budget" | "level" | "off">([preferredThinkingMode, "off", "budget", "level"])
+    );
     let lastError: unknown = null;
     for (const mode of modes) {
       try {
-        return await generateOnce(
+        const text = await generateOnce(
           apiKey,
           buildRequestBody(history, userMessage, userContext, mode),
           controller.signal,
           onPartial
         );
+        preferredThinkingMode = mode;
+        return text;
       } catch (err) {
         lastError = err;
-        const msg = err instanceof Error ? err.message.toLowerCase() : "";
-        const canRetryThinking =
-          mode !== "off" &&
-          (msg.includes("thinking") ||
-            msg.includes("budget") ||
-            msg.includes("invalid argument") ||
-            msg.includes("400"));
-        if (!canRetryThinking) throw err;
+        const msg = err instanceof Error ? err.message : "";
+        if (mode === modes[modes.length - 1] || !isRetryableConfigError(msg)) throw err;
       }
     }
     throw lastError instanceof Error
@@ -327,7 +266,7 @@ export async function sendCoachMessage(
   } catch (e) {
     if (e instanceof Error && (e.name === "AbortError" || controller.signal.aborted)) {
       throw new Error(
-        "Gemini timed out after 45s. Check phone internet, that Google AI is reachable, and try again."
+        "Gemini timed out after 35s. Check phone internet, that Google AI is reachable, and try again."
       );
     }
     throw e instanceof Error
@@ -336,4 +275,14 @@ export async function sendCoachMessage(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/** Optional: warm DNS/TLS to Gemini so the first chat/food request is faster. */
+export function warmupGeminiConnection(): void {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return;
+  void fetch(`https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta`, {
+    method: "GET",
+    headers: { "x-goog-api-key": apiKey },
+  }).catch(() => {});
 }

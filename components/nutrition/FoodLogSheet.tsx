@@ -161,7 +161,7 @@ export function FoodLogSheet({
               {logging ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text className="text-white font-extrabold text-base">Log Food</Text>
+                <Text className="text-white font-extrabold text-base">Log Meal</Text>
               )}
             </Pressable>
           </ScrollView>

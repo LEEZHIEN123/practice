@@ -14,6 +14,7 @@ import {
     type FoodListItem,
 } from "@/lib/foodDataset";
 import { analyzeMealPhoto, isGeminiConfigured } from "@/lib/geminiFoodVision";
+import { warmupGeminiConnection } from "@/lib/geminiCoach";
 import {
     MANUAL_MEAL_TYPE_LABELS,
     type ManualMealType,
@@ -64,7 +65,7 @@ function macroTextFromAnalysis(value: number | null): string {
 type LogTarget = { kind: "barcode"; product: ScannedFoodProduct };
 
 const SECTION_TABS: { key: NutritionSection; label: string }[] = [
-  { key: "library", label: "Food Library" },
+  { key: "library", label: "Meal Library" },
   { key: "barcode", label: "Barcode" },
   { key: "log", label: "Log Meal" },
 ];
@@ -82,6 +83,7 @@ export default function AllNutritionScreen() {
 
   useEffect(() => {
     void prefetchFoodDataset();
+    warmupGeminiConnection();
   }, []);
 
   const handleLog = async (servings: number, calories: number) => {
@@ -338,7 +340,14 @@ function BarcodeSection({
         const product = await fetchFoodByBarcode(trimmed);
         onProductFound(product);
       } catch (e: unknown) {
-        Alert.alert("Not found", e instanceof Error ? e.message : "Could not find product.");
+        const message =
+          e instanceof Error
+            ? e.message
+            : "No food information is available for the scanned barcode.";
+        const title = message.toLowerCase().includes("recognised")
+          ? "Barcode Not Recognised"
+          : "No Food Information";
+        Alert.alert(title, message);
       } finally {
         setLoading(false);
       }

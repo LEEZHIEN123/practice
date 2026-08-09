@@ -108,7 +108,9 @@ export async function fetchFoodByBarcode(barcode: string): Promise<ScannedFoodPr
 
   const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_quantity,serving_size,nutriments,ingredients_text,code`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error("Could not look up this barcode. Try again.");
+  if (!res.ok) {
+    throw new Error("The barcode could not be recognised. Please try again.");
+  }
 
   const data = (await res.json()) as {
     status?: number;
@@ -116,11 +118,13 @@ export async function fetchFoodByBarcode(barcode: string): Promise<ScannedFoodPr
   };
 
   if (data.status !== 1 || !data.product) {
-    throw new Error("Product not found in Open Food Facts database.");
+    throw new Error("No food information is available for the scanned barcode.");
   }
 
   const parsed = parseOpenFoodProduct(data.product, code);
-  if (!parsed) throw new Error("Calorie data not available for this product.");
+  if (!parsed) {
+    throw new Error("No food information is available for the scanned barcode.");
+  }
   return parsed;
 }
 

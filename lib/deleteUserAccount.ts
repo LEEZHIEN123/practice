@@ -16,6 +16,7 @@ import {
   reauthenticateWithCredential,
   type User,
 } from "firebase/auth";
+import { removeAccountEmail } from "@/lib/accountEmailRegistry";
 import { db } from "../firebaseConfig";
 
 const USER_SUBCOLLECTIONS = [
@@ -173,7 +174,9 @@ export async function reauthenticateWithPassword(
 
 /** Call only after a recent reauthenticateWithPassword (or other reauth). */
 export async function deleteAccountAfterReauth(user: User): Promise<void> {
+  const email = user.email;
   await deleteUserFirestoreProfile(user.uid);
+  await safe(() => removeAccountEmail(email));
   await deleteUser(user);
 }
 

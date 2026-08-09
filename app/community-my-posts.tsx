@@ -12,6 +12,7 @@ import {
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
+  checkIsAdmin,
   deletePost,
   getPublicUserProfile,
   requestBlockedPostReReview,
@@ -41,11 +42,22 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 
-function ProfileAvatar({ uri, size = 72 }: { uri: string | null; size?: number }) {
+const ADMIN_BLUE = "#2563eb";
+const USER_GREEN = "#52B69A";
+
+function ProfileAvatar({
+  uri,
+  size = 72,
+  placeholderColor = "#9fdfb6",
+}: {
+  uri: string | null;
+  size?: number;
+  placeholderColor?: string;
+}) {
   return (
     <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
+      className="rounded-full items-center justify-center overflow-hidden"
+      style={{ width: size, height: size, backgroundColor: placeholderColor }}
     >
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
@@ -63,6 +75,7 @@ export default function CommunityMyPostsScreen() {
   const { screenStyle, cardStyle, textPrimary, textMuted, textSecondary, theme } = useThemedScreen();
 
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [authoredPosts, setAuthoredPosts] = useState<CommunityPost[]>([]);
@@ -75,8 +88,19 @@ export default function CommunityMyPostsScreen() {
   const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
   const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
+  const accent = isAdminUser ? ADMIN_BLUE : theme.accentText;
+  const controlAccent = isAdminUser ? ADMIN_BLUE : USER_GREEN;
+  const avatarPlaceholder = isAdminUser ? ADMIN_BLUE : "#9fdfb6";
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => setUid(user?.uid ?? null));
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setUid(user?.uid ?? null);
+      if (user) {
+        void checkIsAdmin(user).then(setIsAdminUser);
+      } else {
+        setIsAdminUser(false);
+      }
+    });
     return unsub;
   }, []);
 
@@ -214,6 +238,8 @@ export default function CommunityMyPostsScreen() {
           onBack={() => {
             if (router.canGoBack()) {
               router.back();
+            } else if (isAdminUser) {
+              router.replace("/admin" as any);
             } else {
               router.replace("/community" as any);
             }
@@ -230,7 +256,7 @@ export default function CommunityMyPostsScreen() {
         <View className="px-4 mb-4">
           {profileLoading ? (
             <View className="py-8 items-center">
-              <ActivityIndicator color={theme.accentText} />
+              <ActivityIndicator color={accent} />
             </View>
           ) : profile ? (
             <>
@@ -243,23 +269,45 @@ export default function CommunityMyPostsScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="View profile photo"
                 >
-                  <ProfileAvatar uri={profile.profileImage} size={80} />
+                  <ProfileAvatar
+                    uri={profile.profileImage}
+                    size={80}
+                    placeholderColor={avatarPlaceholder}
+                  />
                 </Pressable>
-                <Text className="text-2xl font-extrabold mt-3" style={textPrimary}>
-                  {profile.name}
-                </Text>
+                <View className="flex-row items-center mt-3 gap-2">
+                  <Text className="text-2xl font-extrabold" style={textPrimary}>
+                    {profile.name}
+                  </Text>
+                  {isAdminUser ? (
+                    <View className="rounded-full bg-[#dbeafe] items-center justify-center w-7 h-7">
+                      <Ionicons name="shield-checkmark" size={15} color={ADMIN_BLUE} />
+                    </View>
+                  ) : null}
+                </View>
               </View>
               <ThemedCard rounded="2xl" className="p-4 mb-4">
                 <View className="flex-row items-start justify-between mb-2">
                   <ThemedText className="font-bold text-sm flex-1 pr-2">Details</ThemedText>
                   <Pressable
-                    onPress={() => router.push("/EditProfile")}
+                    onPress={() =>
+                      router.push((isAdminUser ? "/EditAdminProfile" : "/EditProfile") as any)
+                    }
                     hitSlop={8}
                     accessibilityRole="button"
                     accessibilityLabel="Edit profile details"
                     className="w-9 h-9 rounded-xl items-center justify-center"
+                    style={
+                      isAdminUser
+                        ? { backgroundColor: "#dbeafe" }
+                        : undefined
+                    }
                   >
-                    <Ionicons name="create-outline" size={20} color={theme.textPrimary} />
+                    <Ionicons
+                      name="create-outline"
+                      size={20}
+                      color={isAdminUser ? ADMIN_BLUE : theme.textPrimary}
+                    />
                   </Pressable>
                 </View>
                 <View className="gap-2">
@@ -322,21 +370,29 @@ export default function CommunityMyPostsScreen() {
             <Pressable
               onPress={() => setShowDatePicker(true)}
               className="w-12 h-12 rounded-2xl items-center justify-center border"
-              style={cardStyle}
+              style={
+                filterDate
+                  ? { backgroundColor: isAdminUser ? "#dbeafe" : theme.accentSoft, borderColor: accent }
+                  : cardStyle
+              }
             >
               <Ionicons
                 name={filterDate ? "calendar" : "calendar-outline"}
                 size={22}
-                color={filterDate ? theme.accentText : theme.iconMuted}
+                color={filterDate ? accent : theme.iconMuted}
               />
             </Pressable>
             {filterDate ? (
               <Pressable
                 onPress={() => setFilterDate(null)}
                 className="rounded-2xl px-3 py-3 border"
-                style={cardStyle}
+                style={
+                  isAdminUser
+                    ? { backgroundColor: "#dbeafe", borderColor: ADMIN_BLUE }
+                    : cardStyle
+                }
               >
-                <Text className="text-[10px] font-extrabold" style={{ color: theme.accentText }}>
+                <Text className="text-[10px] font-extrabold" style={{ color: accent }}>
                   All
                 </Text>
               </Pressable>
@@ -370,7 +426,7 @@ export default function CommunityMyPostsScreen() {
         {showDatePicker && Platform.OS === "ios" ? (
           <View className="px-4 mb-2 flex-row justify-end">
             <Pressable onPress={() => setShowDatePicker(false)} className="px-4 py-2">
-              <Text className="text-sm font-extrabold" style={{ color: theme.accentText }}>
+              <Text className="text-sm font-extrabold" style={{ color: accent }}>
                 Done
               </Text>
             </Pressable>
@@ -380,7 +436,7 @@ export default function CommunityMyPostsScreen() {
         <View className="px-4">
           {loading ? (
             <View className="py-16 items-center">
-              <ActivityIndicator size="large" color={theme.accentText} />
+              <ActivityIndicator size="large" color={accent} />
             </View>
           ) : filteredPosts.length === 0 ? (
             <ThemedCard className="p-6 items-center">
@@ -396,11 +452,12 @@ export default function CommunityMyPostsScreen() {
                     <ProfileAvatar
                       uri={post.authorProfileImage ?? profile?.profileImage ?? null}
                       size={48}
+                      placeholderColor={avatarPlaceholder}
                     />
                     <View className="flex-1 ml-3">
                       <Text className="text-base font-extrabold" style={textPrimary}>
                         {post.authorName || profile?.name || "You"}
-                        <Text className="text-sm font-bold" style={{ color: theme.accentText }}>
+                        <Text className="text-sm font-bold" style={{ color: accent }}>
                           {" "}
                           · me
                         </Text>
@@ -462,7 +519,7 @@ export default function CommunityMyPostsScreen() {
                         <Text
                           key={tag}
                           className="text-[10px] font-bold"
-                          style={{ color: theme.accentText }}
+                          style={{ color: accent }}
                         >
                           #{tag}
                         </Text>
@@ -474,15 +531,15 @@ export default function CommunityMyPostsScreen() {
                       <Ionicons
                         name={uid && post.likedBy.includes(uid) ? "heart" : "heart-outline"}
                         size={16}
-                        color={uid && post.likedBy.includes(uid) ? "#ef4444" : "#52B69A"}
+                        color={uid && post.likedBy.includes(uid) ? "#ef4444" : controlAccent}
                       />
-                      <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accentText }}>
+                      <Text className="text-xs font-bold ml-1.5" style={{ color: accent }}>
                         {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                       </Text>
                     </View>
                     <View className="flex-row items-center">
-                      <Ionicons name="chatbubble-outline" size={15} color="#52B69A" />
-                      <Text className="text-xs font-bold ml-1.5" style={{ color: theme.accentText }}>
+                      <Ionicons name="chatbubble-outline" size={15} color={controlAccent} />
+                      <Text className="text-xs font-bold ml-1.5" style={{ color: accent }}>
                         {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
                       </Text>
                     </View>

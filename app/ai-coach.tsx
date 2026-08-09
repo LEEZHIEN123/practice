@@ -19,7 +19,12 @@ import {
 } from "@/lib/aiCoachStorage";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
-import { isGeminiConfigured, sendCoachMessage, type CoachChatTurn } from "@/lib/geminiCoach";
+import {
+  isGeminiConfigured,
+  sendCoachMessage,
+  warmupGeminiConnection,
+  type CoachChatTurn,
+} from "@/lib/geminiCoach";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -147,6 +152,10 @@ export default function AICoachScreen() {
     const id = nextUid ?? uidRef.current;
     if (!id) return;
     await saveActiveChat(id, sessionIdRef.current, messagesRef.current);
+  }, []);
+
+  useEffect(() => {
+    warmupGeminiConnection();
   }, []);
 
   useEffect(() => {

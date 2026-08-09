@@ -40,12 +40,15 @@ type PostComposerModalProps = {
   submitting: boolean;
   /** When false, hides the share-achievements picker (e.g. admin posts). Default true. */
   showAchievements?: boolean;
+  /** Accent for Post button and + actions. Defaults to app green. */
+  accentColor?: string;
   onClose: () => void;
   onSubmit: (values: PostComposerValues) => Promise<void>;
 };
 
 const MAX_POST_IMAGES = 6;
 const MAX_POST_CONTENT_LENGTH = 5000;
+const DEFAULT_COMPOSER_ACCENT = "#52B69A";
 
 export function PostComposerModal({
   visible,
@@ -53,6 +56,7 @@ export function PostComposerModal({
   initial,
   submitting,
   showAchievements = true,
+  accentColor = DEFAULT_COMPOSER_ACCENT,
   onClose,
   onSubmit,
 }: PostComposerModalProps) {
@@ -340,7 +344,7 @@ export function PostComposerModal({
                   disabled={isSubmitting}
                   hitSlop={8}
                   className="rounded-full px-5 py-2.5"
-                  style={{ backgroundColor: "#52B69A", opacity: isSubmitting ? 0.7 : 1 }}
+                  style={{ backgroundColor: accentColor, opacity: isSubmitting ? 0.7 : 1 }}
                 >
                   {isSubmitting ? (
                     <ActivityIndicator color="white" size="small" />
@@ -398,7 +402,7 @@ export function PostComposerModal({
                     </Pressable>
                     <View
                       className="absolute top-2 right-2 min-w-[28px] h-7 px-2 rounded-full items-center justify-center border-2 border-white"
-                      style={{ backgroundColor: "#52B69A" }}
+                      style={{ backgroundColor: accentColor }}
                     >
                       <Text className="text-xs font-extrabold text-white">{index + 1}</Text>
                     </View>
@@ -567,7 +571,8 @@ export function PostComposerModal({
               />
               <Pressable
                 onPress={addCustomTag}
-                className="w-10 h-10 rounded-full bg-[#52B69A] items-center justify-center"
+                className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: accentColor }}
               >
                 <Ionicons name="add" size={20} color="white" />
               </Pressable>

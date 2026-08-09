@@ -31,6 +31,13 @@ function formatServesLabel(servingSize: string): string | null {
   return trimmed;
 }
 
+function formatNutritionTitle(servings: number): string {
+  const count =
+    Number.isInteger(servings) ? String(servings) : String(Number(servings.toFixed(2)));
+  const unit = servings === 1 ? "serving" : "servings";
+  return `Nutrition (${count} ${unit})`;
+}
+
 export default function FoodDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -140,7 +147,7 @@ export default function FoodDetailScreen() {
       `Add ${food.name} (${nutrition.calories} kcal) to today's meals?`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Log Food", onPress: submitLog },
+        { text: "Log Meal", onPress: submitLog },
       ]
     );
   };
@@ -153,7 +160,7 @@ export default function FoodDetailScreen() {
     <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 8 }}>
         <ProfileScreenHeader
-          title="Food Details"
+          title="Meal Details"
           onBack={() => router.back()}
           titleClassName="text-xl"
           rightSlot={<FavouriteButton item={favouriteItem} />}
@@ -210,7 +217,9 @@ export default function FoodDetailScreen() {
           ) : null}
 
           <View className="px-5 pt-5">
-            <Text className="text-xl font-extrabold text-gray-900 mb-4">Nutrition Per Serving</Text>
+            <Text className="text-xl font-extrabold text-gray-900 mb-4">
+              {formatNutritionTitle(servings)}
+            </Text>
             {nutrition ? (
               <MacroDonut
                 proteinG={nutrition.proteinG}
@@ -237,7 +246,7 @@ export default function FoodDetailScreen() {
 
             {food.ingredients.length ? (
               <View className="mt-5 mb-4">
-                <ThemedText className="text-lg font-extrabold mb-2">Ingredients</ThemedText>
+                <ThemedText className="text-lg font-extrabold mb-2">Ingredients Per Serving</ThemedText>
                 {food.ingredients.map((item, index) => (
                   <ThemedText key={`ingredient-${index}`} variant="secondary" className="text-sm leading-6 mb-1">
                     {"\u2022 "} {item}
@@ -248,7 +257,7 @@ export default function FoodDetailScreen() {
 
             {food.directions.length ? (
               <View className="mb-5">
-                <ThemedText className="text-lg font-extrabold mb-2">Directions</ThemedText>
+                <ThemedText className="text-lg font-extrabold mb-2">Directions Per Serving</ThemedText>
                 {food.directions.map((step, index) => (
                   <ThemedText key={`${index}-${step}`} variant="secondary" className="text-sm leading-6 mb-2">
                     {index + 1}. {step}
@@ -274,7 +283,7 @@ export default function FoodDetailScreen() {
               {logging ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text className="text-white font-extrabold text-base">Log Food</Text>
+                <Text className="text-white font-extrabold text-base">Log Meal</Text>
               )}
             </Pressable>
           </View>

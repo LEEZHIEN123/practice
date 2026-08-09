@@ -12,7 +12,7 @@ import {
   updateMealHistoryEntry,
   type MealHistoryEntry,
 } from "@/lib/mealLogHistory";
-import { logMealFood } from "@/lib/mealLogService";
+import { logMealFood, resolveMealPhotoUri } from "@/lib/mealLogService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -143,7 +143,8 @@ export default function MealHistoryEditScreen() {
 
     try {
       setSaving(true);
-      await updateMealHistoryEntry(authUid, entry.id, values);
+      const photoUri = await resolveMealPhotoUri(values.photoUri);
+      await updateMealHistoryEntry(authUid, entry.id, { ...values, photoUri });
       Alert.alert("Saved", "Meal history updated.", [{ text: "OK", onPress: () => router.back() }]);
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not save meal.");

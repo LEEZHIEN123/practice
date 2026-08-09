@@ -1,5 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { WorkoutType } from "@/lib/workoutCatalog";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type FavouriteKind = "workout" | "nutrition" | "workout-plan";
 
@@ -57,6 +57,41 @@ export function buildNutritionFavouriteItem(
     title: name,
     subtitle,
     route: `/food-detail?id=${encodeURIComponent(foodId)}`,
+  };
+}
+
+export function buildNutritionPlanMealFavouriteId(day: number, mealType: string): string {
+  return `nutrition-plan:${day}:${mealType}`;
+}
+
+export function buildNutritionPlanMealFavouriteItem(
+  day: number,
+  mealType: string,
+  name: string,
+  unlockedMaxDay: number,
+  calories?: number
+): FavouriteItemInput {
+  const mealLabel =
+    mealType === "breakfast"
+      ? "Breakfast"
+      : mealType === "lunch"
+        ? "Lunch"
+        : mealType === "dinner"
+          ? "Dinner"
+          : "Snack";
+  const caloriePart =
+    typeof calories === "number" && Number.isFinite(calories)
+      ? ` · ${Math.round(calories)} kcal`
+      : "";
+  return {
+    id: buildNutritionPlanMealFavouriteId(day, mealType),
+    kind: "nutrition",
+    title: name,
+    subtitle: `Day ${day} · ${mealLabel}${caloriePart}`,
+    route:
+      `/nutrition-meal-detail?day=${encodeURIComponent(String(day))}` +
+      `&mealType=${encodeURIComponent(mealType)}` +
+      `&unlockedMaxDay=${encodeURIComponent(String(Math.max(1, unlockedMaxDay)))}`,
   };
 }
 

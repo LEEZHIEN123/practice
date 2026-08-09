@@ -3,6 +3,8 @@ import {
   ThemedScreen,
   ThemedText,
 } from "@/components/themed/ThemedUi";
+import { registerAccountEmail } from "@/lib/accountEmailRegistry";
+import { ensureSupportChatWithAdmin } from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,7 +19,6 @@ import {
   type ActivityKey,
   type DietaryPreference,
 } from "../context/registrationContext";
-import { ensureSupportChatWithAdmin } from "@/lib/communityService";
 import { auth, db } from "../firebaseConfig";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -170,6 +171,8 @@ export default function DietaryPreferenceScreen() {
         },
         { merge: true }
       );
+
+      await registerAccountEmail(user.uid, user.email ?? resolved.email);
 
       // Support Admin welcome chat (non-blocking).
       void ensureSupportChatWithAdmin();

@@ -1,47 +1,45 @@
 import type { User } from "firebase/auth";
 import {
-  addDoc,
-  arrayRemove,
-  arrayUnion,
-  collection,
-  collectionGroup,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
-  writeBatch,
-  type Unsubscribe,
+    addDoc,
+    collection,
+    collectionGroup,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    increment,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where,
+    writeBatch,
+    type Unsubscribe
 } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, storage } from "../firebaseConfig";
 import { canModifyOwnChatMessage } from "./chatMessageUtils";
 import { getChatSticker } from "./chatStickers";
 import type {
-  ChatConversation,
-  ChatMessage,
-  ChatMessageQuote,
-  CommunityComment,
-  CommunityNotification,
-  CommunityPost,
-  CommunityReport,
-  FriendListEntry,
-  FriendRelation,
-  FriendRequest,
-  PendingReReviewRequest,
-  PostCategory,
-  PostEditSnapshot,
-  PublicUserProfile,
-  RegisteredUser,
-  ReportTargetType,
+    ChatConversation,
+    ChatMessage,
+    ChatMessageQuote,
+    CommunityComment,
+    CommunityNotification,
+    CommunityPost,
+    CommunityReport,
+    FriendListEntry,
+    FriendRelation,
+    FriendRequest,
+    PendingReReviewRequest,
+    PostCategory,
+    PostEditSnapshot,
+    PublicUserProfile,
+    RegisteredUser,
+    ReportTargetType,
 } from "./communityTypes";
 import { ADMIN_AUTO_REPLY, SUPPORT_CHAT_WELCOME_MESSAGE } from "./communityTypes";
 import { calcBmi } from "./workoutPlan";
@@ -534,7 +532,20 @@ function mapMessage(id: string, data: Record<string, unknown>): ChatMessage {
     recalled: data.recalled === true,
     recalledAt: typeof data.recalledAt === "number" ? data.recalledAt : null,
     recalledByName: typeof data.recalledByName === "string" ? data.recalledByName : null,
-    createdAt: Number(data.createdAt ?? 0),
+    createdAt: (() => {
+      const raw = data.createdAt;
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      if (
+        raw &&
+        typeof raw === "object" &&
+        "toMillis" in raw &&
+        typeof (raw as { toMillis?: unknown }).toMillis === "function"
+      ) {
+        return (raw as { toMillis: () => number }).toMillis();
+      }
+      const n = Number(raw ?? 0);
+      return Number.isFinite(n) ? n : 0;
+    })(),
     isAutoReply: data.isAutoReply === true,
   };
 }

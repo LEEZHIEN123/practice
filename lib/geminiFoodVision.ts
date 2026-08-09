@@ -168,12 +168,13 @@ function parseAnalysisJson(raw: string): MealPhotoAnalysis {
   };
 }
 
+/** Smaller JPEG = much faster upload on native/dev builds; food ID still works well at this size. */
 async function imageUriToBase64Jpeg(uri: string): Promise<string> {
   const result = await ImageManipulator.manipulateAsync(
     uri,
-    [{ resize: { width: 1024 } }],
+    [{ resize: { width: 640 } }],
     {
-      compress: 0.75,
+      compress: 0.55,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     }
@@ -184,32 +185,33 @@ async function imageUriToBase64Jpeg(uri: string): Promise<string> {
   return result.base64;
 }
 
-/** Send a meal photo to Gemini Vision and return estimated nutrition fields. */
-export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnalysis> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "Gemini API key is not set. Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file and restart Expo."
-    );
-  }
-
-  const base64 = await imageUriToBase64Jpeg(imageUri);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const requestBodies = [
+function buildFoodRequestBodies(base64: string): Record<string, unknown>[] {
+  const contents = [
     {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: "image/jpeg", data: base64 } },
-            { text: ANALYSIS_PROMPT },
-          ],
-        },
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "image/jpeg", data: base64 } },
+        { text: ANALYSIS_PROMPT },
       ],
+    },
+  ];
+
+  // Fast path first: JSON mime without thinkingConfig (some models reject thinkingBudget
+  // with a generic "invalid argument"). Fallbacks keep schema / thinking off variants.
+  return [
+    {
+      contents,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 384,
+        responseMimeType: "application/json",
+      },
+    },
+    {
+      contents,
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 384,
         responseMimeType: "application/json",
         responseSchema: {
           type: "object",
@@ -225,47 +227,84 @@ export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnaly
           },
           required: ["isFood", "title", "calories", "description", "confidence"],
         },
-        thinkingConfig: { thinkingBudget: 0 },
       },
     },
     {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: "image/jpeg", data: base64 } },
-            { text: ANALYSIS_PROMPT },
-          ],
-        },
-      ],
+      contents,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 384,
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 },
       },
     },
   ];
+}
+
+/** Send a meal photo to Gemini Vision and return estimated nutrition fields. */
+export async function analyzeMealPhoto(imageUri: string): Promise<MealPhotoAnalysis> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "Gemini API key is not set. Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file and restart Expo."
+    );
+  }
+
+  const base64 = await imageUriToBase64Jpeg(imageUri);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const requestBodies = buildFoodRequestBodies(base64);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35_000);
 
   let lastError = "Gemini request failed.";
   let data: GeminiGenerateResponse | null = null;
 
-  for (const body of requestBodies) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const raw = await res.text();
-    if (!res.ok) {
-      lastError = parseGeminiError(raw, res.status);
-      continue;
+  try {
+    for (const body of requestBodies) {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          signal: controller.signal,
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        if (e instanceof Error && (e.name === "AbortError" || controller.signal.aborted)) {
+          throw new Error(
+            "Food analysis timed out after 35s. Check your connection and try again."
+          );
+        }
+        throw e;
+      }
+
+      const raw = await res.text();
+      if (!res.ok) {
+        lastError = parseGeminiError(raw, res.status);
+        // Only spend another upload attempt when the body/config was rejected.
+        if (res.status !== 400 && res.status !== 422) {
+          break;
+        }
+        continue;
+      }
+      try {
+        data = JSON.parse(raw) as GeminiGenerateResponse;
+        // If we got a usable text payload, stop; otherwise try next config.
+        const preview = extractResponseText(data);
+        if (preview) break;
+        lastError = "Gemini returned an empty analysis. Please try again.";
+        data = null;
+      } catch {
+        lastError = "Invalid response from Gemini.";
+        data = null;
+      }
     }
-    try {
-      data = JSON.parse(raw) as GeminiGenerateResponse;
-      break;
-    } catch {
-      lastError = "Invalid response from Gemini.";
-    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!data) {

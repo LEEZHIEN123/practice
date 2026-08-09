@@ -1,7 +1,9 @@
 import { Pressable } from "@/components/Pressable";
+import { registerAccountEmail } from "@/lib/accountEmailRegistry";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
-import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
+import { setOnboardingGate } from "@/lib/onboardingGate";
 import { useLightScreen } from "@/lib/useLightScreen";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -9,17 +11,16 @@ import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRegistration } from "../context/registrationContext";
-import { setOnboardingGate } from "@/lib/onboardingGate";
 import { auth, db } from "../firebaseConfig";
 
 export default function Register() {
@@ -148,6 +149,7 @@ export default function Register() {
           },
           { merge: true }
         );
+        await registerAccountEmail(cred.user.uid, cred.user.email ?? cleanEmail);
       } catch (e) {
         setOnboardingGate(false);
         setOnboardingInProgress(false);

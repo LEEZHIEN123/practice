@@ -1,4 +1,5 @@
 import { Pressable } from "@/components/Pressable";
+import { ChatImageViewerModal } from "@/components/community/ChatImageViewerModal";
 import { ChatInboxMenuModal } from "@/components/community/ChatInboxMenuModal";
 import { ChatMessageMenuModal } from "@/components/community/ChatMessageMenuModal";
 import { ChatStickerPicker } from "@/components/community/ChatStickerPicker";
@@ -41,10 +42,14 @@ import {
   prepareSupportChat,
   subscribeFriendsList,
   subscribePosts,
+  uploadChatImage,
 } from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { ImageEditor } from "expo-dynamic-image-crop";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +59,7 @@ import {
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -63,6 +69,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 import { SUPPORT_CHAT_WELCOME_MESSAGE } from "@/lib/communityTypes";
+
+const USER_CHAT_GREEN = "#76C893";
+const ADMIN_CHAT_BLUE = "#2563eb";
 
 function ProfileAvatar({ uri, size = 32 }: { uri: string | null; size?: number }) {
   const { theme } = useThemedScreen();
@@ -82,10 +91,10 @@ function ProfileAvatar({ uri, size = 32 }: { uri: string | null; size?: number }
 
 function QuoteBlock({
   quote,
-  isMe,
+  onColoredBubble,
 }: {
   quote: NonNullable<ChatMessage["quote"]>;
-  isMe: boolean;
+  onColoredBubble: boolean;
 }) {
   const { theme, textMuted } = useThemedScreen();
   const quotedSticker =
@@ -96,11 +105,11 @@ function QuoteBlock({
   return (
     <View
       className="border-l-2 pl-2 mb-2"
-      style={{ borderLeftColor: isMe ? "rgba(255,255,255,0.7)" : theme.accentText }}
+      style={{ borderLeftColor: onColoredBubble ? "rgba(255,255,255,0.7)" : theme.accentText }}
     >
       <Text
         className="text-[10px] font-bold"
-        style={{ color: isMe ? "rgba(255,255,255,0.9)" : theme.accentText }}
+        style={{ color: onColoredBubble ? "rgba(255,255,255,0.9)" : theme.accentText }}
       >
         {quote.senderName}
       </Text>
@@ -113,7 +122,7 @@ function QuoteBlock({
       ) : (
         <Text
           className="text-xs"
-          style={isMe ? { color: "rgba(255,255,255,0.8)" } : textMuted}
+          style={onColoredBubble ? { color: "rgba(255,255,255,0.8)" } : textMuted}
           numberOfLines={2}
         >
           {quotePreviewText(quote)}
@@ -209,9 +218,16 @@ export default function CommunityChatScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [stickerPickerVisible, setStickerPickerVisible] = useState(false);
   const [menuMessage, setMenuMessage] = useState<ChatMessage | null>(null);
+  /** Re-check 5-min recall/edit window while menus are open. */
+  const [actionClock, setActionClock] = useState(() => Date.now());
   const [quotingMessage, setQuotingMessage] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [canSendMessages, setCanSendMessages] = useState(true);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  const [viewerMessage, setViewerMessage] = useState<ChatMessage | null>(null);
+  const [composeImageUri, setComposeImageUri] = useState<string | null>(null);
+  const [cropperVisible, setCropperVisible] = useState(false);
+  const [processingComposeImage, setProcessingComposeImage] = useState(false);
 
   const [profileVisible, setProfileVisible] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -254,6 +270,13 @@ export default function CommunityChatScreen() {
   useEffect(() => {
     void resolveAdminUid().then(setAdminUid).catch(() => setAdminUid(null));
   }, []);
+
+  useEffect(() => {
+    if (!menuMessage && !viewerMessage) return;
+    setActionClock(Date.now());
+    const id = setInterval(() => setActionClock(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [menuMessage, viewerMessage]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -440,22 +463,31 @@ export default function CommunityChatScreen() {
     setEditingMessage(null);
   };
 
-  const openOtherProfile = async () => {
-    if (!otherUserId || otherUserId === currentUserId) return;
+  const openProfileForUserId = async (userId: string) => {
+    if (!userId || userId === currentUserId) return;
     setProfileVisible(true);
     setProfileLoading(true);
     setProfileData(null);
     try {
-      const profile = await getPublicUserProfile(otherUserId);
+      const profile = await getPublicUserProfile(userId);
       setProfileData(profile);
-      const relations = await loadFriendRelations([otherUserId]);
-      setProfileRelation(relations[otherUserId] ?? "none");
+      if (userId === otherUserId) {
+        const relations = await loadFriendRelations([userId]);
+        setProfileRelation(relations[userId] ?? "none");
+      } else {
+        setProfileRelation("none");
+      }
     } catch {
       Alert.alert("Error", "Could not load profile.");
       setProfileVisible(false);
     } finally {
       setProfileLoading(false);
     }
+  };
+
+  const openOtherProfile = async () => {
+    if (!otherUserId || otherUserId === currentUserId) return;
+    await openProfileForUserId(otherUserId);
   };
 
   const handleClearChatHistory = () => {
@@ -577,6 +609,99 @@ export default function CommunityChatScreen() {
     }
   };
 
+  const pickAndComposeImage = async (source: "camera" | "library") => {
+    if (!chatId || !canSendMessages || editingMessage) return;
+
+    const permission =
+      source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        source === "camera"
+          ? "Allow camera access to take a photo."
+          : "Allow photo library access to choose an image."
+      );
+      return;
+    }
+
+    const result =
+      source === "camera"
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ["images"],
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            quality: 0.8,
+            allowsMultipleSelection: false,
+          });
+
+    if (result.canceled) return;
+    const uri = result.assets?.[0]?.uri;
+    if (!uri) return;
+
+    setStickerPickerVisible(false);
+    setComposeImageUri(uri);
+    setCropperVisible(false);
+  };
+
+  const closeComposeImageEditor = () => {
+    if (processingComposeImage) return;
+    setComposeImageUri(null);
+    setCropperVisible(false);
+  };
+
+  const rotateComposeImage = async (degrees: -90 | 90) => {
+    if (!composeImageUri || processingComposeImage) return;
+    try {
+      setProcessingComposeImage(true);
+      const result = await ImageManipulator.manipulateAsync(
+        composeImageUri,
+        [{ rotate: degrees }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      setComposeImageUri(result.uri);
+    } catch {
+      Alert.alert("Photo editing", "Could not rotate this photo.");
+    } finally {
+      setProcessingComposeImage(false);
+    }
+  };
+
+  const sendComposeImage = async () => {
+    if (!chatId || !composeImageUri || !canSendMessages || processingComposeImage) return;
+    try {
+      setSending(true);
+      setProcessingComposeImage(true);
+      const imageUrl = await uploadChatImage(composeImageUri, chatId);
+      const quote = quotingMessage
+        ? buildMessageQuote(quotingMessage, resolveSenderName(quotingMessage.senderId))
+        : undefined;
+      await sendChatMessage(chatId, { imageUrl, quote });
+      setQuotingMessage(null);
+      setComposeImageUri(null);
+      setCropperVisible(false);
+      setTimeout(() => scrollToBottom(true), 100);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not send image.");
+    } finally {
+      setProcessingComposeImage(false);
+      setSending(false);
+    }
+  };
+
+  const openImagePicker = () => {
+    if (!canSendMessages || sending || editingMessage) return;
+    Keyboard.dismiss();
+    Alert.alert("Send photo", "Choose how you want to add a photo.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Choose from library", onPress: () => void pickAndComposeImage("library") },
+      { text: "Take photo", onPress: () => void pickAndComposeImage("camera") },
+    ]);
+  };
+
   const toggleStickerPicker = () => {
     if (editingMessage) return;
     if (stickerPickerVisible) {
@@ -624,6 +749,10 @@ export default function CommunityChatScreen() {
                 setEditingMessage(null);
                 setText("");
               }
+              if (viewerMessage?.id === message.id) {
+                setViewerMessage(null);
+                setViewerImageUri(null);
+              }
             } catch (e: unknown) {
               Alert.alert("Error", e instanceof Error ? e.message : "Could not recall message.");
             }
@@ -632,6 +761,24 @@ export default function CommunityChatScreen() {
       },
     ]);
   };
+
+  const openImageViewer = (message: ChatMessage) => {
+    if (!message.imageUrl || message.recalled) return;
+    setViewerMessage(message);
+    setViewerImageUri(message.imageUrl);
+  };
+
+  const closeImageViewer = () => {
+    setViewerMessage(null);
+    setViewerImageUri(null);
+  };
+
+  const canRecallViewerPhoto =
+    viewerMessage != null &&
+    !viewerMessage.recalled &&
+    viewerMessage.senderId === currentUserId &&
+    viewerMessage.isAutoReply !== true &&
+    canModifyOwnChatMessage(viewerMessage, actionClock);
 
   // Keep the composer just above the keyboard:
   // - If Android already resized the window, only use a small pad (avoid a large gap).
@@ -734,10 +881,15 @@ export default function CommunityChatScreen() {
               ) : null}
               {messages.map((message) => {
             const isMe = message.senderId === currentUserId;
+            const isFromAdmin = Boolean(adminUid && message.senderId === adminUid);
+            const isAccentBubble = isMe || isFromAdmin;
+            const accentBubbleColor = isFromAdmin ? ADMIN_CHAT_BLUE : USER_CHAT_GREEN;
             const isAuto = message.isAutoReply === true;
             const avatar = senderImage(message.senderId);
             const displayText = messageSummary(message);
             const isSticker = message.messageType === "sticker" && !message.recalled;
+            const isImage =
+              message.messageType === "image" && Boolean(message.imageUrl) && !message.recalled;
             const isSharedPost =
               message.messageType === "post" && Boolean(message.sharedPostId) && !message.recalled;
             const sharedPostData = isSharedPost
@@ -750,6 +902,8 @@ export default function CommunityChatScreen() {
               : null;
             const sticker =
               isSticker && message.stickerId ? getChatSticker(message.stickerId) : undefined;
+            const canOpenSenderProfile =
+              Boolean(message.senderId) && message.senderId !== currentUserId;
 
             return (
               <View
@@ -758,14 +912,17 @@ export default function CommunityChatScreen() {
               >
                 {!isMe ? (
                   <Pressable
-                    onPress={() => void openOtherProfile()}
-                    disabled={!otherUserId || otherUserId === currentUserId}
+                    onPress={() => void openProfileForUserId(message.senderId)}
+                    disabled={!canOpenSenderProfile}
                   >
                     <ProfileAvatar uri={avatar} size={32} />
                   </Pressable>
                 ) : null}
                 <View className={`max-w-[78%] ${isMe ? "items-end" : "items-start"}`}>
                   <Pressable
+                    onPress={() => {
+                      if (isImage && message.imageUrl) openImageViewer(message);
+                    }}
                     onLongPress={() => {
                       if (!message.recalled) setMenuMessage(message);
                     }}
@@ -784,7 +941,9 @@ export default function CommunityChatScreen() {
                       </View>
                     ) : isSticker && sticker ? (
                       <View className="px-1 py-1">
-                        {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
+                        {message.quote ? (
+                          <QuoteBlock quote={message.quote} onColoredBubble={isAccentBubble} />
+                        ) : null}
                         <Image
                           source={sticker.source}
                           style={{
@@ -794,9 +953,31 @@ export default function CommunityChatScreen() {
                           contentFit="contain"
                         />
                       </View>
+                    ) : isImage && message.imageUrl ? (
+                      <View className="overflow-hidden rounded-2xl">
+                        {message.quote ? (
+                          <View
+                            className="px-3 pt-3"
+                            style={
+                              isAccentBubble
+                                ? { backgroundColor: accentBubbleColor }
+                                : cardStyle
+                            }
+                          >
+                            <QuoteBlock quote={message.quote} onColoredBubble={isAccentBubble} />
+                          </View>
+                        ) : null}
+                        <Image
+                          source={{ uri: message.imageUrl }}
+                          style={{ width: 220, height: 220, maxWidth: "100%" }}
+                          contentFit="cover"
+                        />
+                      </View>
                     ) : isSharedPost && sharedPostData ? (
                       <View>
-                        {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
+                        {message.quote ? (
+                          <QuoteBlock quote={message.quote} onColoredBubble={isAccentBubble} />
+                        ) : null}
                         <SharedPostMessageCard
                           data={sharedPostData}
                           onPress={() => {
@@ -809,24 +990,41 @@ export default function CommunityChatScreen() {
                       </View>
                     ) : (
                       <View
-                        className={`rounded-2xl px-4 py-3 ${isMe ? "bg-[#76C893]" : ""}`}
-                        style={isMe ? undefined : cardStyle}
+                        className="rounded-2xl px-4 py-3"
+                        style={
+                          isAccentBubble
+                            ? { backgroundColor: accentBubbleColor }
+                            : cardStyle
+                        }
                       >
-                        {isAuto ? (
-                          <Text className="text-[10px] font-bold mb-1" style={{ color: "#2563eb" }}>
+                        {isAuto || isFromAdmin ? (
+                          <Text
+                            className="text-[10px] font-bold mb-1"
+                            style={{
+                              color: isAccentBubble ? "rgba(255,255,255,0.95)" : ADMIN_CHAT_BLUE,
+                            }}
+                          >
                             Support Admin
                           </Text>
                         ) : null}
-                        {message.quote ? <QuoteBlock quote={message.quote} isMe={isMe} /> : null}
+                        {message.quote ? (
+                          <QuoteBlock quote={message.quote} onColoredBubble={isAccentBubble} />
+                        ) : null}
                         {displayText ? (
                           <ChatFormattedText
                             text={displayText}
-                            className={isMe ? "text-white text-sm leading-6" : "text-sm leading-6"}
+                            className={
+                              isAccentBubble
+                                ? "text-white text-sm leading-6"
+                                : "text-sm leading-6"
+                            }
                             style={[
                               { flexShrink: 1 },
-                              isMe ? undefined : textSecondary,
+                              isAccentBubble ? undefined : textSecondary,
                             ]}
-                            boldClassName={isMe ? "font-extrabold text-white" : "font-extrabold"}
+                            boldClassName={
+                              isAccentBubble ? "font-extrabold text-white" : "font-extrabold"
+                            }
                           />
                         ) : null}
                       </View>
@@ -896,37 +1094,52 @@ export default function CommunityChatScreen() {
           ) : null}
 
           <View className="flex-row items-end gap-2">
+            <View
+              className="flex-1 flex-row items-end rounded-2xl border overflow-hidden"
+              style={[inputStyle, { paddingRight: 4 }]}
+            >
+              <TextInput
+                value={text}
+                onChangeText={setText}
+                placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
+                multiline
+                onFocus={() => {
+                  setStickerPickerVisible(false);
+                  setTimeout(() => scrollToBottom(true), 300);
+                }}
+                className="flex-1 px-4 py-3 text-sm max-h-28"
+                style={{ color: (inputStyle as { color?: string })?.color }}
+                placeholderTextColor={placeholderColor}
+              />
+              <Pressable
+                onPress={toggleStickerPicker}
+                disabled={sending || Boolean(editingMessage)}
+                className={`w-9 h-9 mb-1 mr-1 rounded-full items-center justify-center ${
+                  editingMessage ? "opacity-40" : ""
+                }`}
+                style={
+                  stickerPickerVisible
+                    ? { backgroundColor: theme.accent }
+                    : { backgroundColor: theme.accentSoft }
+                }
+              >
+                <Ionicons
+                  name="happy-outline"
+                  size={18}
+                  color={stickerPickerVisible ? "white" : theme.accentText}
+                />
+              </Pressable>
+            </View>
             <Pressable
-              onPress={toggleStickerPicker}
+              onPress={openImagePicker}
               disabled={sending || Boolean(editingMessage)}
-              className={`w-10 h-10 rounded-full items-center justify-center border ${
+              className={`w-11 h-11 rounded-full items-center justify-center border ${
                 editingMessage ? "opacity-40" : ""
               }`}
-              style={
-                stickerPickerVisible
-                  ? { backgroundColor: theme.accent, borderColor: theme.accent }
-                  : { backgroundColor: theme.accentSoft, borderColor: theme.accent }
-              }
+              style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
             >
-              <Ionicons
-                name="happy-outline"
-                size={20}
-                color={stickerPickerVisible ? "white" : theme.accentText}
-              />
+              <Ionicons name="image-outline" size={20} color={theme.accentText} />
             </Pressable>
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
-              multiline
-              onFocus={() => {
-                setStickerPickerVisible(false);
-                setTimeout(() => scrollToBottom(true), 300);
-              }}
-              className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
-              style={inputStyle}
-              placeholderTextColor={placeholderColor}
-            />
             <Pressable
               onPress={() => void handleSend()}
               disabled={sending || !text.trim()}
@@ -976,14 +1189,19 @@ export default function CommunityChatScreen() {
           menuMessage.senderId === currentUserId &&
           menuMessage.messageType === "text" &&
           menuMessage.isAutoReply !== true &&
-          canModifyOwnChatMessage(menuMessage)
+          canModifyOwnChatMessage(menuMessage, actionClock)
         }
         canRecall={
           menuMessage != null &&
           !menuMessage.recalled &&
           menuMessage.senderId === currentUserId &&
           menuMessage.isAutoReply !== true &&
-          canModifyOwnChatMessage(menuMessage)
+          (menuMessage.messageType === "text" ||
+            menuMessage.messageType === "image" ||
+            menuMessage.messageType === "sticker" ||
+            menuMessage.messageType === "voice" ||
+            menuMessage.messageType === "post") &&
+          canModifyOwnChatMessage(menuMessage, actionClock)
         }
         canQuote={menuMessage != null && !menuMessage.recalled}
         onClose={() => setMenuMessage(null)}
@@ -1021,15 +1239,22 @@ export default function CommunityChatScreen() {
         posts={profilePosts}
         relation={profileRelation}
         loading={profileLoading}
-        isSelf={otherUserId === currentUserId}
-        isSupportAdmin={isSupportAdminUser}
+        isSelf={profileData?.id === currentUserId || otherUserId === currentUserId}
+        isSupportAdmin={
+          isSupportAdminUser ||
+          (adminUid != null && profileData?.id === adminUid)
+        }
         canAddFriend={!isSupportAdminUser && !isAdminUser}
         onClose={() => {
           setProfileVisible(false);
           setProfileData(null);
         }}
         onAddFriend={handleAddFriend}
-        onChat={isSupportAdminUser ? () => setProfileVisible(false) : undefined}
+        onChat={
+          isSupportAdminUser || isAdminUser
+            ? () => setProfileVisible(false)
+            : undefined
+        }
         onOpenPost={(postId) => {
           setProfileVisible(false);
           setProfileData(null);
@@ -1039,6 +1264,116 @@ export default function CommunityChatScreen() {
           });
         }}
       />
+
+      <ChatImageViewerModal
+        uri={viewerImageUri}
+        onClose={closeImageViewer}
+        canRecall={canRecallViewerPhoto}
+        onRecall={() => {
+          if (viewerMessage) handleRecall(viewerMessage);
+        }}
+      />
+
+      <Modal
+        visible={composeImageUri != null}
+        animationType="slide"
+        onRequestClose={closeComposeImageEditor}
+      >
+        <View className="flex-1 bg-black">
+          <View
+            className="flex-row items-center justify-between px-4 pb-3"
+            style={{ paddingTop: insets.top + 10 }}
+          >
+            <Pressable
+              onPress={closeComposeImageEditor}
+              disabled={processingComposeImage}
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={28} color="white" />
+            </Pressable>
+            <Text className="text-lg font-extrabold text-white">Edit photo</Text>
+            <Pressable
+              onPress={() => void sendComposeImage()}
+              disabled={processingComposeImage || sending || !composeImageUri}
+              hitSlop={8}
+            >
+              <Text
+                className="text-base font-extrabold"
+                style={{ color: processingComposeImage || sending ? "#6b7280" : "#52B69A" }}
+              >
+                Send
+              </Text>
+            </Pressable>
+          </View>
+
+          <View className="flex-1 items-center justify-center px-3">
+            {composeImageUri ? (
+              <Image
+                source={{ uri: composeImageUri }}
+                style={{ width: "100%", height: "100%" }}
+                contentFit="contain"
+              />
+            ) : null}
+            {processingComposeImage || sending ? (
+              <View className="absolute inset-0 items-center justify-center bg-black/40">
+                <ActivityIndicator color="white" size="large" />
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            className="flex-row gap-3 px-4 pt-4"
+            style={{ paddingBottom: insets.bottom + 16, backgroundColor: theme.navBg }}
+          >
+            <Pressable
+              onPress={() => void rotateComposeImage(-90)}
+              disabled={processingComposeImage || !composeImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="refresh-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Rotate left
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setCropperVisible(true)}
+              disabled={processingComposeImage || !composeImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="crop-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Crop
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void rotateComposeImage(90)}
+              disabled={processingComposeImage || !composeImageUri}
+              className="flex-1 items-center rounded-2xl py-3"
+              style={{ backgroundColor: theme.rowBg }}
+            >
+              <Ionicons name="reload-outline" size={22} color={theme.textPrimary} />
+              <Text className="mt-1 text-xs font-bold" style={{ color: theme.textPrimary }}>
+                Rotate right
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {composeImageUri ? (
+        <ImageEditor
+          isVisible={cropperVisible}
+          imageUri={composeImageUri}
+          onEditingComplete={(croppedImageData) => {
+            setComposeImageUri(croppedImageData.uri);
+            setCropperVisible(false);
+          }}
+          onEditingCancel={() => setCropperVisible(false)}
+          dynamicCrop
+        />
+      ) : null}
     </ThemedScreen>
   );
 }

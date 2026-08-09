@@ -1,7 +1,9 @@
+import { FavouriteButton } from "@/components/FavouriteButton";
 import { Pressable } from "@/components/Pressable";
 import { ZoomableImageModal } from "@/components/ZoomableImageModal";
 import { MacroDonut } from "@/components/nutrition/MacroDonut";
 import { ProfileScreenHeader, ThemedText } from "@/components/themed/ThemedUi";
+import { buildNutritionPlanMealFavouriteItem } from "@/lib/favourites";
 import { resolveNutritionGuidanceImage } from "@/lib/foodImages";
 import { logMealFood } from "@/lib/mealLogService";
 import {
@@ -169,6 +171,20 @@ export default function NutritionMealDetailScreen() {
     };
   }, [meal]);
 
+  const favouriteItem = useMemo(
+    () =>
+      meal && mealType
+        ? buildNutritionPlanMealFavouriteItem(
+            day,
+            mealType,
+            meal.name,
+            unlockedMaxDay,
+            meal.calories
+          )
+        : null,
+    [day, meal, mealType, unlockedMaxDay]
+  );
+
   const submitLog = () => {
     if (!meal || !mealType || !nutrition || !canLog) return;
     void (async () => {
@@ -228,7 +244,12 @@ export default function NutritionMealDetailScreen() {
   return (
     <View className="flex-1" style={screenStyle}>
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 8 }}>
-        <ProfileScreenHeader title="Food Details" onBack={() => router.back()} titleClassName="text-xl" />
+        <ProfileScreenHeader
+          title="Meal Details"
+          onBack={() => router.back()}
+          titleClassName="text-xl"
+          rightSlot={<FavouriteButton item={favouriteItem} />}
+        />
       </View>
 
       {loading ? (

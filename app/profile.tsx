@@ -87,6 +87,9 @@ export default function ProfileScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPasswordError, setCurrentPasswordError] = useState("");
+  const [newPasswordError, setNewPasswordError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [appearanceVisible, setAppearanceVisible] = useState(false);
   const [profileViewerVisible, setProfileViewerVisible] = useState(false);
 
@@ -312,6 +315,9 @@ export default function ProfileScreen() {
     setShowCurrentPassword(false);
     setShowNewPassword(false);
     setShowConfirmPassword(false);
+    setCurrentPasswordError("");
+    setNewPasswordError("");
+    setConfirmPasswordError("");
   };
 
   const handleChangePassword = async () => {
@@ -323,22 +329,38 @@ export default function ProfileScreen() {
       );
       return;
     }
+
+    let ok = true;
+    let nextCurrentError = "";
+    let nextNewError = "";
+    let nextConfirmError = "";
+
     if (!currentPassword.trim()) {
-      Alert.alert("Password required", "Please enter your current password.");
-      return;
+      nextCurrentError = "Current password is required.";
+      ok = false;
     }
-    if (newPassword.length < 6) {
-      Alert.alert("Weak password", "New password must be at least 6 characters.");
-      return;
+    if (!newPassword.trim()) {
+      nextNewError = "New password is required.";
+      ok = false;
+    } else if (newPassword.length < 6) {
+      nextNewError = "New password must be at least 6 characters.";
+      ok = false;
+    } else if (newPassword === currentPassword) {
+      nextNewError = "Choose a password different from your current one.";
+      ok = false;
     }
-    if (newPassword !== confirmPassword) {
-      Alert.alert("Mismatch", "New passwords do not match.");
-      return;
+    if (!confirmPassword.trim()) {
+      nextConfirmError = "Please confirm your new password.";
+      ok = false;
+    } else if (newPassword.trim() && newPassword !== confirmPassword) {
+      nextConfirmError = "New passwords do not match.";
+      ok = false;
     }
-    if (newPassword === currentPassword) {
-      Alert.alert("Same password", "Choose a new password that is different from your current one.");
-      return;
-    }
+
+    setCurrentPasswordError(nextCurrentError);
+    setNewPasswordError(nextNewError);
+    setConfirmPasswordError(nextConfirmError);
+    if (!ok) return;
 
     try {
       setChangingPassword(true);
@@ -349,9 +371,9 @@ export default function ProfileScreen() {
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
       if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
-        Alert.alert("Wrong password", "Current password is incorrect.");
+        setCurrentPasswordError("Current password is incorrect.");
       } else if (code === "auth/weak-password") {
-        Alert.alert("Weak password", "Please choose a stronger password.");
+        setNewPasswordError("Please choose a stronger password.");
       } else {
         Alert.alert("Error", firebaseAuthErrorMessage(e));
       }
@@ -810,29 +832,38 @@ export default function ProfileScreen() {
               {(
                 [
                   {
+                    key: "current" as const,
                     label: "Current password",
                     value: currentPassword,
                     setValue: setCurrentPassword,
                     show: showCurrentPassword,
                     setShow: setShowCurrentPassword,
+                    error: currentPasswordError,
+                    clearError: () => setCurrentPasswordError(""),
                   },
                   {
+                    key: "new" as const,
                     label: "New password",
                     value: newPassword,
                     setValue: setNewPassword,
                     show: showNewPassword,
                     setShow: setShowNewPassword,
+                    error: newPasswordError,
+                    clearError: () => setNewPasswordError(""),
                   },
                   {
+                    key: "confirm" as const,
                     label: "Confirm new password",
                     value: confirmPassword,
                     setValue: setConfirmPassword,
                     show: showConfirmPassword,
                     setShow: setShowConfirmPassword,
+                    error: confirmPasswordError,
+                    clearError: () => setConfirmPasswordError(""),
                   },
                 ] as const
               ).map((field) => (
-                <View key={field.label} className="mt-4">
+                <View key={field.key} className="mt-4">
                   <Text className="text-xs font-bold mb-1.5 ml-1" style={{ color: theme.textMuted }}>
                     {field.label}
                   </Text>
@@ -840,13 +871,16 @@ export default function ProfileScreen() {
                     className="rounded-2xl pl-4 pr-2 py-1 flex-row items-center"
                     style={{
                       backgroundColor: theme.rowBg,
-                      borderColor: theme.cardBorder,
+                      borderColor: field.error ? theme.danger : theme.cardBorder,
                       borderWidth: 1,
                     }}
                   >
                     <TextInput
                       value={field.value}
-                      onChangeText={field.setValue}
+                      onChangeText={(v) => {
+                        field.setValue(v);
+                        if (field.error) field.clearError();
+                      }}
                       secureTextEntry={!field.show}
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -869,6 +903,9 @@ export default function ProfileScreen() {
                       />
                     </Pressable>
                   </View>
+                  {!!field.error && (
+                    <Text className="text-red-500 text-xs mt-1.5 ml-1">{field.error}</Text>
+                  )}
                 </View>
               ))}
 

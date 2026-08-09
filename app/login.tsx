@@ -1,4 +1,8 @@
 import { Pressable } from "@/components/Pressable";
+import {
+  backfillAccountEmailIfSignedIn,
+  isRegisteredAccountEmail,
+} from "@/lib/accountEmailRegistry";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { warmHomeUserCacheFromUserData } from "@/lib/homeUserCache";
@@ -9,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
+    fetchSignInMethodsForEmail,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
     signOut,
@@ -141,6 +146,8 @@ export default function Login() {
         return;
       }
 
+      void backfillAccountEmailIfSignedIn();
+
       const uid = auth.currentUser?.uid;
       if (uid) {
         // Warm greeting cache before Home mounts so "Hello, …" has no wait.
@@ -200,6 +207,10 @@ export default function Login() {
       setForgotEmailError("Please enter your email.");
       return;
     }
+    if (!isValidEmailFormat(cleanEmail)) {
+      setForgotEmailError("Please enter a valid email format (abc@gmail.com).");
+      return;
+    }
     if (isAdminEmail(cleanEmail)) {
       setForgotEmailError("Admin accounts cannot reset password from this app.");
       return;
@@ -208,6 +219,29 @@ export default function Login() {
 
     try {
       setSendingReset(true);
+
+      let registered = false;
+      try {
+        registered = await isRegisteredAccountEmail(cleanEmail);
+      } catch {
+        registered = false;
+      }
+
+      if (!registered) {
+        // Fallback for older accounts that are not in the email registry yet.
+        try {
+          const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
+          registered = methods.length > 0;
+        } catch {
+          registered = false;
+        }
+      }
+
+      if (!registered) {
+        setForgotEmailError("This email is not registered yet.");
+        return;
+      }
+
       await sendPasswordResetEmail(auth, cleanEmail);
       setForgotVisible(false);
       Alert.alert(
@@ -218,15 +252,15 @@ export default function Login() {
       const code = error?.code;
 
       if (code === "auth/user-not-found") {
-        Alert.alert("No account found", "This email is not registered yet.");
+        setForgotEmailError("This email is not registered yet.");
       } else if (code === "auth/invalid-email") {
-        Alert.alert("Invalid email", "Please enter a valid email address.");
+        setForgotEmailError("Please enter a valid email address.");
       } else if (code === "auth/too-many-requests") {
-        Alert.alert("Too many requests", "Please try again later.");
+        setForgotEmailError("Too many requests. Please try again later.");
       } else if (code === "auth/network-request-failed") {
-        Alert.alert("Connection error", firebaseAuthErrorMessage(error));
+        setForgotEmailError(firebaseAuthErrorMessage(error));
       } else {
-        Alert.alert("Error", firebaseAuthErrorMessage(error));
+        setForgotEmailError(firebaseAuthErrorMessage(error));
       }
     } finally {
       setSendingReset(false);

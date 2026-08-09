@@ -1,12 +1,14 @@
 import { getChatSticker } from "./chatStickers";
 import type { ChatMessage, ChatMessageQuote } from "./communityTypes";
 
+/** Recall / edit allowed only within this window after send. */
 export const CHAT_MESSAGE_ACTION_WINDOW_MS = 5 * 60 * 1000;
 
 export function canModifyOwnChatMessage(message: ChatMessage, now = Date.now()): boolean {
   if (message.recalled) return false;
-  if (!message.createdAt) return false;
-  return now - message.createdAt <= CHAT_MESSAGE_ACTION_WINDOW_MS;
+  const createdAt = Number(message.createdAt);
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+  return now - createdAt <= CHAT_MESSAGE_ACTION_WINDOW_MS;
 }
 
 export function formatRecallNotice(

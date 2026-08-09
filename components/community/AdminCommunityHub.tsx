@@ -1580,7 +1580,19 @@ export function AdminCommunityHub() {
   const renderCommunityTab = () => (
     <View className="flex-1">
       <View style={{ backgroundColor: theme.screenBg, paddingHorizontal: 12, paddingTop: 12 }}>
-        <AdminTabHeader title="Community" right={<AdminBadge />} />
+        <AdminTabHeader
+          title="Community"
+          right={
+            <Pressable
+              onPress={() => router.push("/community-my-posts" as any)}
+              className="w-12 h-12 rounded-full items-center justify-center"
+              accessibilityRole="button"
+              accessibilityLabel="View my profile and posts"
+            >
+              <ProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} size={36} />
+            </Pressable>
+          }
+        />
 
         <View className="flex-row mb-3 gap-2">
           <Pressable
@@ -2632,7 +2644,7 @@ export function AdminCommunityHub() {
                 </Text>
               </View>
               <Pressable
-                onPress={() => void openUserDetail(user)}
+                onPress={() => void openCommunityUserProfile(user.id)}
                 className="rounded-full px-4 py-2 border flex-row items-center"
                 style={{ backgroundColor: theme.cardBg, borderColor: theme.accent }}
               >
@@ -2842,7 +2854,7 @@ export function AdminCommunityHub() {
             setComposerVisible(true);
           }}
           className="absolute right-5 flex-row items-center rounded-full px-6 py-4 shadow-lg z-10"
-          style={{ bottom: insets.bottom + 72, backgroundColor: theme.accent }}
+          style={{ bottom: insets.bottom + 72, backgroundColor: "#2563eb" }}
           accessibilityRole="button"
           accessibilityLabel="New post"
         >
@@ -3014,22 +3026,6 @@ export function AdminCommunityHub() {
                       <Text className="text-sm font-extrabold text-white ml-2">Chat with user</Text>
                     </>
                   )}
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleResendPasswordReset(selectedUser)}
-                  disabled={userManagementActionId === selectedUser.id}
-                  className="rounded-full py-3 items-center border flex-row justify-center mb-3"
-                  style={{
-                    backgroundColor: theme.accentSoft,
-                    borderColor: theme.accent,
-                    opacity: userManagementActionId === selectedUser.id ? 0.6 : 1,
-                  }}
-                >
-                  <Ionicons name="mail-outline" size={14} color={theme.accent} />
-                  <Text className="text-xs font-semibold ml-1.5" style={{ color: theme.accentText }}>
-                    Resend password link
-                  </Text>
                 </Pressable>
 
                 <Pressable
@@ -3232,6 +3228,7 @@ export function AdminCommunityHub() {
         visible={composerVisible}
         title={editingPost ? "Edit Post" : "New Post"}
         showAchievements={false}
+        accentColor="#2563eb"
         initial={
           editingPost
             ? {

@@ -5,16 +5,17 @@
  *   set ADMIN_PASSWORD=your-password
  *   node scripts/setupCommunityAdmin.cjs
  *
- * Requires EXPO_PUBLIC_FIREBASE_API_KEY and EXPO_PUBLIC_FIREBASE_PROJECT_ID in `.env`.
- * Do not commit passwords or API keys.
+ * Uses apiKey and projectId from firebase.config.cjs (same as firebaseConfig.js).
+ * Do not commit passwords.
  */
 
 const path = require("path");
-require("@expo/env").load(path.resolve(__dirname, "..", ".env"), { force: true });
+
+const firebaseConfig = require(path.join(__dirname, "..", "firebase.config.cjs"));
+const API_KEY = (firebaseConfig.apiKey ?? "").trim();
+const PROJECT_ID = (firebaseConfig.projectId ?? "").trim();
 
 const ADMIN_EMAIL = "leezhien12345@gmail.com";
-const API_KEY = (process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? "").trim();
-const PROJECT_ID = (process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? "").trim();
 
 async function authRequest(path, body) {
   const res = await fetch(`https://identitytoolkit.googleapis.com/v1/${path}?key=${API_KEY}`, {
@@ -66,7 +67,7 @@ async function ensureUserDoc(idToken, localId, name) {
 async function main() {
   if (!API_KEY || !PROJECT_ID) {
     console.error(
-      "Set EXPO_PUBLIC_FIREBASE_API_KEY and EXPO_PUBLIC_FIREBASE_PROJECT_ID in .env before running this script."
+      "Set apiKey and projectId in firebase.config.cjs before running this script."
     );
     process.exit(1);
   }

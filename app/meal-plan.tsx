@@ -1,6 +1,6 @@
-import { Pressable } from "@/components/Pressable";
 import { PlanGeneratingCard } from "@/components/PlanGeneratingCard";
 import { PlanGeneratingModal } from "@/components/PlanGeneratingModal";
+import { Pressable } from "@/components/Pressable";
 import {
     ProfileScreenHeader,
     ThemedCard,
@@ -11,6 +11,7 @@ import {
 } from "@/components/themed/ThemedUi";
 import {
     availableNutritionDietaryOptions,
+    canRestoreNutritionPlan,
     expandNutritionPlanText,
     generateActiveNutritionPlan,
     normalizeNutritionActivity,
@@ -21,13 +22,11 @@ import {
     nutritionGoalLabel,
     nutritionIntakeTargetKcal,
     nutritionPlanArchiveUpdateFields,
-    nutritionPlanDurationFromUserData,
     nutritionPlanOutOfSync,
-    canRestoreNutritionPlan,
     pickOrGenerateNutritionPlan,
     type ActiveNutritionPlan,
     type NutritionDietaryKey,
-    type NutritionMealSuggestion,
+    type NutritionMealSuggestion
 } from "@/lib/nutritionPlan";
 import {
     peekNutritionPlanCache,

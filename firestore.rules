@@ -68,19 +68,25 @@ service cloud.firestore {
         )
         || isFriendsWithChatOther(chatId);
     }
+    // Edit / recall only within 5 minutes of send (createdAt is client ms epoch).
+    function withinChatMessageActionWindow() {
+      return request.time.toMillis() - resource.data.createdAt <= 5 * 60 * 1000;
+    }
     function isOwnChatMessageEdit() {
       return resource.data.senderId == request.auth.uid
         && request.resource.data.senderId == resource.data.senderId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.messageType == resource.data.messageType
-        && resource.data.get("recalled", false) == false;
+        && resource.data.get("recalled", false) == false
+        && withinChatMessageActionWindow();
     }
     function isOwnChatMessageRecall() {
       return resource.data.senderId == request.auth.uid
         && request.resource.data.senderId == resource.data.senderId
         && request.resource.data.createdAt == resource.data.createdAt
         && resource.data.get("recalled", false) == false
-        && request.resource.data.recalled == true;
+        && request.resource.data.recalled == true
+        && withinChatMessageActionWindow();
     }
     function adminFieldUnchanged() {
       return !("isAdmin" in request.resource.data)
@@ -162,6 +168,22 @@ service cloud.firestore {
         allow create, update: if isOwner(userId);
         allow delete: if isOwner(userId) || isAdmin();
       }
+    }
+
+    // Public existence check for forgot-password (doc id = normalized email).
+    match /accountEmails/{email} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower() == email
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == email;
+      allow delete: if isSignedIn()
+        && (
+          resource.data.uid == request.auth.uid
+          || isAdmin()
+        );
     }
 
     match /dailyStepRankings/{dayKey}/entries/{userId} {

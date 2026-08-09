@@ -134,13 +134,19 @@ export function subscribeTermsOfService(
 }
 
 export async function publishTermsOfService(sections: TermsSection[]): Promise<void> {
-  const cleaned = sections
-    .map((s) => ({
-      title: s.title.trim(),
-      body: s.body.trim(),
-      bullets: s.bullets?.map((b) => b.trim()).filter(Boolean),
-    }))
-    .filter((s) => s.title && s.body);
+  for (let i = 0; i < sections.length; i++) {
+    const title = sections[i]?.title?.trim() ?? "";
+    const body = sections[i]?.body?.trim() ?? "";
+    if (!title || !body) {
+      throw new Error(`Section ${i + 1}: Title and Body are required.`);
+    }
+  }
+
+  const cleaned = sections.map((s) => ({
+    title: s.title.trim(),
+    body: s.body.trim(),
+    bullets: s.bullets?.map((b) => b.trim()).filter(Boolean),
+  }));
 
   if (!cleaned.length) {
     throw new Error("Add at least one section with a title and body.");
