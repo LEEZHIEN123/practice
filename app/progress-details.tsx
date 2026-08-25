@@ -7,6 +7,12 @@ import {
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { formatCalendarDayKey } from "@/lib/calendarDay";
+import {
+  BMI_CATEGORY_PLAN_CHANGE_MESSAGE,
+  BMI_CATEGORY_PLAN_CHANGE_TITLE,
+  didBmiCategoryChange,
+} from "@/lib/bmiRecommendation";
+import { saveHomeUserCache } from "@/lib/homeUserCache";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -38,7 +44,7 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -316,6 +322,7 @@ export default function ProgressDetailsScreen() {
 
   const [allWeightRows, setAllWeightRows] = useState<WeightRow[]>([]);
   const [currentWeightKg, setCurrentWeightKg] = useState<number>(0);
+  const [heightCm, setHeightCm] = useState<number>(0);
   const [weightSeries, setWeightSeries] = useState<number[]>(
     initialPeriod === "week" ? Array(7).fill(0) : initialPeriod === "month" ? Array(4).fill(0) : Array(12).fill(0)
   );
@@ -367,14 +374,21 @@ export default function ProgressDetailsScreen() {
       (snap) => {
         if (!snap.exists()) {
           setCurrentWeightKg(0);
+          setHeightCm(0);
           return;
         }
-        const data = snap.data() as { weight?: number };
+        const data = snap.data() as { weight?: number; height?: number };
         const w =
           typeof data?.weight === "number" && Number.isFinite(data.weight) ? data.weight : 0;
+        const h =
+          typeof data?.height === "number" && Number.isFinite(data.height) ? data.height : 0;
         setCurrentWeightKg(w);
+        setHeightCm(h);
       },
-      () => setCurrentWeightKg(0)
+      () => {
+        setCurrentWeightKg(0);
+        setHeightCm(0);
+      }
     );
 
     const q = query(
@@ -529,12 +543,15 @@ export default function ProgressDetailsScreen() {
       const keys = days.map((d) => formatCalendarDayKey(d, calendarTz));
       const series = buildWeightSeriesForDays(keys, latestByDay, currentWeightKg, todayKey);
       setWeightSeries(series);
+      // Weight Record: only days up to today (no future day rows / edit options).
       setWindowWeights(
-        days.map((d, idx) => ({
-          label: chartLabels[idx],
-          date: d,
-          weight: series[idx] ?? 0,
-        }))
+        days
+          .map((d, idx) => ({
+            label: chartLabels[idx],
+            date: d,
+            weight: series[idx] ?? 0,
+          }))
+          .filter((row) => formatCalendarDayKey(row.date, calendarTz) <= todayKey)
       );
       return;
     }
@@ -565,11 +582,15 @@ export default function ProgressDetailsScreen() {
       ];
       const fmtDmy = (day: number) => `${day}/${anchor.getMonth() + 1}/${anchor.getFullYear()}`;
       setWindowWeights(
-        series.map((w, idx) => ({
-          label: `Week ${idx + 1} (${fmtDmy(ranges[idx][0])}-${fmtDmy(ranges[idx][1])})`,
-          date: monthStart,
-          weight: w,
-        }))
+        series
+          .map((w, idx) => ({
+            label: `Week ${idx + 1} (${fmtDmy(ranges[idx][0])}-${fmtDmy(ranges[idx][1])})`,
+            date: monthStart,
+            weight: w,
+            slotIndex: idx,
+          }))
+          .filter((row) => currentSlotIndex == null || row.slotIndex <= currentSlotIndex)
+          .map(({ label, date, weight }) => ({ label, date, weight }))
       );
       return;
     }
@@ -588,11 +609,15 @@ export default function ProgressDetailsScreen() {
     const series = buildWeightBucketSeries(bucketValues, currentSlotIndex, currentWeightKg);
     setWeightSeries(series);
     setWindowWeights(
-      series.map((w, idx) => ({
-        label: new Date(year, idx, 1).toLocaleDateString(undefined, { month: "long" }),
-        date: new Date(year, idx, 1),
-        weight: w,
-      }))
+      series
+        .map((w, idx) => ({
+          label: new Date(year, idx, 1).toLocaleDateString(undefined, { month: "long" }),
+          date: new Date(year, idx, 1),
+          weight: w,
+          slotIndex: idx,
+        }))
+        .filter((row) => currentSlotIndex == null || row.slotIndex <= currentSlotIndex)
+        .map(({ label, date, weight }) => ({ label, date, weight }))
     );
   }, [allWeightRows, anchor, calendarTz, chartLabels, currentWeightKg, period, tab]);
 
@@ -685,7 +710,8 @@ export default function ProgressDetailsScreen() {
 
   useEffect(() => {
     setWorkoutRecentDay(null);
-  }, [period, anchor]);
+    setWorkoutDayPickerOpen(false);
+  }, [period]);
 
   useEffect(() => {
     if (tab !== "meal") return;
@@ -767,7 +793,8 @@ export default function ProgressDetailsScreen() {
 
   useEffect(() => {
     setMealRecentDay(null);
-  }, [period, anchor]);
+    setMealDayPickerOpen(false);
+  }, [period]);
 
   const mealBarsForChart = useMemo(() => {
     const len = period === "week" ? 7 : period === "month" ? 4 : 12;
@@ -779,6 +806,10 @@ export default function ProgressDetailsScreen() {
     if (period === "week") d.setDate(d.getDate() - 7);
     else if (period === "month") d.setMonth(d.getMonth() - 1);
     else d.setFullYear(d.getFullYear() - 1);
+    setWorkoutRecentDay(null);
+    setMealRecentDay(null);
+    setWorkoutDayPickerOpen(false);
+    setMealDayPickerOpen(false);
     setAnchor(d);
   };
 
@@ -789,6 +820,10 @@ export default function ProgressDetailsScreen() {
     else if (period === "month") d.setMonth(d.getMonth() + 1);
     else d.setFullYear(d.getFullYear() + 1);
     if (d > now) return;
+    setWorkoutRecentDay(null);
+    setMealRecentDay(null);
+    setWorkoutDayPickerOpen(false);
+    setMealDayPickerOpen(false);
     setAnchor(d);
   };
 
@@ -811,30 +846,38 @@ export default function ProgressDetailsScreen() {
 
   const periodPickerBounds = useMemo(() => {
     const today = startOfDay(new Date());
-    if (period === "week") {
-      const minimumDate = startOfWeekMon(anchor);
-      const weekEnd = new Date(minimumDate);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      return {
-        minimumDate,
-        maximumDate: weekEnd.getTime() > today.getTime() ? today : weekEnd,
-      };
-    }
-    if (period === "month") {
-      const minimumDate = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-      const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-      return {
-        minimumDate,
-        maximumDate: monthEnd.getTime() > today.getTime() ? today : monthEnd,
-      };
-    }
-    const minimumDate = new Date(anchor.getFullYear(), 0, 1);
-    const yearEnd = new Date(anchor.getFullYear(), 11, 31);
+    // Any past day through today is selectable — empty record days stay clickable too.
     return {
-      minimumDate,
-      maximumDate: yearEnd.getTime() > today.getTime() ? today : yearEnd,
+      minimumDate: new Date(today.getFullYear() - 10, 0, 1),
+      maximumDate: today,
     };
-  }, [anchor, period]);
+  }, [dayTick]);
+
+  const clampPickerDate = useCallback((date: Date) => {
+    const day = startOfDay(date);
+    const min = startOfDay(periodPickerBounds.minimumDate);
+    const max = startOfDay(periodPickerBounds.maximumDate);
+    if (day.getTime() < min.getTime()) return min;
+    if (day.getTime() > max.getTime()) return max;
+    return day;
+  }, [periodPickerBounds.maximumDate, periodPickerBounds.minimumDate]);
+
+  const applyPickedRecordDay = useCallback(
+    (rawDate: Date, which: "workout" | "meal") => {
+      const picked = clampPickerDate(rawDate);
+      if (which === "workout") setWorkoutRecentDay(picked);
+      else setMealRecentDay(picked);
+
+      // Keep the chart period aligned with the picked day so empty past days still filter correctly.
+      if (period === "week") setAnchor(picked);
+      else if (period === "month") {
+        setAnchor(new Date(picked.getFullYear(), picked.getMonth(), 1));
+      } else {
+        setAnchor(new Date(picked.getFullYear(), 0, 1));
+      }
+    },
+    [clampPickerDate, period]
+  );
 
   useEffect(() => {
     setWorkoutHoverIdx(null);
@@ -927,7 +970,13 @@ export default function ProgressDetailsScreen() {
   };
 
   const openEditWeightFor = (date: Date, baseWeight?: number) => {
-    setLogDate(date);
+    const today = startOfDay(new Date());
+    const day = startOfDay(date);
+    if (day.getTime() > today.getTime()) {
+      Alert.alert("Unavailable", "You can only record weight for today or past days.");
+      return;
+    }
+    setLogDate(day);
     setLogWeightText(typeof baseWeight === "number" && Number.isFinite(baseWeight) && baseWeight > 0 ? baseWeight.toFixed(1) : "");
     setIsEditingRecentWeight(true);
     setShowDatePicker(false);
@@ -944,18 +993,40 @@ export default function ProgressDetailsScreen() {
       return;
     }
 
+    const today = startOfDay(new Date());
+    const day = startOfDay(logDate);
+    if (day.getTime() > today.getTime()) {
+      Alert.alert("Unavailable", "You can only record weight for today or past days.");
+      return;
+    }
+
     try {
       setSavingLog(true);
       const nextW = clamp(parsedW, 30, 200);
+      const h = heightCm;
+      const m = h ? h / 100 : 0;
+      const previousBmi = m && currentWeightKg > 0 ? currentWeightKg / (m * m) : null;
+      const nextBmi = m ? nextW / (m * m) : 0;
+      const todayKey = formatCalendarDayKey(today, calendarTz);
+      const editedDayKey = formatCalendarDayKey(day, calendarTz);
+      const isToday = editedDayKey === todayKey;
 
-      await updateDoc(doc(db, "users", user.uid), { weight: nextW });
+      // Profile weight / BMI only follow today's log — past-day edits stay historical.
+      if (isToday) {
+        await updateDoc(doc(db, "users", user.uid), {
+          weight: nextW,
+          bmi: h ? Number(nextBmi.toFixed(2)) : undefined,
+        });
+        setCurrentWeightKg(nextW);
+        void saveHomeUserCache(user.uid, { weight: nextW });
+      }
+
       await addDoc(collection(db, "users", user.uid, "weightLogs"), {
         weight: nextW,
         createdAt: serverTimestamp(),
-        logDate: Timestamp.fromDate(startOfDay(logDate)),
+        logDate: Timestamp.fromDate(day),
       });
 
-      const editedDayKey = formatCalendarDayKey(startOfDay(logDate), calendarTz);
       await resyncAutoFilledWeightsAfterDay({
         uid: user.uid,
         editedDayKey,
@@ -965,6 +1036,10 @@ export default function ProgressDetailsScreen() {
       }).catch((e) => console.log("weight auto-fill resync failed:", e));
 
       setLogVisible(false);
+
+      if (isToday && didBmiCategoryChange(previousBmi, nextBmi)) {
+        Alert.alert(BMI_CATEGORY_PLAN_CHANGE_TITLE, BMI_CATEGORY_PLAN_CHANGE_MESSAGE);
+      }
     } catch (e) {
       console.log("Failed to log weight:", e);
       Alert.alert("Error", "Failed to log your weight.");
@@ -1453,7 +1528,7 @@ export default function ProgressDetailsScreen() {
               {workoutDayPickerOpen ? (
                 <View className="mt-3">
                   <DateTimePicker
-                    value={workoutRecentDay ?? new Date()}
+                    value={clampPickerDate(workoutRecentDay ?? new Date())}
                     mode="date"
                     display={Platform.OS === "ios" ? "inline" : "default"}
                     minimumDate={periodPickerBounds.minimumDate}
@@ -1461,7 +1536,7 @@ export default function ProgressDetailsScreen() {
                     onChange={(event, date) => {
                       if (Platform.OS !== "ios") setWorkoutDayPickerOpen(false);
                       if (event.type === "dismissed") return;
-                      if (date) setWorkoutRecentDay(date);
+                      if (date) applyPickedRecordDay(date, "workout");
                     }}
                   />
                   {Platform.OS === "ios" ? (
@@ -1790,7 +1865,7 @@ export default function ProgressDetailsScreen() {
               {mealDayPickerOpen ? (
                 <View className="mt-3">
                   <DateTimePicker
-                    value={mealRecentDay ?? new Date()}
+                    value={clampPickerDate(mealRecentDay ?? new Date())}
                     mode="date"
                     display={Platform.OS === "ios" ? "inline" : "default"}
                     minimumDate={periodPickerBounds.minimumDate}
@@ -1798,7 +1873,7 @@ export default function ProgressDetailsScreen() {
                     onChange={(event, date) => {
                       if (Platform.OS !== "ios") setMealDayPickerOpen(false);
                       if (event.type === "dismissed") return;
-                      if (date) setMealRecentDay(date);
+                      if (date) applyPickedRecordDay(date, "meal");
                     }}
                   />
                   {Platform.OS === "ios" ? (
@@ -1954,14 +2029,17 @@ export default function ProgressDetailsScreen() {
 
                   {showDatePicker && (
                     <DateTimePicker
-                      value={logDate}
+                      value={logDate.getTime() > Date.now() ? new Date() : logDate}
                       mode="date"
                       display={Platform.OS === "ios" ? "inline" : "default"}
                       maximumDate={new Date()}
                       onChange={(event, date) => {
                         if (Platform.OS !== "ios") setShowDatePicker(false);
                         if (event.type === "dismissed") return;
-                        if (date) setLogDate(date);
+                        if (!date) return;
+                        const today = startOfDay(new Date());
+                        const picked = startOfDay(date);
+                        setLogDate(picked.getTime() > today.getTime() ? today : picked);
                       }}
                     />
                   )}

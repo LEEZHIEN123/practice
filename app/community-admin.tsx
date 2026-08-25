@@ -42,17 +42,7 @@ export default function CommunityAdminScreen() {
   }, [isAdmin]);
 
   const handleBlock = (report: CommunityReport) => {
-    Alert.alert(
-      "Block post",
-      "This post will be hidden from all users. The reporter and post author will be notified via Support Admin chat.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () => setBlockReport(report),
-        },
-      ]
-    );
+    setBlockReport(report);
   };
 
   const handleConfirmReportBlock = async (reason: string) => {

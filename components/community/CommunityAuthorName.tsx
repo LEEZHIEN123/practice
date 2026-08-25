@@ -9,6 +9,8 @@ type CommunityAuthorNameProps = {
   authorId: string;
   authorName: string;
   adminUid: string | null;
+  /** Prefer live users/{uid}.name when present (e.g. after a profile rename). */
+  liveNamesById?: Record<string, string>;
   textStyle?: StyleProp<TextStyle>;
   textClassName?: string;
   /** Shown after the name for the current user's own posts. */
@@ -21,12 +23,14 @@ export function CommunityAuthorName({
   authorId,
   authorName,
   adminUid,
+  liveNamesById,
   textStyle,
   textClassName = "text-base font-extrabold",
   ownSuffix,
   iconSize = 16,
 }: CommunityAuthorNameProps) {
-  const name = displayCommunityUserName(authorId, authorName, adminUid);
+  const rawName = liveNamesById?.[authorId] ?? authorName;
+  const name = displayCommunityUserName(authorId, rawName, adminUid);
   const isSupportAdmin = Boolean(adminUid && authorId === adminUid);
 
   return (

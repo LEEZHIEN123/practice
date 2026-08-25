@@ -138,6 +138,15 @@ service cloud.firestore {
         && resource.data.get("underReview", false) == false
         && resource.data.get("blocked", false) == true;
     }
+    function authorSyncPostProfileDenorm() {
+      return resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == resource.data.authorId
+        && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["authorProfileImage"])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["authorName"])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["authorProfileImage", "authorName"])
+        );
+    }
 
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -175,10 +184,13 @@ service cloud.firestore {
       allow get: if true;
       allow list: if false;
       allow create, update: if isSignedIn()
-        && request.auth.token.email is string
-        && request.auth.token.email.lower() == email
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == email;
+        && request.resource.data.email is string
+        && request.resource.data.email.lower() == email
+        && (
+          request.auth.token.email == null
+          || request.auth.token.email.lower() == email
+        );
       allow delete: if isSignedIn()
         && (
           resource.data.uid == request.auth.uid
@@ -226,6 +238,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin()
         || isAuthorPostEdit()
+        || authorSyncPostProfileDenorm()
         || flagPostUnderReviewOnly()
         || authorRequestBlockedReReview()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["likedBy", "likeCount"])

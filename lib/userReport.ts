@@ -14,6 +14,7 @@ import {
   limit,
   orderBy,
   query,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
@@ -134,39 +135,37 @@ function dayKeyFromLog(data: Record<string, unknown>, calendarTz: string): strin
   return formatCalendarDayKey(date, calendarTz);
 }
 
-async function detectAchievementsInPeriod(
-  uid: string,
+function detectAchievementsFromSnaps(
   dayKeySet: Set<string>,
-  calendarTz: string
-): Promise<ReportAchievementItem[]> {
+  calendarTz: string,
+  workoutDocs: QueryDocumentSnapshot[],
+  waterDocs: QueryDocumentSnapshot[],
+  mealDocs: QueryDocumentSnapshot[],
+  weightDocs: QueryDocumentSnapshot[],
+  statsDocs: QueryDocumentSnapshot[]
+): ReportAchievementItem[] {
   const unlocked = new Set<string>();
 
-  const workoutSnap = await getDocs(
-    query(collection(db, "users", uid, "workoutLogs"), orderBy("createdAt", "asc"))
-  );
   let workoutIndex = 0;
-  workoutSnap.forEach((docSnap) => {
+  for (const docSnap of workoutDocs) {
     workoutIndex++;
     const data = docSnap.data() as Record<string, unknown>;
     const createdAt = getCreatedAtDate(data.createdAt);
-    if (!createdAt) return;
+    if (!createdAt) continue;
     const dayKey = formatCalendarDayKey(createdAt, calendarTz);
-    if (!dayKeySet.has(dayKey)) return;
+    if (!dayKeySet.has(dayKey)) continue;
     if (workoutIndex === 1) unlocked.add("wo_first_complete");
     if (workoutIndex === 10) unlocked.add("wo_complete_10");
     if (workoutIndex === 25) unlocked.add("wo_complete_25");
     if (workoutIndex === 50) unlocked.add("wo_complete_50");
-  });
+  }
 
-  const waterSnap = await getDocs(
-    query(collection(db, "users", uid, "waterLogs"), orderBy("createdAt", "asc"))
-  );
   let waterIndex = 0;
-  waterSnap.forEach((docSnap) => {
+  for (const docSnap of waterDocs) {
     waterIndex++;
     const data = docSnap.data() as Record<string, unknown>;
     const dayKey = dayKeyFromLog(data, calendarTz);
-    if (!dayKey || !dayKeySet.has(dayKey)) return;
+    if (!dayKey || !dayKeySet.has(dayKey)) continue;
     if (waterIndex === 1) {
       unlocked.add("ml_water_first");
       unlocked.add("st_water_first");
@@ -176,24 +175,20 @@ async function detectAchievementsInPeriod(
     if (waterIndex === 20) unlocked.add("ml_water_20");
     if (waterIndex === 30) unlocked.add("st_water_30");
     if (waterIndex === 50) unlocked.add("ml_water_50");
-  });
+  }
 
-  const mealSnap = await getDocs(
-    query(collection(db, "users", uid, "mealLogs"), orderBy("createdAt", "asc"))
-  );
   let mealIndex = 0;
-  mealSnap.forEach((docSnap) => {
+  for (const docSnap of mealDocs) {
     mealIndex++;
     const data = docSnap.data() as Record<string, unknown>;
     const dayKey = dayKeyFromLog(data, calendarTz);
-    if (!dayKey || !dayKeySet.has(dayKey)) return;
+    if (!dayKey || !dayKeySet.has(dayKey)) continue;
     if (mealIndex === 1) unlocked.add("ml_meal_first");
     if (mealIndex === 10) unlocked.add("ml_meal_10");
     if (mealIndex === 25) unlocked.add("ml_meal_25");
-  });
+  }
 
-  const statsSnap = await getDocs(collection(db, "users", uid, "dailyStats"));
-  const sortedStats = statsSnap.docs
+  const sortedStats = statsDocs
     .map((docSnap) => ({
       dayKey: docSnap.id,
       steps: effectiveSteps(docSnap.data() as Record<string, unknown>),
@@ -226,21 +221,18 @@ async function detectAchievementsInPeriod(
     }
   }
 
-  const weightSnap = await getDocs(
-    query(collection(db, "users", uid, "weightLogs"), orderBy("createdAt", "asc"))
-  );
   let weightIndex = 0;
-  weightSnap.forEach((docSnap) => {
+  for (const docSnap of weightDocs) {
     weightIndex++;
     const data = docSnap.data() as Record<string, unknown>;
     const dayKey = dayKeyFromLog(data, calendarTz);
-    if (!dayKey || !dayKeySet.has(dayKey)) return;
+    if (!dayKey || !dayKeySet.has(dayKey)) continue;
     if (weightIndex === 1) {
       unlocked.add("wo_weight_first");
       unlocked.add("st_weight_first");
     }
     if (weightIndex === 10) unlocked.add("st_weight_10");
-  });
+  }
 
   return [...unlocked].map((id) => ({
     id,
@@ -264,33 +256,37 @@ export async function loadUserReport(options: {
     period === "daily" ? [todayKey] : getWeekDayKeys(anchor, calendarTz);
   const dayKeySet = new Set(dayKeys);
 
-  const userSnap = await getDoc(doc(db, "users", uid));
-  const userData = userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {};
-  const userName =
-    options.userName ??
-    (typeof userData.name === "string" && userData.name.trim() ? userData.name.trim() : "User");
-
   const title =
     period === "daily"
       ? formatReportDayLabel(todayKey)
       : `Week of ${formatWeekRangeLabel(startOfWeekMonday(anchor))}`;
   const subtitle = period === "daily" ? "Daily Report" : "Weekly Report";
 
-  const [workoutSnap, mealSnap, waterSnap, weightSnap, achievements] = await Promise.all([
+  // One parallel round-trip: reuse the same log/stats snaps for report rows + achievements.
+  const [userSnap, workoutSnap, mealSnap, waterSnap, weightSnap, statsSnap] = await Promise.all([
+    options.userName
+      ? Promise.resolve(null)
+      : getDoc(doc(db, "users", uid)),
     getDocs(
-      query(collection(db, "users", uid, "workoutLogs"), orderBy("createdAt", "desc"), limit(600))
+      query(collection(db, "users", uid, "workoutLogs"), orderBy("createdAt", "asc"), limit(600))
     ),
     getDocs(
-      query(collection(db, "users", uid, "mealLogs"), orderBy("createdAt", "desc"), limit(600))
+      query(collection(db, "users", uid, "mealLogs"), orderBy("createdAt", "asc"), limit(600))
     ),
     getDocs(
-      query(collection(db, "users", uid, "waterLogs"), orderBy("createdAt", "desc"), limit(600))
+      query(collection(db, "users", uid, "waterLogs"), orderBy("createdAt", "asc"), limit(600))
     ),
     getDocs(
-      query(collection(db, "users", uid, "weightLogs"), orderBy("createdAt", "desc"), limit(600))
+      query(collection(db, "users", uid, "weightLogs"), orderBy("createdAt", "asc"), limit(600))
     ),
-    detectAchievementsInPeriod(uid, dayKeySet, calendarTz),
+    getDocs(collection(db, "users", uid, "dailyStats")),
   ]);
+
+  const userData =
+    userSnap && userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {};
+  const userName =
+    options.userName ??
+    (typeof userData.name === "string" && userData.name.trim() ? userData.name.trim() : "User");
 
   const workouts: ReportWorkoutItem[] = [];
   workoutSnap.forEach((docSnap) => {
@@ -367,28 +363,24 @@ export async function loadUserReport(options: {
     .map(({ weightKg, dayKey }) => ({ weightKg, dayKey }))
     .sort((a, b) => b.dayKey.localeCompare(a.dayKey));
 
-  const stepsByDay: ReportStepsDay[] = [];
-  for (const dayKey of dayKeys) {
-    const statSnap = await getDoc(doc(db, "users", uid, "dailyStats", dayKey));
-    const steps = statSnap.exists()
-      ? effectiveSteps(statSnap.data() as Record<string, unknown>)
-      : 0;
-    stepsByDay.push({ dayKey, steps });
-  }
+  const statsByDay = new Map<string, Record<string, unknown>>();
+  statsSnap.forEach((docSnap) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(docSnap.id)) {
+      statsByDay.set(docSnap.id, docSnap.data() as Record<string, unknown>);
+    }
+  });
+
+  const stepsByDay: ReportStepsDay[] = dayKeys.map((dayKey) => {
+    const data = statsByDay.get(dayKey);
+    return { dayKey, steps: data ? effectiveSteps(data) : 0 };
+  });
   const steps = stepsByDay.reduce((sum, row) => sum + row.steps, 0);
 
   let waterMl = waterLogs.reduce((sum, row) => sum + row.amountMl, 0);
-  if (waterMl === 0 && period === "daily") {
-    const statSnap = await getDoc(doc(db, "users", uid, "dailyStats", todayKey));
-    if (statSnap.exists()) {
-      const wm = (statSnap.data() as { waterMl?: unknown }).waterMl;
-      if (typeof wm === "number" && Number.isFinite(wm)) waterMl = Math.round(wm);
-    }
-  } else if (waterMl === 0 && period === "weekly") {
+  if (waterMl === 0) {
     for (const dayKey of dayKeys) {
-      const statSnap = await getDoc(doc(db, "users", uid, "dailyStats", dayKey));
-      if (!statSnap.exists()) continue;
-      const wm = (statSnap.data() as { waterMl?: unknown }).waterMl;
+      const data = statsByDay.get(dayKey);
+      const wm = data?.waterMl;
       if (typeof wm === "number" && Number.isFinite(wm)) waterMl += Math.round(wm);
     }
   }
@@ -401,6 +393,16 @@ export async function loadUserReport(options: {
         : null;
     if (profileWeight != null && profileWeight > 0) weightKg = profileWeight;
   }
+
+  const achievements = detectAchievementsFromSnaps(
+    dayKeySet,
+    calendarTz,
+    workoutSnap.docs,
+    waterSnap.docs,
+    mealSnap.docs,
+    weightSnap.docs,
+    statsSnap.docs
+  );
 
   const totalBurnedKcal = workouts.reduce((sum, row) => sum + row.burnedKcal, 0);
   const totalConsumedKcal = meals.reduce((sum, row) => sum + row.calories, 0);

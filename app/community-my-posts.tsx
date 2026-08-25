@@ -1,8 +1,10 @@
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
+import { PostEditHistoryModal } from "@/components/community/PostEditHistoryModal";
 import { PostMenuModal } from "@/components/community/PostMenuModal";
 import { ReReviewReasonModal } from "@/components/community/ReReviewReasonModal";
+import { SharePostToChatModal } from "@/components/community/SharePostToChatModal";
 import { Pressable } from "@/components/Pressable";
 import {
   ProfileScreenHeader,
@@ -12,16 +14,19 @@ import {
 import { formatCalendarDayKey } from "@/lib/calendarDay";
 import { formatPostDisplayTime } from "@/lib/chatMessageUtils";
 import {
+  buildChatListWithSupportAdmin,
   checkIsAdmin,
   deletePost,
   getPublicUserProfile,
   requestBlockedPostReReview,
+  resolveAdminUid,
   setPostAuthorHidden,
+  subscribeChats,
   subscribeMyAuthoredPosts,
   subscribePendingCommunityPostIds,
 } from "@/lib/communityService";
 import { patchCommunityPost, removeCommunityPost } from "@/lib/communityBootstrap";
-import type { CommunityPost, PublicUserProfile } from "@/lib/communityTypes";
+import type { ChatConversation, CommunityPost, PublicUserProfile } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
@@ -84,13 +89,23 @@ export default function CommunityMyPostsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [menuPost, setMenuPost] = useState<CommunityPost | null>(null);
+  const [historyPost, setHistoryPost] = useState<CommunityPost | null>(null);
+  const [sharePost, setSharePost] = useState<CommunityPost | null>(null);
   const [reReviewPost, setReReviewPost] = useState<CommunityPost | null>(null);
   const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
   const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
+  const [chats, setChats] = useState<ChatConversation[]>([]);
+  const [adminUid, setAdminUid] = useState<string | null>(null);
 
   const accent = isAdminUser ? ADMIN_BLUE : theme.accentText;
   const controlAccent = isAdminUser ? ADMIN_BLUE : USER_GREEN;
   const avatarPlaceholder = isAdminUser ? ADMIN_BLUE : "#9fdfb6";
+
+  const displayChats = useMemo(() => {
+    if (!uid) return chats;
+    if (isAdminUser) return chats;
+    return buildChatListWithSupportAdmin(chats, uid, adminUid, null);
+  }, [adminUid, chats, isAdminUser, uid]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -103,6 +118,18 @@ export default function CommunityMyPostsScreen() {
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    void resolveAdminUid().then(setAdminUid).catch(() => setAdminUid(null));
+  }, []);
+
+  useEffect(() => {
+    if (!uid) {
+      setChats([]);
+      return;
+    }
+    return subscribeChats(setChats);
+  }, [uid]);
 
   useEffect(() => {
     const unsub = subscribePendingCommunityPostIds(setPendingReviewPostIds);
@@ -456,7 +483,7 @@ export default function CommunityMyPostsScreen() {
                     />
                     <View className="flex-1 ml-3">
                       <Text className="text-base font-extrabold" style={textPrimary}>
-                        {post.authorName || profile?.name || "You"}
+                        {profile?.name ?? post.authorName ?? "You"}
                         <Text className="text-sm font-bold" style={{ color: accent }}>
                           {" "}
                           · me
@@ -566,8 +593,15 @@ export default function CommunityMyPostsScreen() {
           setMenuPost(null);
           handleDelete(post);
         }}
-        onEditHistory={() => setMenuPost(null)}
+        onEditHistory={() => {
+          if (menuPost) setHistoryPost(menuPost);
+        }}
         onReport={() => setMenuPost(null)}
+        onShare={() => {
+          if (!menuPost) return;
+          setSharePost(menuPost);
+          setMenuPost(null);
+        }}
         onRequestReReview={
           menuPost?.blocked && !menuPost.underReview
             ? () => {
@@ -588,17 +622,33 @@ export default function CommunityMyPostsScreen() {
         }
       />
 
+      <PostEditHistoryModal
+        visible={historyPost != null}
+        authorName={historyPost?.authorName ?? ""}
+        history={historyPost?.editHistory ?? []}
+        onClose={() => setHistoryPost(null)}
+      />
+
+      <SharePostToChatModal
+        visible={sharePost !== null}
+        post={sharePost}
+        chats={displayChats}
+        currentUserId={uid}
+        adminUid={adminUid}
+        onClose={() => setSharePost(null)}
+      />
+
       <ReReviewReasonModal
         visible={reReviewPost != null}
         onClose={() => setReReviewPost(null)}
         onSubmit={async (reason) => {
           if (!reReviewPost) return;
           await requestBlockedPostReReview(reReviewPost.id, reason);
+          const optimistic = { ...reReviewPost, underReview: true };
           setAuthoredPosts((prev) =>
-            prev.map((item) =>
-              item.id === reReviewPost.id ? { ...item, underReview: true } : item
-            )
+            prev.map((item) => (item.id === reReviewPost.id ? optimistic : item))
           );
+          patchCommunityPost(optimistic);
           setReReviewPost(null);
         }}
       />

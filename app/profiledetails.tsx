@@ -6,12 +6,20 @@ import {
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { Image, ScrollView, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isOnboardingGate } from "@/lib/onboardingGate";
 import { useRegistration } from "../context/registrationContext";
@@ -26,6 +34,11 @@ export default function ProfileDetails() {
   const { account, setAccount, setProfile, setOnboardingInProgress } = useRegistration();
   const { theme } = useThemedScreen();
   const { inputStyle } = useProfileCardStyles();
+  const { scrollRef, scrollFieldIntoView, scrollBottomPad, onScroll } =
+    useScrollFieldAboveKeyboard(24);
+  const ageFieldRef = useRef<View>(null);
+  const heightFieldRef = useRef<View>(null);
+  const weightFieldRef = useRef<View>(null);
 
   const [gender, setGender] = useState<Gender>("male");
   const [age, setAge] = useState(28);
@@ -200,20 +213,23 @@ export default function ProfileDetails() {
     );
   };
 
-  const bottomPad = Math.max(insets.bottom, 16) + 24;
-
   return (
     <ThemedScreen>
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{
-          paddingBottom: bottomPad,
-          paddingHorizontal: 12,
-          paddingTop: insets.top + 12,
-        }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+      <KeyboardAvoidingView className="flex-1" behavior="padding">
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          contentContainerStyle={{
+            paddingBottom: scrollBottomPad,
+            paddingHorizontal: 12,
+            paddingTop: insets.top + 12,
+          }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onScroll={(event) => onScroll(event.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+        >
         <View className="relative mb-6 h-12 justify-center">
           <ThemedText className="text-center text-xl font-extrabold">Profile Details</ThemedText>
         </View>
@@ -245,7 +261,7 @@ export default function ProfileDetails() {
         </View>
 
         <View className="mt-6">
-          <View className="mb-3">
+          <View ref={ageFieldRef} className="mb-3">
             <View className="flex-row justify-between items-center mb-2">
               <ThemedText variant="secondary" className="font-semibold ml-1">
                 AGE
@@ -258,6 +274,7 @@ export default function ProfileDetails() {
                     setAgeText(sanitizeInt(t));
                     setAgeError("");
                   }}
+                  onFocus={() => scrollFieldIntoView(ageFieldRef)}
                   onBlur={() => {
                     const parsed = parseInt(ageText || "", 10);
 
@@ -306,7 +323,7 @@ export default function ProfileDetails() {
             {!!ageError && <Text className="text-red-500 text-sm mt-1 ml-1">{ageError}</Text>}
           </View>
 
-          <View className="mb-3">
+          <View ref={heightFieldRef} className="mb-3">
             <View className="flex-row justify-between items-center mb-2">
               <ThemedText variant="secondary" className="font-semibold ml-1">
                 HEIGHT
@@ -319,6 +336,7 @@ export default function ProfileDetails() {
                     setHeightText(sanitizeDecimal(t));
                     setHeightError("");
                   }}
+                  onFocus={() => scrollFieldIntoView(heightFieldRef)}
                   onBlur={() => {
                     const parsed = parseFloat(heightText || "");
 
@@ -369,7 +387,7 @@ export default function ProfileDetails() {
             )}
           </View>
 
-          <View className="mb-2">
+          <View ref={weightFieldRef} className="mb-2">
             <View className="flex-row justify-between items-center mb-2">
               <ThemedText variant="secondary" className="font-semibold ml-1">
                 WEIGHT
@@ -382,6 +400,7 @@ export default function ProfileDetails() {
                     setWeightText(sanitizeDecimal(t));
                     setWeightError("");
                   }}
+                  onFocus={() => scrollFieldIntoView(weightFieldRef)}
                   onBlur={() => {
                     const parsed = parseFloat(weightText || "");
 
@@ -453,6 +472,7 @@ export default function ProfileDetails() {
           </Pressable>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </ThemedScreen>
   );
 }

@@ -99,7 +99,7 @@ export default function ActivityLevel() {
             <Pressable
               key={o.key}
               onPress={() => setSelected(o.key)}
-              className="rounded-3xl p-5 flex-row items-center justify-between"
+              className="rounded-3xl p-5 flex-row items-center"
               style={
                 isActive
                   ? {
@@ -110,9 +110,9 @@ export default function ActivityLevel() {
                   : cardStyle
               }
             >
-              <View className="flex-row items-center">
+              <View className="min-w-0 flex-1 flex-row items-center pr-3">
                 <View
-                  className="w-16 h-16 rounded-2xl items-center justify-center"
+                  className="w-16 h-16 rounded-2xl items-center justify-center shrink-0"
                   style={{ backgroundColor: isActive ? theme.accent : theme.rowBg }}
                 >
                   <Ionicons
@@ -122,16 +122,16 @@ export default function ActivityLevel() {
                   />
                 </View>
 
-                <View className="ml-4">
+                <View className="ml-4 min-w-0 flex-1">
                   <ThemedText className="text-xl font-extrabold">{o.title}</ThemedText>
-                  <ThemedText variant="secondary" className="mt-1">
+                  <ThemedText variant="secondary" className="mt-1 shrink">
                     {o.subtitle}
                   </ThemedText>
                 </View>
               </View>
 
               <View
-                className="w-7 h-7 rounded-full border-2 items-center justify-center"
+                className="h-7 w-7 shrink-0 rounded-full border-2 items-center justify-center"
                 style={{ borderColor: isActive ? theme.accent : theme.iconMuted }}
               >
                 {isActive ? (

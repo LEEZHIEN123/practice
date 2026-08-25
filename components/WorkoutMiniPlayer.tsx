@@ -208,9 +208,21 @@ export function WorkoutMiniPlayer() {
         onPanResponderRelease: (_, g) => {
           if (!movedRef.current && Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10) {
             setExpanded(true);
-            setPos((p) =>
-              snapToSide(p.x, p.y, cardW, cardH, screenW, screenH, insets.top, bottomInset)
-            );
+            setPos((p) => {
+              const centerX = p.x + COLLAPSED_W / 2;
+              const nextX = centerX - cardW / 2;
+              const nextY = p.y - (cardH - COLLAPSED_H);
+              return snapToSide(
+                nextX,
+                nextY,
+                cardW,
+                cardH,
+                screenW,
+                screenH,
+                insets.top,
+                bottomInset
+              );
+            });
           } else if (movedRef.current) {
             setPos((p) =>
               snapToSide(
@@ -284,28 +296,28 @@ export function WorkoutMiniPlayer() {
   };
 
   const handleClose = () => {
-    posReadyRef.current = false;
-    sessionKeyRef.current = null;
-    const folded = dismiss();
-    if (folded) {
-      void persistPaused(folded.baseElapsedSeconds, folded.sessionId);
-    }
+    // Closing the minimized player finishes the workout and records it
+    // (same as tapping Complete), instead of discarding the session.
+    void completeWorkout();
   };
 
   const handleShrink = () => {
     setExpanded(false);
-    setPos((p) =>
-      snapToSide(
-        p.x,
-        p.y,
+    setPos((p) => {
+      const centerX = p.x + cardW / 2;
+      const nextX = centerX - COLLAPSED_W / 2;
+      const nextY = p.y + (cardH - COLLAPSED_H);
+      return snapToSide(
+        nextX,
+        nextY,
         COLLAPSED_W,
         COLLAPSED_H,
         screenW,
         screenH,
         insets.top,
         bottomInset
-      )
-    );
+      );
+    });
   };
 
   const openWorkout = () => {

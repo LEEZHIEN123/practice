@@ -5,9 +5,9 @@ import {
   ThemedText,
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
+import { useStepTracking } from "@/context/StepTrackingContext";
 import { addDaysToYmd, formatCalendarDayKey, localDateFromYmd } from "@/lib/calendarDay";
 import { subscribeFriendsList } from "@/lib/communityService";
-import { getPedometerOrNull } from "@/lib/pedometerSafe";
 import { getCurrentPeriodSlotIndex } from "@/lib/progressPeriodCurrent";
 import {
   DAILY_STEP_TARGET,
@@ -18,17 +18,23 @@ import {
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { auth, db } from "../firebaseConfig";
-
-type PeriodKey = "week" | "month" | "year";
+import { auth, db } from "../firebaseConfig";type PeriodKey = "week" | "month" | "year";
 type ScreenSection = "progress" | "ranking";
 type RankingScope = "all" | "friends";
 
@@ -103,6 +109,7 @@ export default function StepProgressScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
+  const { liveSteps, stepsManualDb: trackedManualSteps } = useStepTracking();
   const {
     cardStyle,
     segmentTrackStyle,
@@ -136,20 +143,17 @@ export default function StepProgressScreen() {
   const [loading, setLoading] = useState(true);
   const [stepHoverIdx, setStepHoverIdx] = useState<number | null>(null);
   const [seriesRefresh, setSeriesRefresh] = useState(0);
-  const [liveTodayAuto, setLiveTodayAuto] = useState<number | null>(null);
+  const liveTodayAuto = liveSteps;
   const [todayManualOverride, setTodayManualOverride] = useState<number | null>(null);
-  const [screenFocused, setScreenFocused] = useState(false);
-  const liveSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastLiveSyncedRef = useRef(0);
 
   const [editOpen, setEditOpen] = useState(false);
   const [stepText, setStepText] = useState("");
   const [saving, setSaving] = useState(false);
   const [editModalDate, setEditModalDate] = useState(() => new Date());
-  const [allowEditDateSelection, setAllowEditDateSelection] = useState(false);
-  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
   const [editDayAuto, setEditDayAuto] = useState(0);
   const [editDayManual, setEditDayManual] = useState<number | null>(null);
+  /** Prevent live auto-step snapshots from wiping what the user is typing. */
+  const stepsFieldDirtyRef = useRef(false);
 
   const chartLabels = useMemo(() => {
     if (period === "week") return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -218,9 +222,12 @@ export default function StepProgressScreen() {
 
   const myTodaySteps = useMemo(() => {
     if (todayManualOverride != null) return Math.max(0, Math.round(todayManualOverride));
-    if (liveTodayAuto != null) return Math.max(0, Math.round(liveTodayAuto));
-    return 0;
+    return Math.max(0, Math.round(liveTodayAuto));
   }, [liveTodayAuto, todayManualOverride]);
+
+  useEffect(() => {
+    setTodayManualOverride(trackedManualSteps);
+  }, [trackedManualSteps]);
 
   const visibleRankingEntries = useMemo(() => {
     const scoped =
@@ -256,13 +263,7 @@ export default function StepProgressScreen() {
   const hasVisibleRankedEntries = visibleRankingEntries.some((entry) => entry.steps > 0);
 
   useEffect(() => {
-    lastLiveSyncedRef.current = 0;
-    if (liveSyncTimerRef.current) {
-      clearTimeout(liveSyncTimerRef.current);
-      liveSyncTimerRef.current = null;
-    }
     if (!authUid) {
-      setLiveTodayAuto(null);
       setTodayManualOverride(null);
       setStepSeries(Array.from({ length: 7 }, () => 0));
       setWindowRows([]);
@@ -309,7 +310,16 @@ export default function StepProgressScreen() {
   }, [authUid, calendarTz, editModalDate, editOpen]);
 
   useEffect(() => {
-    if (!editOpen) return;
+    if (!editOpen) {
+      stepsFieldDirtyRef.current = false;
+      return;
+    }
+    // New day selected (or modal opened) — allow Firestore values to seed the input.
+    stepsFieldDirtyRef.current = false;
+  }, [editOpen, editModalDate]);
+
+  useEffect(() => {
+    if (!editOpen || stepsFieldDirtyRef.current) return;
     const eff = editDayManual != null ? editDayManual : editDayAuto;
     setStepText(String(eff));
   }, [editOpen, editModalDate, editDayAuto, editDayManual]);
@@ -439,8 +449,6 @@ export default function StepProgressScreen() {
             ? Math.max(0, Math.round(data.stepsAuto))
             : 0;
         setTodayManualOverride(manual);
-        setLiveTodayAuto(auto);
-        lastLiveSyncedRef.current = Math.max(lastLiveSyncedRef.current, auto);
         void publishDailyStepRanking(todayKey, manual ?? auto).catch((error) => {
           console.log("Failed to publish step ranking:", error);
         });
@@ -452,71 +460,10 @@ export default function StepProgressScreen() {
     return () => unsub();
   }, [authUid, calendarTz]);
 
-  // Real-time steps for "today" (only affects the currently-visible window/bucket).
-  useEffect(() => {
-    if (!screenFocused) return;
-    let mounted = true;
-    let pedSub: { remove: () => void } | null = null;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    let pedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const startLive = async () => {
-      const user = auth.currentUser;
-      if (!user || user.uid !== authUid) return;
-
-      // Only need live OS step polls for the weekly chart; month/year use aggregates from load().
-      if (period !== "week") return;
-
-      try {
-        const Pedometer = await getPedometerOrNull();
-        if (!mounted || !Pedometer) return;
-
-        const perm = await Pedometer.requestPermissionsAsync();
-        if (!perm.granted || !mounted) return;
-
-        const syncStepsFromOs = async () => {
-          if (!mounted) return;
-          try {
-            const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
-            const total = Math.max(0, Math.round(typeof res?.steps === "number" ? res.steps : 0));
-            setLiveTodayAuto(total);
-          } catch {
-            /* ignore */
-          }
-        };
-
-        await syncStepsFromOs();
-        if (!mounted) return;
-
-        pedSub = Pedometer.watchStepCount(() => {
-          if (!mounted) return;
-          if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
-          pedDebounceTimer = setTimeout(() => {
-            pedDebounceTimer = null;
-            void syncStepsFromOs();
-          }, 400);
-        });
-
-        timer = setInterval(() => void syncStepsFromOs(), 45_000);
-      } catch {
-        // ignore; falls back to Firestore-loaded series
-      }
-    };
-
-    void startLive();
-    return () => {
-      mounted = false;
-      if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
-      pedSub?.remove();
-      if (timer) clearInterval(timer);
-    };
-  }, [authUid, period, screenFocused]);
-
-  // Patch today's bar/row with live value (week view only, and only if there's no manual override).
+  // Patch today's bar/row with live auto-tracked steps (week view only).
   useEffect(() => {
     if (period !== "week") return;
     if (todayManualOverride != null) return;
-    if (liveTodayAuto == null) return;
 
     const todayKey = formatCalendarDayKey(new Date(), calendarTz);
     const mondayKey = mondayKeyForDayKey(formatCalendarDayKey(anchor, calendarTz));
@@ -538,51 +485,10 @@ export default function StepProgressScreen() {
     });
   }, [anchor, calendarTz, liveTodayAuto, period, todayManualOverride]);
 
-  useEffect(() => {
-    if (period !== "week") return;
-    if (todayManualOverride != null) return;
-    if (liveTodayAuto == null) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== authUid) return;
-    if (liveTodayAuto <= lastLiveSyncedRef.current) return;
-    const dayKey = formatCalendarDayKey(new Date(), calendarTz);
-
-    if (liveSyncTimerRef.current) clearTimeout(liveSyncTimerRef.current);
-    liveSyncTimerRef.current = setTimeout(() => {
-      const next = Math.max(0, Math.round(liveTodayAuto));
-      void setDoc(
-        doc(db, "users", user.uid, "dailyStats", dayKey),
-        {
-          stepsAuto: next,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      )
-        .then(() => {
-          lastLiveSyncedRef.current = Math.max(lastLiveSyncedRef.current, next);
-        })
-        .catch((e) => {
-          console.log("Failed to sync step progress live steps:", e);
-        })
-        .finally(() => {
-          liveSyncTimerRef.current = null;
-        });
-    }, 2000);
-  }, [authUid, calendarTz, liveTodayAuto, period, todayManualOverride]);
-
-  useEffect(() => {
-    return () => {
-      if (liveSyncTimerRef.current) clearTimeout(liveSyncTimerRef.current);
-    };
-  }, []);
-
   useFocusEffect(
     useCallback(() => {
-      setScreenFocused(true);
       setSeriesRefresh((n) => n + 1);
-      return () => {
-        setScreenFocused(false);
-      };
+      return () => {};
     }, [])
   );
 
@@ -660,18 +566,21 @@ export default function StepProgressScreen() {
     return `${monthTitle}\n${steps.toLocaleString()} steps`;
   }, [anchor, calendarTz, chartLabels, period, stepHoverIdx, stepSeries]);
 
-  const openEditForDate = (date: Date, allowDateSelection = false) => {
-    setEditModalDate(new Date(date));
-    setAllowEditDateSelection(allowDateSelection);
-    setShowEditDatePicker(false);
+  const openEditForDate = (date: Date) => {
+    const dayKey = formatCalendarDayKey(date, calendarTz);
+    setEditModalDate(localDateFromYmd(dayKey));
+    stepsFieldDirtyRef.current = false;
     setEditOpen(true);
   };
 
-  const openEdit = () => openEditForDate(new Date(), true);
+  const openEdit = () => openEditForDate(new Date());
 
   const saveManual = async () => {
     const user = auth.currentUser;
-    if (!user || user.uid !== authUid) return;
+    if (!user || user.uid !== authUid) {
+      Alert.alert("Error", "You must be signed in to save steps.");
+      return;
+    }
     const parsed = parseInt(stepText.replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(parsed) || parsed < 0 || parsed > 200000) {
       Alert.alert("Invalid steps", "Enter a step count between 0 and 200,000.");
@@ -695,7 +604,6 @@ export default function StepProgressScreen() {
       if (dayKey === todayKey) {
         // Prevent the "today bar" patching effect from overwriting the manual value.
         setTodayManualOverride(parsed);
-        setLiveTodayAuto(editDayAuto);
       }
 
       if (period === "week") {
@@ -714,6 +622,10 @@ export default function StepProgressScreen() {
             if (row) next[idx] = { ...row, steps: parsed };
             return next;
           });
+        } else {
+          // Saved day is outside the visible week — jump chart to that week.
+          setAnchor(localDateFromYmd(dayKey));
+          setSeriesRefresh((n) => n + 1);
         }
       } else {
         // Month/year uses bucket sums; easiest safe way is refresh.
@@ -745,7 +657,6 @@ export default function StepProgressScreen() {
       const todayKey = formatCalendarDayKey(new Date(), calendarTz);
       if (dayKey === todayKey) {
         setTodayManualOverride(null);
-        setLiveTodayAuto(editDayAuto);
       }
 
       if (period === "week") {
@@ -817,7 +728,7 @@ export default function StepProgressScreen() {
             </View>
             <Pressable onPress={openEdit} className="px-4 py-2 rounded-full" style={{ backgroundColor: theme.accent }}>
               <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
-                Edit steps
+                Edit Steps
               </ThemedText>
             </Pressable>
           </View>
@@ -937,16 +848,9 @@ export default function StepProgressScreen() {
 
         <ThemedCard className="mt-5 p-5 pb-6">
           <ThemedText className="text-base tracking-widest font-extrabold">STEP RECORD</ThemedText>
-          <View className="mt-2 flex-row flex-wrap items-center">
-            <ThemedText className="text-sm font-extrabold" style={{ color: "#3b82f6" }}>
-              Recommended daily target: {DAILY_STEP_TARGET.toLocaleString()} steps perday
-            </ThemedText>
-            {myTodaySteps < DAILY_STEP_TARGET ? (
-              <ThemedText className="ml-2 text-sm font-extrabold" style={{ color: theme.danger }}>
-                (Not achieved)
-              </ThemedText>
-            ) : null}
-          </View>
+          <ThemedText className="mt-2 text-sm font-extrabold" style={{ color: "#3b82f6" }}>
+            Recommended daily target: {DAILY_STEP_TARGET.toLocaleString()} steps per day
+          </ThemedText>
           <View className="mt-4 gap-3">
             {windowRows.length === 0 ? (
               <ThemedText variant="muted">No step data yet.</ThemedText>
@@ -975,7 +879,7 @@ export default function StepProgressScreen() {
                           Current
                         </ThemedText>
                       ) : null}
-                      {period === "week" && r.steps >= DAILY_STEP_TARGET ? (
+                      {period === "week" && r.dayKey <= todayKey && r.steps > 0 && r.steps >= DAILY_STEP_TARGET ? (
                         <View
                           className="ml-2 flex-row items-center rounded-full px-2 py-1"
                           style={{ backgroundColor: theme.accentSoft }}
@@ -983,6 +887,17 @@ export default function StepProgressScreen() {
                           <Ionicons name="checkmark-circle" size={14} color={theme.accentText} />
                           <ThemedText variant="accent" className="ml-1 text-[10px] font-extrabold">
                             Target achieved
+                          </ThemedText>
+                        </View>
+                      ) : null}
+                      {period === "week" && r.dayKey <= todayKey && r.steps > 0 && r.steps < DAILY_STEP_TARGET ? (
+                        <View
+                          className="ml-2 flex-row items-center rounded-full px-2 py-1"
+                          style={{ backgroundColor: theme.dangerSoft }}
+                        >
+                          <Ionicons name="close-circle" size={14} color={theme.danger} />
+                          <ThemedText className="ml-1 text-[10px] font-extrabold" style={{ color: theme.danger }}>
+                            Not achieved target
                           </ThemedText>
                         </View>
                       ) : null}
@@ -1257,84 +1172,71 @@ export default function StepProgressScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
-        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
-          <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
-            <View className="flex-row items-start justify-between">
-              <View className="flex-1 pr-2">
-                <ThemedText className="text-xl font-extrabold">Edit steps</ThemedText>
-                <ThemedText variant="muted" className="mt-1">{formatLongDate(editModalDate)}</ThemedText>
-                <ThemedText variant="muted" className="mt-2 text-sm">
-                  Auto tracking: {editDayAuto.toLocaleString()} steps
-                  {editDayManual != null ? " • Manual override active" : ""}
-                </ThemedText>
+      <Modal
+        visible={editOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1"
+        >
+          <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: theme.modalOverlay }}>
+            <View className="w-full rounded-3xl p-5" style={modalCardStyle}>
+              <ThemedText className="text-xl font-extrabold">Edit Steps</ThemedText>
+              <ThemedText variant="muted" className="mt-1">{formatLongDate(editModalDate)}</ThemedText>
+              <ThemedText variant="muted" className="mt-2 text-sm">
+                Auto tracking: {editDayAuto.toLocaleString()} steps
+                {editDayManual != null ? " • Manual override active" : ""}
+              </ThemedText>
+
+              <View className="mt-5">
+                <ThemedText className="font-extrabold ml-1 mb-2">TOTAL STEPS FOR THIS DAY</ThemedText>
+                <TextInput
+                  value={stepText}
+                  onChangeText={(t) => {
+                    stepsFieldDirtyRef.current = true;
+                    setStepText(t.replace(/[^\d]/g, ""));
+                  }}
+                  keyboardType="number-pad"
+                  className="rounded-2xl px-4 py-3"
+                  style={inputStyle}
+                  placeholder={String(editDayDisplay || 0)}
+                  placeholderTextColor={placeholderColor}
+                />
               </View>
-              {allowEditDateSelection ? (
-                <Pressable
-                  onPress={() => setShowEditDatePicker(true)}
-                  accessibilityLabel="Choose step record date"
-                  className="w-11 h-11 rounded-full border items-center justify-center"
-                  style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
-                >
-                  <Ionicons name="calendar-outline" size={22} color={theme.accentText} />
-                </Pressable>
-              ) : null}
-            </View>
 
-            {allowEditDateSelection && showEditDatePicker ? (
-              <DateTimePicker
-                value={editModalDate}
-                mode="date"
-                display={Platform.OS === "ios" ? "inline" : "default"}
-                maximumDate={new Date()}
-                onChange={(event, date) => {
-                  if (Platform.OS !== "ios") setShowEditDatePicker(false);
-                  if (event.type === "dismissed") return;
-                  if (date) setEditModalDate(date);
-                }}
-              />
-            ) : null}
-
-            <View className="mt-5">
-              <ThemedText className="font-extrabold ml-1 mb-2">TOTAL STEPS FOR THIS DAY</ThemedText>
-              <TextInput
-                value={stepText}
-                onChangeText={(t) => setStepText(t.replace(/[^\d]/g, ""))}
-                keyboardType="number-pad"
-                className="rounded-2xl px-4 py-3"
-                style={inputStyle}
-                placeholder={String(editDayDisplay || 0)}
-                placeholderTextColor={placeholderColor}
-              />
-            </View>
-
-            <View className="flex-row justify-between mt-6">
-              <Pressable onPress={resetToAuto} disabled={saving || editDayManual == null} className="px-4 py-3">
-                <ThemedText
-                  className="font-extrabold"
-                  style={{ color: editDayManual == null ? theme.iconMuted : theme.accentText }}
-                >
-                  Reset to auto
-                </ThemedText>
-              </Pressable>
-              <View className="flex-row">
-                <Pressable onPress={() => setEditOpen(false)} className="px-4 py-3 mr-2">
-                  <ThemedText variant="muted" className="font-extrabold">Cancel</ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={saveManual}
-                  disabled={saving}
-                  className={`px-5 py-3 rounded-2xl ${saving ? "opacity-60" : "opacity-100"}`}
-                  style={{ backgroundColor: theme.accent }}
-                >
-                  <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
-                    {saving ? "Saving..." : "Save"}
+              <View className="flex-row justify-between mt-6">
+                <Pressable onPress={resetToAuto} disabled={saving || editDayManual == null} className="px-4 py-3">
+                  <ThemedText
+                    className="font-extrabold"
+                    style={{ color: editDayManual == null ? theme.iconMuted : theme.accentText }}
+                  >
+                    Reset to auto
                   </ThemedText>
                 </Pressable>
+                <View className="flex-row">
+                  <Pressable onPress={() => setEditOpen(false)} className="px-4 py-3 mr-2">
+                    <ThemedText variant="muted" className="font-extrabold">Cancel</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      void saveManual();
+                    }}
+                    disabled={saving}
+                    className={`px-5 py-3 rounded-2xl ${saving ? "opacity-60" : "opacity-100"}`}
+                    style={{ backgroundColor: theme.accent }}
+                  >
+                    <ThemedText className="font-extrabold" style={{ color: "#ffffff" }}>
+                      {saving ? "Saving..." : "Save"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
               </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ThemedScreen>
   );

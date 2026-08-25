@@ -6,7 +6,13 @@ import {
     ThemedText,
     useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
-import { checkIsAdmin, syncAuthorProfileImageOnPosts } from "@/lib/communityService";
+import {
+  checkIsAdmin,
+  syncAuthorProfileImageOnChats,
+  syncAuthorProfileImageOnPosts,
+  syncAuthorProfileNameOnChats,
+  syncAuthorProfileNameOnPosts,
+} from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -38,6 +44,7 @@ export default function EditAdminProfile() {
   const [userEmail, setUserEmail] = useState("");
   const [userBio, setUserBio] = useState("");
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [nameError, setNameError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [photoSourceVisible, setPhotoSourceVisible] = useState(false);
@@ -119,9 +126,10 @@ export default function EditAdminProfile() {
 
     const trimmedName = userName.trim();
     if (!trimmedName) {
-      Alert.alert("Name required", "Please enter your display name.");
+      setNameError("Full name is required.");
       return;
     }
+    setNameError("");
 
     try {
       setLoading(true);
@@ -140,9 +148,16 @@ export default function EditAdminProfile() {
         profileImage: profileImageUrl,
       });
 
-      if (typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")) {
-        await syncAuthorProfileImageOnPosts(profileImageUrl).catch(() => {});
-      }
+      await Promise.all([
+        syncAuthorProfileNameOnChats(trimmedName.slice(0, 32)),
+        syncAuthorProfileNameOnPosts(trimmedName.slice(0, 32)),
+        typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")
+          ? Promise.all([
+              syncAuthorProfileImageOnPosts(profileImageUrl),
+              syncAuthorProfileImageOnChats(profileImageUrl),
+            ])
+          : syncAuthorProfileImageOnChats(profileImageUrl),
+      ]).catch(() => {});
 
       Alert.alert("Profile updated", "Your admin profile has been saved.");
       router.back();
@@ -233,13 +248,21 @@ export default function EditAdminProfile() {
           </ThemedText>
           <TextInput
             value={userName}
-            onChangeText={(t) => setUserName(t.slice(0, 32))}
+            onChangeText={(t) => {
+              setUserName(t.slice(0, 32));
+              if (nameError) setNameError("");
+            }}
             maxLength={32}
-            className="rounded-xl px-4 py-3 mb-4"
+            className="rounded-xl px-4 py-3"
             style={inputStyle}
             placeholder="Support Admin"
             placeholderTextColor={placeholderColor}
           />
+          {!!nameError ? (
+            <Text className="text-red-500 text-sm mt-1 ml-1 mb-4">{nameError}</Text>
+          ) : (
+            <View className="mb-4" />
+          )}
 
           <ThemedText variant="secondary" className="text-sm font-bold mb-2">
             Email

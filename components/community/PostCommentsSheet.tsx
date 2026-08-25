@@ -8,7 +8,7 @@ import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import {
   addComment,
   deleteComment,
-  loadProfileImageMap,
+  loadLikerProfiles,
   subscribeComments,
   threadedComments,
 } from "@/lib/communityService";
@@ -16,10 +16,11 @@ import type { CommunityComment, CommunityPost } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -75,11 +76,15 @@ export function PostCommentsSheet({
   const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
+  const [authorNameById, setAuthorNameById] = useState<Record<string, string>>({});
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [menuComment, setMenuComment] = useState<CommunityComment | null>(null);
   const [replyingTo, setReplyingTo] = useState<CommunityComment | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const commentsScrollRef = useRef<ScrollView>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
 
   const displayComments = useMemo(() => threadedComments(comments), [comments]);
   const friendSet = useMemo(
@@ -99,18 +104,68 @@ export function PostCommentsSheet({
       setMenuComment(null);
       setText("");
       setAuthorAvatarById({});
+      setAuthorNameById({});
       return;
     }
-    const ids = [...new Set(comments.map((c) => c.authorId).filter(Boolean))];
-    if (ids.length === 0) return;
+    const ids = new Set(comments.map((c) => c.authorId).filter(Boolean));
+    if (post?.authorId) ids.add(post.authorId);
+    const uniqueIds = [...ids];
+    if (uniqueIds.length === 0) return;
     let cancelled = false;
-    void loadProfileImageMap(ids).then((map) => {
-      if (!cancelled) setAuthorAvatarById(map);
+    void loadLikerProfiles(uniqueIds).then((profiles) => {
+      if (cancelled) return;
+      const avatarMap: Record<string, string | null> = {};
+      const nameMap: Record<string, string> = {};
+      for (const profile of profiles) {
+        avatarMap[profile.id] = profile.profileImage;
+        nameMap[profile.id] = profile.name;
+      }
+      setAuthorAvatarById(avatarMap);
+      setAuthorNameById(nameMap);
     });
     return () => {
       cancelled = true;
     };
-  }, [visible, comments]);
+  }, [visible, comments, post?.authorId]);
+
+  const scrollCommentsToBottom = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      commentsScrollRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+      setWindowHeight(Dimensions.get("window").height);
+      scrollCommentsToBottom(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setWindowHeight(Dimensions.get("window").height);
+    });
+    const dimSub = Dimensions.addEventListener("change", ({ window }) => {
+      setWindowHeight(window.height);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      dimSub.remove();
+    };
+  }, [visible, scrollCommentsToBottom]);
+
+  const commentInputBottomPadding = useMemo(() => {
+    if (keyboardHeight <= 0) return insets.bottom + 8;
+    if (Platform.OS === "android") {
+      const screenH = Dimensions.get("screen").height;
+      const windowShrunkForKeyboard = screenH - windowHeight > keyboardHeight * 0.45;
+      if (windowShrunkForKeyboard) return 8;
+    }
+    return keyboardHeight + 8;
+  }, [insets.bottom, keyboardHeight, windowHeight]);
 
   const handleSend = async () => {
     if (!post || !text.trim()) return;
@@ -198,9 +253,13 @@ export function PostCommentsSheet({
           </View>
 
           <ScrollView
+            ref={commentsScrollRef}
             className="flex-1 px-4"
             contentContainerStyle={{ paddingVertical: 12 }}
             keyboardShouldPersistTaps="handled"
+            onContentSizeChange={() => {
+              if (keyboardHeight > 0) scrollCommentsToBottom(false);
+            }}
           >
             {displayComments.length === 0 ? (
               <ThemedText variant="muted" className="text-sm text-center py-8">
@@ -246,6 +305,7 @@ export function PostCommentsSheet({
                               authorId={comment.authorId}
                               authorName={comment.authorName}
                               adminUid={adminUid}
+                              liveNamesById={authorNameById}
                               textClassName="text-sm font-extrabold"
                               iconSize={14}
                               ownSuffix={
@@ -267,6 +327,7 @@ export function PostCommentsSheet({
                               authorId={comment.authorId}
                               authorName={comment.authorName}
                               adminUid={adminUid}
+                              liveNamesById={authorNameById}
                               textClassName="text-sm font-extrabold"
                               iconSize={14}
                               ownSuffix={
@@ -356,7 +417,7 @@ export function PostCommentsSheet({
           <View
             className="px-4 border-t"
             style={{
-              paddingBottom: insets.bottom + 8,
+              paddingBottom: commentInputBottomPadding,
               paddingTop: 12,
               borderTopColor: theme.cardBorder,
               backgroundColor: theme.modalBg,
@@ -389,6 +450,9 @@ export function PostCommentsSheet({
                   replyingTo ? `Reply to ${replyingTo.authorName}...` : "Write a comment..."
                 }
                 multiline
+                onFocus={() => {
+                  setTimeout(() => scrollCommentsToBottom(true), 250);
+                }}
                 className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
                 style={inputStyle}
                 placeholderTextColor={placeholderColor}

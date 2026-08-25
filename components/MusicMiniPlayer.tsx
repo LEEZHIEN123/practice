@@ -5,7 +5,7 @@ import { useMusicModeToast } from "@/lib/useMusicModeToast";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import { usePathname } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,6 +41,26 @@ function clampPos(
 }
 
 /**
+ * Snap horizontally to the nearest screen edge (left or right).
+ */
+function snapToSide(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  screenW: number,
+  screenH: number,
+  topInset: number,
+  bottomInset: number
+) {
+  const leftX = CARD_PAD;
+  const rightX = screenW - w - CARD_PAD;
+  const centerX = x + w / 2;
+  const nx = centerX < screenW / 2 ? leftX : rightX;
+  return clampPos(nx, y, w, h, screenW, screenH, topInset, bottomInset);
+}
+
+/**
  * If the widget's horizontal center lies in the middle band of the screen,
  * snap to the left or right edge (whichever side of center it's on).
  */
@@ -72,6 +92,7 @@ function snapToSideIfInCenterZone(
  */
 export function MusicMiniPlayer() {
   const pathname = usePathname();
+  const router = useRouter();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { cardStyle, textPrimary, textSecondary, textMuted, theme } = useThemedScreen();
@@ -125,8 +146,8 @@ export function MusicMiniPlayer() {
     if (!posReadyRef.current) {
       const w = COLLAPSED;
       const h = COLLAPSED;
-      const next = clampPos(
-        screenW - w - 10,
+      const next = snapToSide(
+        screenW - w - CARD_PAD,
         insets.top + 52,
         w,
         h,
@@ -184,10 +205,22 @@ export function MusicMiniPlayer() {
           if (!movedRef.current && Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10) {
             setExpanded(true);
             setPos((p) => {
-              const c = clampPos(p.x, p.y, cardW, cardH, screenW, screenH, insets.top, bottomInset);
+              const centerX = p.x + COLLAPSED / 2;
+              const nextX = centerX - cardW / 2;
+              const nextY = p.y - (cardH - COLLAPSED);
+              const clamped = clampPos(
+                nextX,
+                nextY,
+                cardW,
+                cardH,
+                screenW,
+                screenH,
+                insets.top,
+                bottomInset
+              );
               return snapToSideIfInCenterZone(
-                c.x,
-                c.y,
+                clamped.x,
+                clamped.y,
                 cardW,
                 cardH,
                 screenW,
@@ -198,7 +231,7 @@ export function MusicMiniPlayer() {
             });
           } else if (movedRef.current) {
             setPos((p) =>
-              snapToSideIfInCenterZone(
+              snapToSide(
                 p.x,
                 p.y,
                 COLLAPSED,
@@ -257,13 +290,29 @@ export function MusicMiniPlayer() {
     void stop();
   };
 
-  const handleShrink = () => {
+  const openAllMusic = () => {
+    router.push("/all-music" as any);
+  };
+
+  const collapseToIcon = useCallback(() => {
     setExpanded(false);
     setPos((p) => {
-      const c = clampPos(p.x, p.y, COLLAPSED, COLLAPSED, screenW, screenH, insets.top, bottomInset);
-      return snapToSideIfInCenterZone(
-        c.x,
-        c.y,
+      const centerX = p.x + cardW / 2;
+      const nextX = centerX - COLLAPSED / 2;
+      const nextY = p.y + (cardH - COLLAPSED);
+      const clamped = clampPos(
+        nextX,
+        nextY,
+        COLLAPSED,
+        COLLAPSED,
+        screenW,
+        screenH,
+        insets.top,
+        bottomInset
+      );
+      return snapToSide(
+        clamped.x,
+        clamped.y,
         COLLAPSED,
         COLLAPSED,
         screenW,
@@ -272,6 +321,10 @@ export function MusicMiniPlayer() {
         bottomInset
       );
     });
+  }, [bottomInset, cardH, cardW, insets.top, screenH, screenW]);
+
+  const handleShrink = () => {
+    collapseToIcon();
   };
 
   if (!currentTrack) return null;
@@ -319,6 +372,16 @@ export function MusicMiniPlayer() {
                 </Text>
               </View>
               <View className="flex-row items-center pr-1">
+                <Pressable
+                  onPress={openAllMusic}
+                  hitSlop={10}
+                  className="px-2.5 h-9 rounded-full items-center justify-center"
+                  style={({ pressed }) => (pressed ? { backgroundColor: theme.accentSoft } : undefined)}
+                >
+                  <Text className="text-xs font-extrabold" style={{ color: theme.accentText }}>
+                    Open
+                  </Text>
+                </Pressable>
                 <Pressable
                   onPress={handleShrink}
                   hitSlop={10}

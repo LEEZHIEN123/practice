@@ -2,6 +2,7 @@ import { MusicMiniPlayer } from "@/components/MusicMiniPlayer";
 import { WorkoutMiniPlayer } from "@/components/WorkoutMiniPlayer";
 import { AppearanceProvider, useAppearance } from "@/context/AppearanceContext";
 import { MusicPlayerProvider } from "@/context/MusicPlayerContext";
+import { StepTrackingProvider } from "@/context/StepTrackingContext";
 import { WorkoutSessionProvider } from "@/context/WorkoutSessionContext";
 import { RegistrationProvider } from "@/context/registrationContext";
 import { auth } from "@/firebaseConfig";
@@ -50,7 +51,9 @@ export default function RootLayout() {
         <MusicPlayerProvider>
           <WorkoutSessionProvider>
             <RegistrationProvider>
-              <RootStack />
+              <StepTrackingProvider>
+                <RootStack />
+              </StepTrackingProvider>
             </RegistrationProvider>
             <MusicMiniPlayer />
             <WorkoutMiniPlayer />

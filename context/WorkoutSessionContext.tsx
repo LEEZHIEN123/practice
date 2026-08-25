@@ -7,6 +7,9 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { completeMinimizedWorkout } from "@/lib/completeMinimizedWorkout";
+import { registerWorkoutLogoutCleanup } from "@/lib/workoutLogoutCleanup";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 
 export type WorkoutSessionKind = "day" | "free";
 
@@ -73,6 +76,7 @@ function foldRunningSegment(session: WorkoutSessionSnapshot, nowMs: number): Wor
 }
 
 export function WorkoutSessionProvider({ children }: { children: React.ReactNode }) {
+  const calendarTz = useUserCalendarTimezone();
   const [session, setSession] = useState<WorkoutSessionSnapshot | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [displayElapsed, setDisplayElapsed] = useState(0);
@@ -186,6 +190,35 @@ export function WorkoutSessionProvider({ children }: { children: React.ReactNode
       startedAtMs: cur.running ? now : null,
     };
   }, []);
+
+  useEffect(() => {
+    registerWorkoutLogoutCleanup(async () => {
+      const cur = sessionRef.current;
+      if (!cur) return;
+
+      const folded = foldRunningSegment(cur, Date.now());
+      const elapsed = Math.max(0, Math.floor(folded.baseElapsedSeconds));
+
+      await completeMinimizedWorkout({
+        kind: folded.kind,
+        workoutName: folded.workoutName,
+        workoutType: folded.workoutType,
+        sessionId: folded.sessionId,
+        elapsedSeconds: elapsed,
+        sessionStartedAtMs: folded.sessionStartedAtMs,
+        day: folded.day,
+        calendarTz,
+      });
+
+      stopTicker();
+      sessionRef.current = null;
+      setSession(null);
+      setMinimized(false);
+      setDisplayElapsed(0);
+    });
+
+    return () => registerWorkoutLogoutCleanup(null);
+  }, [calendarTz, stopTicker]);
 
   const value = useMemo(
     () => ({

@@ -47,7 +47,7 @@ export function CommunitySearchBar({
         {loading ? (
           <ActivityIndicator size="small" color={theme.accent} />
         ) : value ? (
-          <Pressable onPress={() => onChangeText("")}>
+          <Pressable onPress={() => onChangeText("")} style={{ marginRight: 8 }}>
             <Ionicons name="close-circle" size={16} color={theme.iconMuted} />
           </Pressable>
         ) : null}

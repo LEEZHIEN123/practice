@@ -26,7 +26,6 @@ import {
   getPublicUserProfile,
   isCommunityAdminUserId,
   loadLikerProfiles,
-  loadProfileImageMap,
   requestBlockedPostReReview,
   resolveAdminUid,
   setPostAuthorHidden,
@@ -54,10 +53,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -99,6 +99,7 @@ export default function CommunityPostScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [adminUid, setAdminUid] = useState<string | null>(null);
   const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
+  const [authorNameById, setAuthorNameById] = useState<Record<string, string>>({});
 
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [pendingReviewCommentIds, setPendingReviewCommentIds] = useState<string[]>([]);
@@ -109,6 +110,10 @@ export default function CommunityPostScreen() {
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [blockComment, setBlockComment] = useState<CommunityComment | null>(null);
+  const commentsScrollRef = useRef<ScrollView>(null);
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
 
   const [likesPost, setLikesPost] = useState<CommunityPost | null>(null);
   const [likers, setLikers] = useState<LikerProfile[]>([]);
@@ -138,6 +143,44 @@ export default function CommunityPostScreen() {
     () => (profileUserId ? getPostsByAuthor(allPosts, profileUserId, currentUserId) : []),
     [profileUserId, allPosts, currentUserId]
   );
+
+  const scrollCommentsToBottom = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      commentsScrollRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+      setWindowHeight(Dimensions.get("window").height);
+      scrollCommentsToBottom(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setWindowHeight(Dimensions.get("window").height);
+    });
+    const dimSub = Dimensions.addEventListener("change", ({ window }) => {
+      setWindowHeight(window.height);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      dimSub.remove();
+    };
+  }, [scrollCommentsToBottom]);
+
+  const commentInputBottomPadding = useMemo(() => {
+    if (keyboardHeight <= 0) return insets.bottom + 8;
+    if (Platform.OS === "android") {
+      const screenH = Dimensions.get("screen").height;
+      const windowShrunkForKeyboard = screenH - windowHeight > keyboardHeight * 0.45;
+      if (windowShrunkForKeyboard) return 8;
+    }
+    return keyboardHeight + 8;
+  }, [insets.bottom, keyboardHeight, windowHeight]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -225,8 +268,17 @@ export default function CommunityPostScreen() {
     ].filter(Boolean);
     if (ids.length === 0) return;
     let cancelled = false;
-    void loadProfileImageMap(ids).then((map) => {
-      if (!cancelled) setAuthorAvatarById((prev) => ({ ...prev, ...map }));
+    void loadLikerProfiles(ids).then((profiles) => {
+      if (!cancelled) {
+        const avatarMap: Record<string, string | null> = {};
+        const nameMap: Record<string, string> = {};
+        for (const profile of profiles) {
+          avatarMap[profile.id] = profile.profileImage;
+          nameMap[profile.id] = profile.name;
+        }
+        setAuthorAvatarById((prev) => ({ ...prev, ...avatarMap }));
+        setAuthorNameById((prev) => ({ ...prev, ...nameMap }));
+      }
     });
     return () => {
       cancelled = true;
@@ -246,8 +298,11 @@ export default function CommunityPostScreen() {
     try {
       const profile = await getPublicUserProfile(userId);
       setProfileData(profile);
-    } catch {
-      Alert.alert("Error", "Could not load profile.");
+    } catch (e: unknown) {
+      Alert.alert(
+        "Error",
+        e instanceof Error ? e.message : "Could not load profile."
+      );
       setProfileUserId(null);
     } finally {
       setProfileLoading(false);
@@ -349,17 +404,7 @@ export default function CommunityPostScreen() {
 
   const requestBlockComment = (comment: CommunityComment) => {
     setMenuComment(null);
-    Alert.alert(
-      "Block Comment",
-      "This comment will be removed and the author will be notified via Support Admin chat. It will also appear under Reviewed in report management.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () => setBlockComment(comment),
-        },
-      ]
-    );
+    setBlockComment(comment);
   };
 
   const handleConfirmBlockComment = async (reason: string) => {
@@ -497,13 +542,17 @@ export default function CommunityPostScreen() {
         <KeyboardAvoidingView
           className="flex-1"
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 56 : 0}
         >
           <ScrollView
+            ref={commentsScrollRef}
             className="flex-1"
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => {
+              if (keyboardHeight > 0) scrollCommentsToBottom(false);
+            }}
           >
             <View className="px-4 py-4 rounded-2xl" style={cardStyle}>
               <View className="flex-row items-center">
@@ -520,6 +569,7 @@ export default function CommunityPostScreen() {
                     authorId={post.authorId}
                     authorName={post.authorName}
                     adminUid={adminUid}
+                    liveNamesById={authorNameById}
                     textStyle={textPrimary}
                     ownSuffix={
                       isOwnPost ? (
@@ -663,6 +713,7 @@ export default function CommunityPostScreen() {
                             authorId={comment.authorId}
                             authorName={comment.authorName}
                             adminUid={adminUid}
+                            liveNamesById={authorNameById}
                             textClassName="text-sm font-extrabold"
                             textStyle={textPrimary}
                             iconSize={14}
@@ -720,7 +771,7 @@ export default function CommunityPostScreen() {
           <View
             className="px-4 border-t"
             style={{
-              paddingBottom: insets.bottom + 8,
+              paddingBottom: commentInputBottomPadding,
               paddingTop: 12,
               borderTopColor: theme.cardBorder,
               backgroundColor: theme.cardBg,
@@ -753,6 +804,9 @@ export default function CommunityPostScreen() {
                   replyingTo ? `Reply to ${replyingTo.authorName}...` : "Write a comment..."
                 }
                 multiline
+                onFocus={() => {
+                  setTimeout(() => scrollCommentsToBottom(true), 250);
+                }}
                 className="flex-1 rounded-2xl px-4 py-3 text-sm max-h-28"
                 style={{
                   backgroundColor: theme.rowBg,

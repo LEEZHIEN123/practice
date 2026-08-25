@@ -130,9 +130,12 @@ async function executeSharedWaterRefresh(params: {
 }) {
   const { uid, dayKey, calendarTz, profile, burnedKcalToday, stepsToday } = params;
 
-  patchSharedSuggestion(uid, dayKey, { loading: true });
-  const now = new Date();
-  const beforeSixAm = isBeforeLocalSixAm(now, calendarTz, dayKey);
+  const existing = getSharedSuggestion(uid, dayKey);
+  // Only show a loading spinner on the first resolve for this day — never flap it
+  // while steps/calories keep changing in the background.
+  if (existing.suggestedMl == null) {
+    patchSharedSuggestion(uid, dayKey, { loading: true });
+  }
 
   try {
     const cached = await readCachedSuggestion(uid, dayKey);
@@ -163,8 +166,13 @@ async function executeSharedWaterRefresh(params: {
     let locationError: string | null = null;
 
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
+      const permission = await Location.getForegroundPermissionsAsync();
+      let granted = permission.granted;
+      if (!granted) {
+        const req = await Location.requestForegroundPermissionsAsync();
+        granted = req.granted;
+      }
+      if (!granted) {
         throw new Error("Location permission denied. Enable location to use morning weather.");
       }
 
@@ -195,15 +203,14 @@ async function executeSharedWaterRefresh(params: {
     let weatherLocked = false;
     let isForecast = false;
 
-    if (cached?.weatherLocked && !moved) {
+    // Before 6:00 AM keep using a forecast (refetch when the page loads).
+    // After 6:00 AM fetch that day's observed 6:00 AM hour once, then lock it.
+    const hasObservedSixAm = Boolean(
+      cached && cached.weatherLocked && !cached.isForecast && !moved
+    );
+
+    if (cached && hasObservedSixAm) {
       weatherSnapshot = cachedToWeather(cached);
-      weatherLocked = true;
-      isForecast = cached.isForecast;
-      resolvedPlaceName = cached.placeName;
-      if (currentLat == null) currentLat = cached.latitude;
-      if (currentLon == null) currentLon = cached.longitude;
-    } else if (!beforeSixAm && cached?.isForecast && !cached.weatherLocked && !moved) {
-      weatherSnapshot = promoteForecastToSixAmWeather(cached);
       weatherLocked = true;
       isForecast = false;
       resolvedPlaceName = cached.placeName;
@@ -288,6 +295,61 @@ async function executeSharedWaterRefresh(params: {
   } catch {
     patchSharedSuggestion(uid, dayKey, { loading: false });
   }
+}
+
+/** Recompute ml from cached weather when only steps/calories change — no location/network. */
+async function recomputeSharedSuggestionFromActivity(params: {
+  uid: string;
+  dayKey: string;
+  profile: ProfileSnapshot;
+  burnedKcalToday: number;
+  stepsToday: number;
+}) {
+  const { uid, dayKey, profile, burnedKcalToday, stepsToday } = params;
+  const shared = getSharedSuggestion(uid, dayKey);
+  const weather = shared.weather;
+  if (!weather || shared.suggestedMl == null) return false;
+
+  const age =
+    typeof profile.age === "number" && profile.age > 0 ? profile.age : 30;
+  const weight =
+    typeof profile.weight === "number" && profile.weight > 0 ? profile.weight : 70;
+  const height =
+    typeof profile.height === "number" && profile.height > 0 ? profile.height : 170;
+  const gender = profile.gender === "female" ? "Female" : "Male";
+  const activity_level = mapActivityLevel(profile.activityLevel);
+  const activity_duration = estimateActivityDurationMinutes(burnedKcalToday, stepsToday);
+
+  const nextSuggestion = predictWaterIntakeMl({
+    gender,
+    weather_condition: weather.condition,
+    activity_level,
+    age,
+    weight,
+    height,
+    BMI: calculateBmi(weight, height),
+    temperature: weather.temperature,
+    humidity: weather.humidity,
+    altitude: 0,
+    activity_duration,
+  });
+
+  if (nextSuggestion === shared.suggestedMl) return true;
+
+  patchSharedSuggestion(uid, dayKey, {
+    suggestedMl: nextSuggestion,
+    loading: false,
+  });
+
+  try {
+    const cached = await readCachedSuggestion(uid, dayKey);
+    if (cached) {
+      await writeCachedSuggestion(uid, { ...cached, suggestedMl: nextSuggestion });
+    }
+  } catch {
+    /* ignore cache write failures */
+  }
+  return true;
 }
 
 export type WaterWeatherSnapshot = {
@@ -471,19 +533,6 @@ function withSixAmForecastDescription(description: string): string {
   return `Forecast: ${base} at 6:00 AM`;
 }
 
-function promoteForecastToSixAmWeather(cached: CachedSuggestion): WaterWeatherSnapshot {
-  return {
-    placeName: cached.placeName,
-    temperature: cached.temperature,
-    humidity: cached.humidity,
-    condition: cached.weatherCondition,
-    description: withSixAmDescription(cached.weatherDescription.replace(/^Forecast:\s*/i, "")),
-    isLive: true,
-    isForecast: false,
-    unavailableReason: null,
-  };
-}
-
 async function resolveSixAmWeather(
   latitude: number,
   longitude: number,
@@ -622,14 +671,21 @@ export function useWaterIntakeSuggestion(options: {
     uid && enabled ? getSharedSuggestion(uid, dayKey) : EMPTY_SHARED;
   const profileReady = isProfileReady(profile);
 
+  // Full weather/location refresh — not driven by live step ticks.
   const refresh = useCallback(async () => {
-    if (!uid || !enabled || !profileReady) {
-      if (uid && (!enabled || !profileReady)) {
+    if (!uid || !enabled) {
+      if (uid) {
         patchSharedSuggestion(uid, dayKey, {
-          ...(enabled ? {} : { suggestedMl: null, weather: null, previousLocation: null }),
-          loading: Boolean(enabled && !profileReady),
+          suggestedMl: null,
+          weather: null,
+          previousLocation: null,
+          loading: false,
         });
       }
+      return;
+    }
+    if (!profileReady) {
+      patchSharedSuggestion(uid, dayKey, { loading: false });
       return;
     }
     await runSharedWaterRefresh({
@@ -655,9 +711,90 @@ export function useWaterIntakeSuggestion(options: {
     uid,
   ]);
 
+  // Profile / day / enable changes → full refresh (once).
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!uid || !enabled) {
+      if (uid) {
+        patchSharedSuggestion(uid, dayKey, {
+          suggestedMl: null,
+          weather: null,
+          previousLocation: null,
+          loading: false,
+        });
+      }
+      return;
+    }
+    if (!profileReady) {
+      patchSharedSuggestion(uid, dayKey, { loading: false });
+      return;
+    }
+    void runSharedWaterRefresh({
+      uid,
+      dayKey,
+      calendarTz,
+      profile,
+      burnedKcalToday,
+      stepsToday,
+    });
+    // Intentionally omit stepsToday / burnedKcalToday — handled in the activity effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    calendarTz,
+    dayKey,
+    enabled,
+    profile.activityLevel,
+    profile.age,
+    profile.gender,
+    profile.height,
+    profile.weight,
+    profileReady,
+    uid,
+  ]);
+
+  // Live steps / calories: recompute locally (no spinner / location refetch).
+  useEffect(() => {
+    if (!uid || !enabled || !profileReady) return;
+
+    const handle = setTimeout(() => {
+      void (async () => {
+        const ok = await recomputeSharedSuggestionFromActivity({
+          uid,
+          dayKey,
+          profile,
+          burnedKcalToday,
+          stepsToday,
+        });
+        // First visit with no weather yet — kick a full refresh once.
+        if (!ok) {
+          await runSharedWaterRefresh({
+            uid,
+            dayKey,
+            calendarTz,
+            profile,
+            burnedKcalToday,
+            stepsToday,
+          });
+        }
+      })();
+    }, 1500);
+
+    return () => clearTimeout(handle);
+    // profile fields covered via profileReady + explicit scalars used inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    burnedKcalToday,
+    calendarTz,
+    dayKey,
+    enabled,
+    profile.activityLevel,
+    profile.age,
+    profile.gender,
+    profile.height,
+    profile.weight,
+    profileReady,
+    stepsToday,
+    uid,
+  ]);
 
   const weather = shared.weather;
 
@@ -676,7 +813,9 @@ export function useWaterIntakeSuggestion(options: {
     weatherUnavailableReason: profileReady
       ? weather?.unavailableReason ?? null
       : null,
-    loading: shared.loading || (Boolean(uid) && enabled && !profileReady),
+    // Never treat "profile still loading" as a stuck spinner once we have a value,
+    // and don't expose background refresh as loading.
+    loading: Boolean(shared.loading && shared.suggestedMl == null),
     refresh,
   };
 }

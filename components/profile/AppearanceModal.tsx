@@ -51,7 +51,9 @@ export function AppearanceModal({ visible, onClose }: AppearanceModalProps) {
               return (
                 <Pressable
                   key={option.mode}
-                  onPress={() => void setAppearance(option.mode)}
+                  onPress={() => {
+                    if (option.mode !== mode) void setAppearance(option.mode);
+                  }}
                   className="rounded-2xl border p-4"
                   style={{
                     borderColor: active ? theme.accent : theme.cardBorder,

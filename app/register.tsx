@@ -7,7 +7,7 @@ import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { createUserWithEmailAndPassword, deleteUser, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useRef, useState } from "react";
 import {
@@ -115,6 +115,38 @@ export default function Register() {
     return ok;
   };
 
+  const persistNewUserProfile = (user: User, trimmedName: string, cleanEmail: string) => {
+    const email = user.email ?? cleanEmail;
+    void Promise.all([
+      setDoc(
+        doc(db, "users", user.uid),
+        {
+          name: trimmedName,
+          email,
+          createdAt: Date.now(),
+          onboardingComplete: false,
+        },
+        { merge: true }
+      ),
+      registerAccountEmail(user.uid, email),
+    ]).catch(async (e: unknown) => {
+      setOnboardingGate(false);
+      setOnboardingInProgress(false);
+      try {
+        await deleteUser(user);
+      } catch {}
+      if ((e as { code?: string })?.code === "permission-denied") {
+        Alert.alert(
+          "Firestore: permission denied",
+          "Your Firestore security rules are blocking saving the new profile. In Firebase Console → Firestore Database → Rules, publish the rules from the firestore.rules file in this project (or run: npx firebase deploy --only firestore:rules)."
+        );
+      } else {
+        Alert.alert("Error", firebaseAuthErrorMessage(e));
+      }
+      router.replace("/register");
+    });
+  };
+
   const register = async () => {
     const cleanEmail = email.trim().toLowerCase();
     if (!validateFields()) return;
@@ -133,38 +165,18 @@ export default function Register() {
       });
 
       const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const trimmedName = name.trim();
 
-      // Go to Profile Details immediately — do not wait on Firestore (that delay
-      // let the welcome auth listener briefly show Home).
       router.replace("/profiledetails");
-
-      try {
-        await setDoc(
-          doc(db, "users", cred.user.uid),
-          {
-            name: name.trim(),
-            email: cred.user.email ?? cleanEmail,
-            createdAt: Date.now(),
-            onboardingComplete: false,
-          },
-          { merge: true }
-        );
-        await registerAccountEmail(cred.user.uid, cred.user.email ?? cleanEmail);
-      } catch (e) {
-        setOnboardingGate(false);
-        setOnboardingInProgress(false);
-        try {
-          await deleteUser(cred.user);
-        } catch {}
-        throw e;
-      }
+      setLoading(false);
+      persistNewUserProfile(cred.user, trimmedName, cleanEmail);
     } catch (e: unknown) {
       setOnboardingGate(false);
       setOnboardingInProgress(false);
       if ((e as { code?: string })?.code === "permission-denied") {
         Alert.alert(
           "Firestore: permission denied",
-          "Your account was created but your profile data could not be saved. Please check your Firestore rules."
+          "Your Firestore security rules are blocking saving the new profile. In Firebase Console → Firestore Database → Rules, publish the rules from the firestore.rules file in this project (or run: npx firebase deploy --only firestore:rules)."
         );
       } else if ((e as { code?: string })?.code === "auth/email-already-in-use") {
         Alert.alert("Email Exists", firebaseAuthErrorMessage(e));

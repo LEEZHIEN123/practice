@@ -22,10 +22,17 @@ export function getPedometerOrNull(): Promise<PedometerModule | null> {
       try {
         // Use the Pedometer entry only — importing `expo-sensors` loads the package index, which
         // pulls in ExponentPedometer and crashes at load time when the native module is missing.
-        const Pedometer = await import("expo-sensors/build/Pedometer");
+        const mod = await import("expo-sensors/build/Pedometer");
+        const Pedometer: PedometerModule = {
+          isAvailableAsync: mod.isAvailableAsync,
+          getStepCountAsync: mod.getStepCountAsync,
+          watchStepCount: mod.watchStepCount,
+          requestPermissionsAsync: mod.requestPermissionsAsync,
+          getPermissionsAsync: mod.getPermissionsAsync,
+        };
         const available = await Pedometer.isAvailableAsync();
         if (!available) return null;
-        return Pedometer as unknown as PedometerModule;
+        return Pedometer;
       } catch {
         return null;
       }

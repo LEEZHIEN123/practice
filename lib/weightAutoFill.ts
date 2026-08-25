@@ -1,5 +1,5 @@
 import { addDaysToYmd, formatCalendarDayKey, localDateFromYmd } from "@/lib/calendarDay";
-import { addDoc, collection, doc, Timestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
 export type WeightLogRow = {
@@ -209,6 +209,26 @@ export async function ensureWeightAutoFilledForDay(params: {
     autoFilled: true,
   });
   return true;
+}
+
+/** Write today's weight log so Progress chart/metric stay aligned with profile weight. */
+export async function syncTodayWeightLogFromProfile(params: {
+  uid: string;
+  weightKg: number;
+  calendarTz?: string | null;
+}): Promise<void> {
+  const { uid, weightKg } = params;
+  if (!(weightKg > 0) || !Number.isFinite(weightKg)) return;
+
+  const calendarTz = params.calendarTz ?? "UTC";
+  const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+  const dayStart = localDateFromYmd(todayKey);
+
+  await addDoc(collection(db, "users", uid, "weightLogs"), {
+    weight: Math.round(weightKg * 10) / 10,
+    createdAt: serverTimestamp(),
+    logDate: Timestamp.fromDate(dayStart),
+  });
 }
 
 /** Auto-fill missed past days only (not today or future) with current profile weight at midnight. */

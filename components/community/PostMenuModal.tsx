@@ -82,6 +82,7 @@ export function PostMenuModal({
         ...(onShare && !post.blocked && !post.underReview && !post.authorHidden
           ? [{ label: "Share Post", icon: "share-social-outline" as const, onPress: onShare }]
           : []),
+        { label: "View Edit History", icon: "time-outline", onPress: onEditHistory },
         { label: "Delete Post", icon: "trash-outline", onPress: onDelete, danger: true },
       ]
     : isAdmin

@@ -619,13 +619,13 @@ export default function WorkoutPlanScreen() {
                   "Your personalised workout plan will change. Continue?",
                   [
                     { text: "Cancel", style: "cancel" },
-                    { text: "Confirm", onPress: () => void saveDuration(pendingDuration) },
+                    { text: "Switch", onPress: () => void saveDuration(pendingDuration) },
                   ]
                 );
               }}
               className="mt-5 bg-[#76C893] rounded-full py-4 items-center active:opacity-90"
             >
-              <Text className="text-white text-lg font-extrabold">Confirm</Text>
+              <Text className="text-white text-lg font-extrabold">Switch</Text>
             </Pressable>
 
             <Pressable

@@ -958,7 +958,7 @@ export default function MealPlanScreen() {
                   [
                     { text: "Cancel", style: "cancel" },
                     {
-                      text: "Confirm",
+                      text: "Switch",
                       onPress: () => saveNutritionDuration(pendingDuration),
                     },
                   ]
@@ -966,7 +966,7 @@ export default function MealPlanScreen() {
               }}
               className="mt-5 bg-[#76C893] rounded-full py-4 items-center active:opacity-90"
             >
-              <Text className="text-white text-lg font-extrabold">Confirm</Text>
+              <Text className="text-white text-lg font-extrabold">Switch</Text>
             </Pressable>
 
             <Pressable

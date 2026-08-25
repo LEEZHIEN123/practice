@@ -303,6 +303,10 @@ export default function WaterIntakeScreen() {
       );
 
       setMlText("");
+      Alert.alert(
+        "Water saved",
+        `${parsed.toLocaleString()} ml has been added to your water intake for ${formatLongDate(selectedDate)}.`
+      );
     } catch (e) {
       console.log("Failed to save water:", e);
       Alert.alert("Error", "Could not save water intake.");
@@ -346,6 +350,7 @@ export default function WaterIntakeScreen() {
       }
       setEditingLog(null);
       setEditMlText("");
+      Alert.alert("Water updated", `This entry is now ${nextMl.toLocaleString()} ml.`);
     } catch (e) {
       console.log("Edit water log failed:", e);
       Alert.alert("Error", "Could not update this water log.");

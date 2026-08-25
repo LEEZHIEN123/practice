@@ -8,11 +8,16 @@ import {
   ProgressMetricValue,
 } from "@/components/progress/ProgressMetricCard";
 import { ProfileScreenHeader } from "@/components/themed/ThemedUi";
-import { getAccelerometerOrNull } from "@/lib/accelerometerSafe";
+import { useStepTracking } from "@/context/StepTrackingContext";
 import { rememberBottomTabRoute } from "@/lib/bottomTabHistory";
+import {
+  BMI_CATEGORY_PLAN_CHANGE_MESSAGE,
+  BMI_CATEGORY_PLAN_CHANGE_TITLE,
+  didBmiCategoryChange,
+} from "@/lib/bmiRecommendation";
 import { addDaysToYmd, formatCalendarDayKey } from "@/lib/calendarDay";
+import { saveHomeUserCache } from "@/lib/homeUserCache";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
-import { getPedometerOrNull } from "@/lib/pedometerSafe";
 import { publishDailyStepRanking } from "@/lib/stepLeaderboard";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -29,10 +34,9 @@ import {
   type WeightLogRow,
 } from "@/lib/weightAutoFill";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
@@ -43,11 +47,10 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { auth, db } from "../firebaseConfig";
 
@@ -56,8 +59,6 @@ type PeriodKey = "week" | "month" | "year";
 
 type WorkoutLogRowProgress = { burnedKcal: number; createdAt: Date; dayKey: string };
 type MealLogRowProgress = { calories: number; createdAt: Date; dayKey: string };
-
-const localStepDraftKey = (uid: string, dateKey: string) => `daily-steps-draft:${uid}:${dateKey}`;
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -75,6 +76,11 @@ export default function ProgressScreen() {
   } = useThemedScreen();
   const tabBarPadding = useBottomTabBarScrollPadding();
   const calendarTz = useUserCalendarTimezone();
+  const {
+    displaySteps,
+    stepSource,
+    stepsHydrated,
+  } = useStepTracking();
   /** Firestore listeners must re-subscribe when the signed-in user changes (missing this caused cross-account data bleed). */
   const [authUid, setAuthUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [tab, setTab] = useState<TabKey>("weight");
@@ -93,11 +99,6 @@ export default function ProgressScreen() {
   const [waterMlToday, setWaterMlToday] = useState(0);
   /** Today's sum from waterLogs + whether any log exists for today (prefer over dailyStats when logs exist). */
   const [waterFromLogs, setWaterFromLogs] = useState<{ sum: number; count: number } | null>(null);
-  const [stepsToday, setStepsToday] = useState<number>(0);
-  const [stepsAutoDb, setStepsAutoDb] = useState(0);
-  const [stepsManualDb, setStepsManualDb] = useState<number | null>(null);
-  const [stepsHydrated, setStepsHydrated] = useState(false);
-  const [stepSource, setStepSource] = useState<"pedometer" | "accelerometer" | "unavailable">("pedometer");
 
   const [logVisible, setLogVisible] = useState(false);
   const [logWeightText, setLogWeightText] = useState("");
@@ -114,16 +115,6 @@ export default function ProgressScreen() {
   const [latestLoggedWeight, setLatestLoggedWeight] = useState<number>(0);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [screenFocused, setScreenFocused] = useState(false);
-  const stepsSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSyncedStepsRef = useRef(0);
-  useFocusEffect(
-    useCallback(() => {
-      setScreenFocused(true);
-      return () => setScreenFocused(false);
-    }, [])
-  );
-
 
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const startOfWeekMon = (d: Date) => {
@@ -157,11 +148,6 @@ export default function ProgressScreen() {
   };
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
-
-  const displaySteps = useMemo(() => {
-    if (stepsManualDb != null) return Math.round(stepsManualDb);
-    return Math.max(Math.round(stepsToday), Math.round(stepsAutoDb));
-  }, [stepsAutoDb, stepsManualDb, stepsToday]);
 
   const todayDayKey = useMemo(
     () => formatCalendarDayKey(new Date(), calendarTz),
@@ -217,113 +203,15 @@ export default function ProgressScreen() {
   }, []);
 
   useEffect(() => {
-    lastSyncedStepsRef.current = 0;
-    if (stepsSyncTimerRef.current) {
-      clearTimeout(stepsSyncTimerRef.current);
-      stepsSyncTimerRef.current = null;
-    }
     if (!authUid) {
-      setStepsToday(0);
-      setStepsAutoDb(0);
-      setStepsManualDb(null);
-      setStepsHydrated(false);
       setConsumedToday(0);
       setBurnedToday(0);
       setConsumedYesterday(0);
       setBurnedYesterday(0);
       setWaterMlToday(0);
       setWaterFromLogs({ sum: 0, count: 0 });
-      setStepSource("pedometer");
-      return;
     }
-    setStepsToday(0);
-    setStepsAutoDb(0);
-    setStepsManualDb(null);
-    setStepsHydrated(false);
-    setStepSource("pedometer");
   }, [authUid]);
-
-  useEffect(() => {
-    if (!stepsHydrated) return;
-    lastSyncedStepsRef.current = Math.max(lastSyncedStepsRef.current, Math.max(0, Math.round(stepsAutoDb)));
-  }, [stepsAutoDb, stepsHydrated]);
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user || user.uid !== authUid) return;
-    if (!stepsHydrated) return;
-
-    const key = formatCalendarDayKey(new Date(), calendarTz);
-    const liveSteps = Math.max(0, Math.round(stepsToday));
-    const savedSteps = Math.max(0, Math.round(stepsAutoDb));
-    const nextSteps = Math.max(liveSteps, savedSteps);
-
-    if (nextSteps <= lastSyncedStepsRef.current) return;
-    if (stepsSyncTimerRef.current) clearTimeout(stepsSyncTimerRef.current);
-
-    stepsSyncTimerRef.current = setTimeout(() => {
-      void setDoc(
-        doc(db, "users", user.uid, "dailyStats", key),
-        {
-          stepsAuto: nextSteps,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      )
-        .then(() => {
-          lastSyncedStepsRef.current = Math.max(lastSyncedStepsRef.current, nextSteps);
-        })
-        .catch((e) => {
-          console.log("Failed to sync live steps:", e);
-        })
-        .finally(() => {
-          stepsSyncTimerRef.current = null;
-        });
-    }, 2000);
-  }, [authUid, calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
-
-  useEffect(() => {
-    return () => {
-      if (stepsSyncTimerRef.current) clearTimeout(stepsSyncTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!authUid) return;
-    if (!stepsHydrated) return;
-    const key = formatCalendarDayKey(new Date(), calendarTz);
-    const value = Math.max(Math.max(0, Math.round(stepsToday)), Math.max(0, Math.round(stepsAutoDb)));
-    void AsyncStorage.setItem(localStepDraftKey(authUid, key), String(value));
-  }, [authUid, calendarTz, stepsAutoDb, stepsHydrated, stepsToday]);
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user || user.uid !== authUid) return;
-    let cancelled = false;
-    const syncDraftToAccount = async () => {
-      const dayKey = formatCalendarDayKey(new Date(), calendarTz);
-      try {
-        const draftRaw = await AsyncStorage.getItem(localStepDraftKey(user.uid, dayKey));
-        if (cancelled || draftRaw == null) return;
-        const draftSteps = parseInt(draftRaw, 10);
-        if (!Number.isFinite(draftSteps) || draftSteps < 0) return;
-        await setDoc(
-          doc(db, "users", user.uid, "dailyStats", dayKey),
-          {
-            stepsAuto: Math.max(0, Math.round(draftSteps)),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } catch (e) {
-        console.log("Failed syncing local step draft:", e);
-      }
-    };
-    void syncDraftToAccount();
-    return () => {
-      cancelled = true;
-    };
-  }, [authUid, calendarTz]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -369,7 +257,6 @@ export default function ProgressScreen() {
   useEffect(() => {
     const user = auth.currentUser;
     if (!user || user.uid !== authUid) return;
-    setStepsHydrated(false);
 
     const now = new Date();
     const todayKey = formatCalendarDayKey(now, calendarTz);
@@ -383,21 +270,11 @@ export default function ProgressScreen() {
         setBurnedToday(typeof data?.burnedKcal === "number" ? data.burnedKcal : 0);
         const wm = data?.waterMl;
         setWaterMlToday(typeof wm === "number" && Number.isFinite(wm) ? Math.round(wm) : 0);
-        const sa = data?.stepsAuto;
-        const nextAuto = typeof sa === "number" && Number.isFinite(sa) ? Math.max(0, sa) : 0;
-        setStepsAutoDb(nextAuto);
-        setStepsToday((prev) => Math.max(prev, nextAuto));
-        const sm = data?.stepsManual;
-        setStepsManualDb(typeof sm === "number" && Number.isFinite(sm) ? Math.max(0, Math.round(sm)) : null);
-        setStepsHydrated(true);
       },
       () => {
         setConsumedToday(0);
         setBurnedToday(0);
         setWaterMlToday(0);
-        setStepsAutoDb(0);
-        setStepsManualDb(null);
-        setStepsHydrated(true);
       }
     );
 
@@ -455,168 +332,6 @@ export default function ProgressScreen() {
     );
     return () => unsub();
   }, [authUid, calendarTz, dayTick]);
-
-  useEffect(() => {
-    if (!screenFocused) return;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    let pedDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    let accelSub: { remove: () => void } | null = null;
-    let pedSub: { remove: () => void } | null = null;
-    let mounted = true;
-
-    // Peak -> trough step detector + "walking lock" (fallback when hardware step counter is unavailable).
-    let lastStepAt = 0;
-    let above = false;
-    const peakThreshold = 1.28; // g — stricter to reduce non-walking jitter
-    const troughThreshold = 1.08; // g
-    const cooldownMs = 380; // ~2.6 steps/s max; typical walking ~1–2 steps/s
-
-    let walkingMode = false;
-    let lastCandidateAt = 0;
-    let candidateTimes: number[] = [];
-
-    const dateKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    let currentDayKey = dateKey(new Date());
-
-    const resetForNewDayIfNeeded = () => {
-      const k = dateKey(new Date());
-      if (k !== currentDayKey) {
-        currentDayKey = k;
-        setStepsToday(0);
-        lastStepAt = 0;
-        above = false;
-        walkingMode = false;
-        lastCandidateAt = 0;
-        candidateTimes = [];
-      }
-    };
-
-    const startAccelerometerSteps = async () => {
-      try {
-        const Accelerometer = await getAccelerometerOrNull();
-        if (!Accelerometer || !mounted) return false;
-
-        setStepSource("accelerometer");
-        Accelerometer.setUpdateInterval(50); // ~20Hz
-
-        accelSub = Accelerometer.addListener(({ x, y, z }) => {
-          resetForNewDayIfNeeded();
-
-          // magnitude of acceleration vector (in g units)
-          const mag = Math.sqrt((x ?? 0) ** 2 + (y ?? 0) ** 2 + (z ?? 0) ** 2);
-          const now = Date.now();
-
-          // Drop out of walking mode if we've been idle.
-          if (walkingMode && now - lastCandidateAt > 2200) {
-            walkingMode = false;
-            candidateTimes = [];
-          }
-
-          if (!above && mag >= peakThreshold) {
-            above = true;
-          } else if (above && mag <= troughThreshold) {
-            above = false;
-            if (now - lastStepAt > cooldownMs) {
-              lastStepAt = now;
-              lastCandidateAt = now;
-
-              if (!walkingMode) {
-                // Require several candidates with walking-like cadence (filters pick-up/shake).
-                candidateTimes = candidateTimes.filter((t) => now - t <= 4000);
-                candidateTimes.push(now);
-                const n = candidateTimes.length;
-                const dt1 = n >= 2 ? candidateTimes[n - 1] - candidateTimes[n - 2] : Infinity;
-                const dt2 = n >= 3 ? candidateTimes[n - 2] - candidateTimes[n - 3] : Infinity;
-                const dt3 = n >= 4 ? candidateTimes[n - 3] - candidateTimes[n - 4] : Infinity;
-                // Walking cadence ~50–160 steps/min → ~375–1200 ms between steps
-                const cadenceOk = (dt: number) => dt >= 350 && dt <= 1300;
-                if (n >= 5 && cadenceOk(dt1) && cadenceOk(dt2) && cadenceOk(dt3)) {
-                  walkingMode = true;
-                  candidateTimes = [];
-                  // Don't retroactively count candidates; start counting only once walking is confirmed.
-                }
-              } else {
-                setStepsToday((s) => s + 1);
-              }
-            }
-          }
-        });
-
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const startLivePedometer = async () => {
-      try {
-        const Pedometer = await getPedometerOrNull();
-        if (!Pedometer || !mounted) return false;
-
-        const perm = await Pedometer.requestPermissionsAsync();
-        if (!perm.granted || !mounted) return false;
-
-        setStepSource("pedometer");
-
-        // Use OS step count (Core Motion / Google Fit step sensor) — tuned for walking, not raw accel peaks.
-        const syncStepsFromOs = async () => {
-          if (!mounted) return;
-          try {
-            const res = await Pedometer.getStepCountAsync(startOfDay(new Date()), new Date());
-            const total = Math.max(0, Math.round(typeof res?.steps === "number" ? res.steps : 0));
-            setStepsToday(total);
-          } catch {
-            /* ignore */
-          }
-        };
-
-        await syncStepsFromOs();
-        if (!mounted) return false;
-
-        pedSub = Pedometer.watchStepCount(() => {
-          if (!mounted) return;
-          if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
-          pedDebounceTimer = setTimeout(() => {
-            pedDebounceTimer = null;
-            void syncStepsFromOs();
-          }, 400);
-        });
-
-        timer = setInterval(() => void syncStepsFromOs(), 45_000);
-
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const run = async () => {
-      try {
-        if (!mounted) return;
-
-        setStepSource("pedometer");
-        const ok = await startLivePedometer();
-        if (ok) {
-          return;
-        }
-
-        const accelOk = await startAccelerometerSteps();
-        if (!accelOk) setStepSource("unavailable");
-      } catch {
-        const accelOk = await startAccelerometerSteps();
-        if (!accelOk) setStepSource("unavailable");
-      }
-    };
-
-    void run();
-    return () => {
-      mounted = false;
-      if (pedDebounceTimer) clearTimeout(pedDebounceTimer);
-      if (timer) clearInterval(timer);
-      pedSub?.remove();
-      accelSub?.remove();
-    };
-  }, [authUid, screenFocused]);
 
   useEffect(() => {
     setHoverIdx(null);
@@ -688,11 +403,15 @@ export default function ProgressScreen() {
           return;
         }
 
-        // rows are newest-first due to query
-        setLatestLoggedWeight(rows[0].weight);
+        // rows are newest-first by save time (Firestore createdAt). Prefer a real user log.
+        const latestUserLog = rows.find((r) => !r.autoFilled);
+        setLatestLoggedWeight(latestUserLog ? latestUserLog.weight : 0);
         const now = new Date();
         const todayKey = formatCalendarDayKey(now, calendarTz);
-        const todayRow = rows.find((r) => weightLogDayKey(r.createdAt, calendarTz) === todayKey);
+        // Prefer an explicit user log for today (not auto-fill carry-forward).
+        const todayRow = rows.find(
+          (r) => !r.autoFilled && weightLogDayKey(r.createdAt, calendarTz) === todayKey
+        );
         setTodayLoggedWeight(todayRow ? todayRow.weight : null);
 
         const currentSlotIndex =
@@ -1010,13 +729,12 @@ export default function ProgressScreen() {
     };
   }, [mealLogRows, mealSeries, period, tab]);
 
-  /** Profile `weight` (Edit Profile, home, etc.) is the live “current weight” and should drive the headline. */
+  /** CURRENT METRIC: today's weight (profile weight stays aligned with today). */
   const effectiveWeightKg = useMemo(() => {
     if (weightKg > 0) return weightKg;
-    if (todayLoggedWeight != null) return todayLoggedWeight;
-    if (hasWeightLogs && latestLoggedWeight) return latestLoggedWeight;
-    return weightKg;
-  }, [hasWeightLogs, latestLoggedWeight, todayLoggedWeight, weightKg]);
+    if (todayLoggedWeight != null && todayLoggedWeight > 0) return todayLoggedWeight;
+    return 0;
+  }, [todayLoggedWeight, weightKg]);
 
   const bmi = useMemo(() => {
     if (!heightCm || !effectiveWeightKg) return 0;
@@ -1218,15 +936,21 @@ export default function ProgressScreen() {
       const nextW = clamp(parsedW, 30, 200);
       const h = heightCm;
       const m = h ? h / 100 : 0;
+      const previousBmi = m && weightKg > 0 ? weightKg / (m * m) : null;
       const nextBmi = m ? nextW / (m * m) : 0;
+      const todayKey = formatCalendarDayKey(new Date(), calendarTz);
+      const editedDayKey = formatCalendarDayKey(startOfDay(logDate), calendarTz);
+      const isToday = editedDayKey === todayKey;
 
-      // Update current weight & BMI on user doc
-      await updateDoc(doc(db, "users", user.uid), {
-        weight: nextW,
-        bmi: h ? Number(nextBmi.toFixed(2)) : undefined,
-      });
+      // Profile weight / BMI only follow today's log — past-day edits stay historical.
+      if (isToday) {
+        await updateDoc(doc(db, "users", user.uid), {
+          weight: nextW,
+          bmi: h ? Number(nextBmi.toFixed(2)) : undefined,
+        });
+        void saveHomeUserCache(user.uid, { weight: nextW });
+      }
 
-      // Append log entry (optional history)
       await addDoc(collection(db, "users", user.uid, "weightLogs"), {
         weight: nextW,
         // createdAt is for ordering (actual time saved); logDate is the day user chose.
@@ -1234,7 +958,6 @@ export default function ProgressScreen() {
         logDate: Timestamp.fromDate(startOfDay(logDate)),
       });
 
-      const editedDayKey = formatCalendarDayKey(startOfDay(logDate), calendarTz);
       await resyncAutoFilledWeightsAfterDay({
         uid: user.uid,
         editedDayKey,
@@ -1243,11 +966,17 @@ export default function ProgressScreen() {
         existingRows: weightProgressLogRows,
       }).catch((e) => console.log("weight auto-fill resync failed:", e));
 
-      setWeightKg(nextW);
       setHasWeightLogs(true);
-      // Reflect the just-saved log immediately in the headline metric.
       setLatestLoggedWeight(nextW);
+      if (isToday) {
+        setWeightKg(nextW);
+        setTodayLoggedWeight(nextW);
+      }
       setLogVisible(false);
+
+      if (isToday && didBmiCategoryChange(previousBmi, nextBmi)) {
+        Alert.alert(BMI_CATEGORY_PLAN_CHANGE_TITLE, BMI_CATEGORY_PLAN_CHANGE_MESSAGE);
+      }
     } catch (e) {
       console.log("Failed to log weight:", e);
       Alert.alert("Error", "Failed to log your weight.");
@@ -1547,7 +1276,7 @@ export default function ProgressScreen() {
 
         {/* Daily steps + water */}
         <View className="mt-4 gap-3">
-          <View className="flex-row justify-between gap-4">
+          <View className="flex-row gap-4 items-stretch">
             <ProgressMetricCard
               cardKey="dailySteps"
               title="Daily Steps"
@@ -1557,15 +1286,19 @@ export default function ProgressScreen() {
               <ProgressMetricLabel>TODAY&apos;S TOTAL</ProgressMetricLabel>
               <ProgressMetricValue>{displaySteps.toLocaleString()} steps</ProgressMetricValue>
               <ProgressMetricDetail>
-                {stepSource === "pedometer"
-                  ? "Phone step counter (walking & daily movement)"
-                  : stepSource === "accelerometer"
-                    ? "Estimated steps while walking"
-                    : "Not available on this device"}
+                {stepSource === "pending"
+                  ? "Setting up auto tracking…"
+                  : stepSource === "pedometer"
+                    ? "Phone step counter (walking & daily movement)"
+                    : stepSource === "accelerometer"
+                      ? "Estimated steps while walking"
+                      : "Not available on this device"}
               </ProgressMetricDetail>
-              {stepSource !== "unavailable" ? (
+              {stepSource === "pending" || stepSource === "pedometer" || stepSource === "accelerometer" ? (
                 <ProgressMetricLink bright>Tap for progress</ProgressMetricLink>
-              ) : null}
+              ) : (
+                <View className="mt-auto" />
+              )}
             </ProgressMetricCard>
 
             <ProgressMetricCard
@@ -1590,17 +1323,12 @@ export default function ProgressScreen() {
                   </ProgressMetricDetail>
                 </View>
               ) : waterSuggestedMl != null ? (
-                <View className="flex-row items-center flex-wrap mt-0">
-                  <ProgressMetricDetail>
-                    Today&apos;s water intake suggestion:{" "}
-                    <Text className="font-extrabold" style={{ color: "#fde68a" }}>
-                      {waterSuggestedMl.toLocaleString()} ml
-                    </Text>
-                  </ProgressMetricDetail>
-                  {waterSuggestionLoading ? (
-                    <ActivityIndicator color="#fde68a" size="small" style={{ marginLeft: 8 }} />
-                  ) : null}
-                </View>
+                <ProgressMetricDetail>
+                  Today&apos;s water intake suggestion:{" "}
+                  <Text className="font-extrabold" style={{ color: "#fde68a" }}>
+                    {waterSuggestedMl.toLocaleString()} ml
+                  </Text>
+                </ProgressMetricDetail>
               ) : (
                 <ProgressMetricDetail>
                   Today suggestion:{" "}

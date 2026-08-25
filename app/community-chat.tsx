@@ -31,7 +31,6 @@ import {
   subscribeMessages,
   checkIsAdmin,
   clearChatHistory,
-  getCurrentUserProfile,
   getPostsByAuthor,
   getPublicUserProfile,
   loadFriendRelations,
@@ -39,10 +38,16 @@ import {
   resolveAdminUid,
   displayCommunityUserName,
   sendFriendRequest,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  getPendingIncomingFriendRequest,
+  resolveFriendRequestNotificationByRequestId,
   prepareSupportChat,
   subscribeFriendsList,
   subscribePosts,
   uploadChatImage,
+  userAccountExists,
+  ACCOUNT_UNAVAILABLE_MESSAGE,
 } from "@/lib/communityService";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,6 +57,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -67,7 +73,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { auth } from "../firebaseConfig";
+import { auth, db } from "../firebaseConfig";
 import { SUPPORT_CHAT_WELCOME_MESSAGE } from "@/lib/communityTypes";
 
 const USER_CHAT_GREEN = "#76C893";
@@ -223,6 +229,7 @@ export default function CommunityChatScreen() {
   const [quotingMessage, setQuotingMessage] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [canSendMessages, setCanSendMessages] = useState(true);
+  const [otherAccountMissing, setOtherAccountMissing] = useState(false);
   const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
   const [viewerMessage, setViewerMessage] = useState<ChatMessage | null>(null);
   const [composeImageUri, setComposeImageUri] = useState<string | null>(null);
@@ -233,16 +240,26 @@ export default function CommunityChatScreen() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileData, setProfileData] = useState<Awaited<ReturnType<typeof getPublicUserProfile>> | null>(null);
   const [profileRelation, setProfileRelation] = useState<"none" | "friends" | "pending_outgoing" | "pending_incoming">("none");
+  const [profileFriendBusy, setProfileFriendBusy] = useState(false);
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
   const [headerAvatarUri, setHeaderAvatarUri] = useState<string | null>(
     params.image ? String(params.image) : null
   );
+  /** Live users/{otherUserId}.profileImage — preferred over denormalized chat participantImages. */
+  const [liveOtherProfileImage, setLiveOtherProfileImage] = useState<string | null>(null);
+  /** Live users/{otherUserId}.name — preferred over denormalized chat participantNames. */
+  const [liveOtherUserName, setLiveOtherUserName] = useState<string | null>(null);
 
   const otherUserId = paramOtherUserId || resolvedOtherUserId;
 
   const displayChatName = useMemo(
-    () => displayCommunityUserName(otherUserId, chatName, adminUid),
-    [otherUserId, chatName, adminUid]
+    () =>
+      displayCommunityUserName(
+        otherUserId,
+        liveOtherUserName ?? participantNames[otherUserId] ?? chatName,
+        adminUid
+      ),
+    [otherUserId, liveOtherUserName, participantNames, chatName, adminUid]
   );
   const isSupportAdminUser = isSupport || (adminUid != null && otherUserId === adminUid);
   const hasPersistedWelcome = useMemo(
@@ -262,14 +279,57 @@ export default function CommunityChatScreen() {
   const resolveSenderName = useCallback(
     (senderId: string) => {
       if (senderId === currentUserId) return myDisplayName;
-      return participantNames[senderId] ?? chatName;
+      const raw =
+        senderId === otherUserId && liveOtherUserName
+          ? liveOtherUserName
+          : participantNames[senderId] ?? chatName;
+      return displayCommunityUserName(senderId, raw, adminUid);
     },
-    [currentUserId, myDisplayName, participantNames, chatName]
+    [currentUserId, myDisplayName, otherUserId, liveOtherUserName, participantNames, chatName, adminUid]
   );
 
   useEffect(() => {
     void resolveAdminUid().then(setAdminUid).catch(() => setAdminUid(null));
   }, []);
+
+  /** Prefer live profile photo for whoever you are chatting with (friend or Support Admin). */
+  useEffect(() => {
+    if (!otherUserId) {
+      setLiveOtherProfileImage(null);
+      setLiveOtherUserName(null);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "users", otherUserId),
+      (snap) => {
+        if (!snap.exists()) {
+          setLiveOtherProfileImage(null);
+          setLiveOtherUserName(null);
+          return;
+        }
+        const data = snap.data() as { profileImage?: unknown; name?: unknown };
+        const image =
+          typeof data.profileImage === "string" && data.profileImage.length > 0
+            ? data.profileImage
+            : null;
+        const name =
+          typeof data.name === "string" && data.name.trim().length > 0 ? data.name.trim() : null;
+        setLiveOtherProfileImage(image);
+        setLiveOtherUserName(name);
+        if (image) {
+          setHeaderAvatarUri(image);
+        } else {
+          // Keep nav/chat fallback if they have no photo set yet.
+          setHeaderAvatarUri((prev) => prev ?? chatImage);
+        }
+      },
+      () => {
+        setLiveOtherProfileImage(null);
+        setLiveOtherUserName(null);
+      }
+    );
+    return unsub;
+  }, [otherUserId, chatImage]);
 
   useEffect(() => {
     if (!menuMessage && !viewerMessage) return;
@@ -283,15 +343,6 @@ export default function CommunityChatScreen() {
       setCurrentUserId(user?.uid ?? null);
       if (user) {
         void checkIsAdmin(user).then(setIsAdminUser);
-        void getCurrentUserProfile()
-          .then(({ profile }) => {
-            setMyProfileImage(profile.profileImage);
-            setMyDisplayName(profile.name || "You");
-          })
-          .catch(() => {
-            setMyProfileImage(null);
-            setMyDisplayName("You");
-          });
       } else {
         setIsAdminUser(false);
         setMyProfileImage(null);
@@ -300,6 +351,37 @@ export default function CommunityChatScreen() {
     });
     return unsub;
   }, []);
+
+  /** Keep your own avatar live so message bubbles stay correct after a photo change. */
+  useEffect(() => {
+    if (!currentUserId) {
+      setMyProfileImage(null);
+      setMyDisplayName("You");
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "users", currentUserId),
+      (snap) => {
+        if (!snap.exists()) {
+          setMyProfileImage(null);
+          setMyDisplayName("You");
+          return;
+        }
+        const data = snap.data() as { profileImage?: unknown; name?: unknown };
+        setMyProfileImage(
+          typeof data.profileImage === "string" && data.profileImage.length > 0
+            ? data.profileImage
+            : null
+        );
+        setMyDisplayName(typeof data.name === "string" && data.name.trim() ? data.name : "You");
+      },
+      () => {
+        setMyProfileImage(null);
+        setMyDisplayName("You");
+      }
+    );
+    return unsub;
+  }, [currentUserId]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -362,21 +444,6 @@ export default function CommunityChatScreen() {
   }, [chatImage, chatId]);
 
   useEffect(() => {
-    if (!otherUserId) return;
-    let cancelled = false;
-    void getPublicUserProfile(otherUserId)
-      .then((profile) => {
-        if (!cancelled && profile.profileImage) {
-          setHeaderAvatarUri(profile.profileImage);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [otherUserId]);
-
-  useEffect(() => {
     if (!chatId) return;
     const unsub = subscribeChatMeta(chatId, (chat) => {
       if (!chat) return;
@@ -394,12 +461,17 @@ export default function CommunityChatScreen() {
           (paramOtherUserId ||
             chat.participants.find((id) => id !== currentUserId) ||
             "") as string;
-        const liveImage = other ? chat.participantImages[other] : null;
-        if (liveImage) setHeaderAvatarUri(liveImage);
+        // Live users/{uid}.profileImage wins over stale chat.participantImages.
+        if (liveOtherProfileImage) {
+          setHeaderAvatarUri(liveOtherProfileImage);
+          return;
+        }
+        const metaImage = other ? chat.participantImages[other] : null;
+        if (metaImage) setHeaderAvatarUri(metaImage);
       }
     });
     return unsub;
-  }, [chatId, currentUserId, paramOtherUserId]);
+  }, [chatId, currentUserId, paramOtherUserId, liveOtherProfileImage]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -409,6 +481,7 @@ export default function CommunityChatScreen() {
 
   useEffect(() => {
     if (isSupportAdminUser || isAdminUser) {
+      setOtherAccountMissing(false);
       setCanSendMessages(true);
       return;
     }
@@ -417,13 +490,38 @@ export default function CommunityChatScreen() {
       return;
     }
 
+    let cancelled = false;
+    let accountExists = true;
+    let isFriend = false;
+
+    const syncCanSend = () => {
+      if (cancelled) return;
+      setCanSendMessages(accountExists && isFriend);
+    };
+
+    void userAccountExists(otherUserId).then((exists) => {
+      if (cancelled) return;
+      accountExists = exists;
+      setOtherAccountMissing(!exists);
+      syncCanSend();
+    });
+
     const unsub = subscribeFriendsList(
       (friends) => {
-        setCanSendMessages(friends.some((friend) => friend.id === otherUserId));
+        if (cancelled) return;
+        isFriend = friends.some((friend) => friend.id === otherUserId);
+        syncCanSend();
       },
-      () => setCanSendMessages(false)
+      () => {
+        if (cancelled) return;
+        isFriend = false;
+        syncCanSend();
+      }
     );
-    return unsub;
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [currentUserId, otherUserId, isSupportAdminUser, isAdminUser]);
 
   useEffect(() => {
@@ -451,6 +549,14 @@ export default function CommunityChatScreen() {
 
   const senderImage = (senderId: string) => {
     if (senderId === currentUserId) return myProfileImage;
+    if (otherUserId && senderId === otherUserId) {
+      return (
+        liveOtherProfileImage ??
+        participantImages[senderId] ??
+        headerAvatarUri ??
+        chatImage
+      );
+    }
     return (
       participantImages[senderId] ??
       (senderId === otherUserId ? headerAvatarUri : null) ??
@@ -544,7 +650,7 @@ export default function CommunityChatScreen() {
 
   const handleAddFriend = () => {
     if (!otherUserId || isSupportAdminUser) return;
-    Alert.alert("Add friend", `Send a friend request to ${chatName}?`, [
+    Alert.alert("Add friend", `Send a friend request to ${displayChatName}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Add friend",
@@ -561,6 +667,51 @@ export default function CommunityChatScreen() {
         },
       },
     ]);
+  };
+
+  const handleAcceptFriendFromProfile = async () => {
+    if (!otherUserId || isSupportAdminUser) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(otherUserId);
+      if (!request || request.status !== "pending") {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        const relations = await loadFriendRelations([otherUserId]);
+        setProfileRelation(relations[otherUserId] ?? "none");
+        return;
+      }
+      await acceptFriendRequest(request);
+      await resolveFriendRequestNotificationByRequestId(request.id, "accepted");
+      setProfileRelation("friends");
+      Alert.alert("Friend added", `You are now friends with ${displayChatName}.`);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not accept request.");
+    } finally {
+      setProfileFriendBusy(false);
+    }
+  };
+
+  const handleDeclineFriendFromProfile = async () => {
+    if (!otherUserId || isSupportAdminUser) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(otherUserId);
+      if (!request) {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        const relations = await loadFriendRelations([otherUserId]);
+        setProfileRelation(relations[otherUserId] ?? "none");
+        return;
+      }
+      await rejectFriendRequest(request.id);
+      await resolveFriendRequestNotificationByRequestId(request.id, "rejected");
+      setProfileRelation("none");
+      setProfileVisible(false);
+      setProfileData(null);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not decline request.");
+    } finally {
+      setProfileFriendBusy(false);
+    }
   };
 
   const handleSend = async () => {
@@ -1172,9 +1323,46 @@ export default function CommunityChatScreen() {
               borderTopColor: theme.navBorder,
             }}
           >
-            <ThemedText variant="muted" className="text-xs text-center">
-              Add {displayChatName} as a friend to send messages.
-            </ThemedText>
+            {otherAccountMissing ? (
+              <ThemedText variant="muted" className="text-xs text-center">
+                {ACCOUNT_UNAVAILABLE_MESSAGE}
+              </ThemedText>
+            ) : profileRelation === "pending_incoming" ? (
+              <View className="items-center gap-3">
+                <ThemedText variant="muted" className="text-xs text-center">
+                  {displayChatName} sent you a friend request
+                </ThemedText>
+                <View className="flex-row gap-2 w-full max-w-sm">
+                  <Pressable
+                    onPress={() => void handleAcceptFriendFromProfile()}
+                    disabled={profileFriendBusy}
+                    className="flex-1 flex-row items-center justify-center rounded-full px-5 py-3 bg-[#52B69A]"
+                    style={{ opacity: profileFriendBusy ? 0.7 : 1 }}
+                  >
+                    {profileFriendBusy ? (
+                      <ActivityIndicator color="white" size="small" />
+                    ) : (
+                      <Text className="text-sm font-extrabold text-white">Accept</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void handleDeclineFriendFromProfile()}
+                    disabled={profileFriendBusy}
+                    className="flex-1 flex-row items-center justify-center rounded-full px-5 py-3"
+                    style={{
+                      backgroundColor: theme.danger,
+                      opacity: profileFriendBusy ? 0.7 : 1,
+                    }}
+                  >
+                    <Text className="text-sm font-extrabold text-white">Decline</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <ThemedText variant="muted" className="text-xs text-center">
+                {`Add ${displayChatName} as a friend to send messages.`}
+              </ThemedText>
+            )}
           </View>
         )}
     </View>
@@ -1250,6 +1438,9 @@ export default function CommunityChatScreen() {
           setProfileData(null);
         }}
         onAddFriend={handleAddFriend}
+        onAcceptFriend={() => void handleAcceptFriendFromProfile()}
+        onDeclineFriend={() => void handleDeclineFriendFromProfile()}
+        friendActionBusy={profileFriendBusy}
         onChat={
           isSupportAdminUser || isAdminUser
             ? () => setProfileVisible(false)

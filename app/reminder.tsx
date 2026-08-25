@@ -154,6 +154,32 @@ const DEFAULT_REPEAT = [true, false, true, false, true, false, false];
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const UI_TO_EXPO_WEEKDAY = [2, 3, 4, 5, 6, 7, 1];
+/** How many weeks ahead to schedule exact one-shot notifications. */
+const REMINDER_SCHEDULE_WEEKS = 8;
+const REMINDER_CHANNEL_ID = "reminders_v2";
+
+/** Next fire dates for Expo weekday (1=Sun … 7=Sat) at hour:minute, starting after now. */
+function getUpcomingReminderDates(
+  expoWeekday: number,
+  hour24: number,
+  minute: number,
+  weeksAhead: number
+): Date[] {
+  const dates: Date[] = [];
+  const now = Date.now();
+  const start = new Date();
+  start.setSeconds(0, 0);
+
+  for (let dayOffset = 0; dayOffset <= weeksAhead * 7; dayOffset++) {
+    const candidate = new Date(start);
+    candidate.setDate(start.getDate() + dayOffset);
+    candidate.setHours(hour24, minute, 0, 0);
+    if (candidate.getDay() + 1 !== expoWeekday) continue;
+    if (candidate.getTime() <= now) continue;
+    dates.push(candidate);
+  }
+  return dates;
+}
 
 function formatRepeatDaysLine(days: boolean[]): string {
   const picked = days
@@ -346,6 +372,11 @@ export default function RemindersScreen() {
             }
           : defaultReminderData;
 
+        const days =
+          Array.isArray(data.reminderRepeatDays) && data.reminderRepeatDays.length === 7
+            ? data.reminderRepeatDays
+            : DEFAULT_REPEAT;
+
         // If the user never opened Reminders before, force all toggles OFF once.
         if (!initialized) {
           const forceOff = (s: ReminderSection): ReminderSection => ({
@@ -368,12 +399,12 @@ export default function RemindersScreen() {
           );
 
           setReminders(forced);
+          setRepeatDays(days);
         } else {
           setReminders(loaded);
-        }
-
-        if (Array.isArray(data.reminderRepeatDays) && data.reminderRepeatDays.length === 7) {
-          setRepeatDays(data.reminderRepeatDays);
+          setRepeatDays(days);
+          // Refresh rolling exact schedules whenever Reminders opens.
+          enqueuePersist(loaded, days, loaded);
         }
       } catch (error) {
         console.log("Failed to load reminders:", error);
@@ -395,14 +426,22 @@ export default function RemindersScreen() {
             shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
           }),
         });
       }
 
       if (Platform.OS === "android") {
-        await Notifications.setNotificationChannelAsync("reminders", {
+        // New channel id so MAX importance applies (Android ignores importance changes on existing channels).
+        await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
           name: "Reminders",
-          importance: Notifications.AndroidImportance.HIGH,
+          importance: Notifications.AndroidImportance.MAX,
+          bypassDnd: true,
+          enableVibrate: true,
+          vibrationPattern: [0, 250, 250, 250],
+          sound: "default",
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         });
       }
 
@@ -430,6 +469,7 @@ export default function RemindersScreen() {
         }
         return false;
       }
+
       return true;
     } catch (error) {
       console.log("Notification permission error:", error);
@@ -439,13 +479,18 @@ export default function RemindersScreen() {
 
   const openAddModal = (section: ReminderKey) => {
     const nextIdx = (reminders[section]?.times?.length ?? 0) + 1;
+    const now = new Date();
+    const h24 = now.getHours();
+    const minute = now.getMinutes();
+    const period: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
+    const hour = h24 % 12 === 0 ? 12 : h24 % 12;
     setEditor({
       section,
       timeId: null,
       name: `Reminder ${nextIdx}`,
-      hour: 5,
-      minute: 23,
-      period: "AM",
+      hour,
+      minute,
+      period,
       repeatDays: [...repeatDays],
     });
   };
@@ -465,6 +510,15 @@ export default function RemindersScreen() {
   const cancelScheduledFor = async (data: ReminderData) => {
     const Notifications = await getNotifications();
     if (!Notifications) return;
+
+    try {
+      // Clear everything so old weekly/inexact triggers cannot fire late.
+      await Notifications.cancelAllScheduledNotificationsAsync();
+      return;
+    } catch (error) {
+      console.log("Cancel all notifications failed, falling back to ids:", error);
+    }
+
     const allIds = [
       ...(data.workout.scheduledIds || []),
       ...(data.meal.scheduledIds || []),
@@ -638,25 +692,37 @@ export default function RemindersScreen() {
         if (!item.enabled) continue;
 
         const hour24 = convertTo24Hour(item.hour, item.period);
+        // Prefer exact DATE triggers (fires at second 0 of the minute) over WEEKLY,
+        // which Android often delivers late under battery optimization / Doze.
+        const fireDates = getUpcomingReminderDates(
+          weekday,
+          hour24,
+          item.minute,
+          REMINDER_SCHEDULE_WEEKS
+        );
 
-        try {
-          const id = await Notifications.scheduleNotificationAsync({
-            content: {
-              title: meta.title,
-              body: meta.body,
-              sound: "default" as any,
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-              weekday,
-              hour: hour24,
-              minute: item.minute,
-              channelId: "reminders",
-            } as any,
-          });
-          scheduledIds.push(id);
-        } catch (e) {
-          console.log("Schedule notification failed:", e);
+        for (const fireAt of fireDates) {
+          try {
+            const id = await Notifications.scheduleNotificationAsync({
+              content: {
+                title: meta.title,
+                body: meta.body,
+                sound: "default" as any,
+                priority: Notifications.AndroidNotificationPriority?.MAX,
+                ...(Platform.OS === "android"
+                  ? { channelId: REMINDER_CHANNEL_ID }
+                  : {}),
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: fireAt,
+                channelId: REMINDER_CHANNEL_ID,
+              } as any,
+            });
+            scheduledIds.push(id);
+          } catch (e) {
+            console.log("Schedule notification failed:", e);
+          }
         }
       }
     }

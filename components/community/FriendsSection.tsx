@@ -8,6 +8,7 @@ import {
   resolveFriendRequestNotificationByRequestId,
   subscribeFriendsList,
   subscribePendingIncomingFriendRequests,
+  displayCommunityUserName,
 } from "@/lib/communityService";
 import type { FriendListEntry, FriendRequest } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -32,11 +33,30 @@ function ProfileAvatar({ uri, size = 44 }: { uri: string | null; size?: number }
 }
 
 type FriendsSectionProps = {
+  adminUid: string | null;
+  liveNamesById?: Record<string, string>;
   onOpenProfile: (userId: string) => void;
   onOpenChat: (friend: FriendListEntry) => void;
 };
 
-export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProps) {
+function friendDisplayName(
+  friend: FriendListEntry,
+  adminUid: string | null,
+  liveNamesById?: Record<string, string>
+): string {
+  return displayCommunityUserName(
+    friend.id,
+    liveNamesById?.[friend.id] ?? friend.name,
+    adminUid
+  );
+}
+
+export function FriendsSection({
+  adminUid,
+  liveNamesById,
+  onOpenProfile,
+  onOpenChat,
+}: FriendsSectionProps) {
   const { cardStyle, theme, segmentTrackStyle, segmentActiveStyle } = useThemedScreen();
   const [friendsSubTab, setFriendsSubTab] = useState<"friends" | "pending">("friends");
   const [friends, setFriends] = useState<FriendListEntry[]>([]);
@@ -58,12 +78,14 @@ export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProp
   const filteredFriends = useMemo(() => {
     const needle = searchText.trim().toLowerCase();
     if (!needle) return friends;
-    return friends.filter(
-      (friend) =>
-        friend.name.toLowerCase().includes(needle) ||
+    return friends.filter((friend) => {
+      const name = friendDisplayName(friend, adminUid, liveNamesById);
+      return (
+        name.toLowerCase().includes(needle) ||
         friend.email.toLowerCase().includes(needle)
-    );
-  }, [friends, searchText]);
+      );
+    });
+  }, [friends, searchText, adminUid, liveNamesById]);
 
   const filteredPending = useMemo(() => {
     const needle = searchText.trim().toLowerCase();
@@ -74,7 +96,8 @@ export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProp
   }, [pendingRequests, searchText]);
 
   const handleRemoveFriend = (friend: FriendListEntry) => {
-    Alert.alert("Remove friend", `Remove ${friend.name} from your friends?`, [
+    const name = friendDisplayName(friend, adminUid, liveNamesById);
+    Alert.alert("Remove friend", `Remove ${name} from your friends?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Remove",
@@ -261,7 +284,9 @@ export function FriendsSection({ onOpenProfile, onOpenChat }: FriendsSectionProp
               <ProfileAvatar uri={friend.profileImage} />
             </Pressable>
             <Pressable onPress={() => onOpenProfile(friend.id)} className="flex-1 ml-3">
-              <ThemedText className="text-base font-extrabold">{friend.name}</ThemedText>
+              <ThemedText className="text-base font-extrabold">
+                {friendDisplayName(friend, adminUid, liveNamesById)}
+              </ThemedText>
               <ThemedText variant="muted" className="text-xs mt-0.5">
                 {friend.email}
               </ThemedText>

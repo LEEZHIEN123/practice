@@ -1,34 +1,127 @@
 import Constants from "expo-constants";
+import * as ImageManipulator from "expo-image-manipulator";
 import { formatCoachContextForDisplay, type CoachUserContext } from "./aiCoachContext";
 
 export type CoachChatTurn = { role: "user" | "assistant"; text: string };
+
+export type CoachImageAttachment = {
+  /** Local file URI (camera / gallery). Converted to JPEG base64 before sending. */
+  uri: string;
+};
 
 export type { CoachUserContext };
 
 const APP_SCOPE = `
 You are the AI assistant in "Personalised Workout and Nutrition Guidance".
 
-You can answer **any fitness-related question** and **guide how to use this app** when asked.
+**Scope — answer ONLY these topics:**
+1. **Workouts** — exercise types, training, form, workout plans, scheduling, recovery after exercise, calories burned from exercise.
+2. **Nutrition** — meals, calories, macros, dietary preferences, healthy eating for goals, hydration as it relates to nutrition/fitness.
+3. **How to use this app** — for ANY feature below, give clear numbered steps with **exact** tab, screen, and button names from **App paths**. Never say a listed feature does not exist.
 
-**Reply to the question only**
+**Images:** Users may attach a photo (often a meal, plate, snack, or workout-related image). Analyze it for workout/nutrition help — e.g. estimate food, portions, or calories when it's a meal photo; give form/safety tips if it's exercise-related. If the image is unrelated to workout/nutrition, politely say so and offer relevant help instead.
+
+**Do NOT answer** general knowledge unrelated to fitness/nutrition or this app (politics, homework, entertainment, dating, etc.). No medical diagnosis or prescribing medication. For **how-to / where-is / navigation** questions, always guide using **App paths** below — including Community, Music, Progress, Profile, and AI Chatbot features.
+
+**Tone:** Always be **polite, warm, and friendly** in every reply — including when declining off-topic questions. Use encouraging language. Never be curt or dismissive. **Bold** key terms.
+
+**Reply style:**
 - Answer exactly what the user asked — nothing extra.
+- Workout/nutrition explain / tips / advice → full, clear, structured answer with practical examples.
+- How-to / where-is / navigation → numbered steps using **exact** names from App paths below. Include every relevant tap (tab → section → button).
+- You cannot tap buttons or perform actions — only guide the user with steps.
 
-- Since you are a chatbot, you do not have access to the app. If they ask **how to use** a feature: give navigation steps.
- 
-Explain / tips / advice → full, clear, structured answer. Navigation → clearly numbered steps. Helpful depth by default unless they want a quick yes/no.
+**App paths (exact names — use for ALL navigation help):**
 
-App paths (use only for how-to / do-it-for-me):
-Tabs: **Home**, **Discover**, **Community**, **Progress**, **Profile**.
-**Home** — calorie ring; **View Workout Plan**; **PERSONALISED NUTRITION GUIDANCE → View Nutrition Guidance** (nutrition plan is on Home, not Discover).
-**Discover** — All Workouts; **All Nutrition** (Log Meal / Food Library — logging only); All Music; AI Chatbot.
-**Progress** — charts; **Water Intake**; **Daily Steps** (ranking); **Achievements**.
-**Community** — feed, Friends, Chat.
-**Profile** — profile, dietary preference, reminders, BMI, settings.
-Key: nutrition plan → **Home → View Nutrition Guidance**; log food → **Discover → All Nutrition → Log Meal**.
+**Main bottom tabs:** **Home**, **Discover**, **Community**, **Progress**, **Profile**.
 
-Decline only non-fitness / non-app topics. When the user asks something unrelated, politely say this app focuses on **fitness-related** topics only, then offer to help with workouts, meals, hydration, goals, or how to use the app. No medical diagnosis. Friendly; **bold** key terms. Use profile data below when relevant — do not invent stats.
+**Account & onboarding**
+- **Register** / **Login** — app entry screens.
+- New user onboarding flow: **Profile Details** → **Activity Level** → **Dietary Preference** → **Schedule Plan** → **BMI Analysis** → **Home**.
+- **Schedule Plan** (first-time plan setup) — choose **One Week Plan**, **Biweekly Plan**, or **Monthly Plan**; also reached from **Home** if no plan duration is set yet.
 
-**Vary your answers:** Each reply should feel fresh — change wording, examples, structure, and tips when the same or similar question is asked again. Keep facts accurate; do not repeat the same script every time.
+**Home tab**
+- **BMI SCORE** card — current BMI and category.
+- **Today Calorie** ring — **Goal**, **Food**, **Exercise** breakdown; remaining calories.
+- **PERSONALISED WORKOUT PLAN** → **View Workout Plan** → **Workout Plan** screen (day list).
+- **PERSONALISED NUTRITION GUIDANCE** → **View Nutrition Guidance** → **Nutrition Guidance** screen (meal plan).
+
+**Discover tab**
+- **Explore Workouts** → **All Workouts**.
+- **Explore Nutrition** → **All Nutrition**.
+- **Explore Mind** → **All Music**.
+- **AI Coach** → **AI Chatbot**.
+
+**Workouts — personalised plan**
+- **Home** → **View Workout Plan** → **Workout Plan**.
+- Pick a **Day** → **Start** → **Day Workout** screen.
+- **Day Workout**: **Start Workout** → choose **Start from 0** or set countdown → **Pause** / **Resume** → pause menu **Complete** or **Restart**; tap **back** while active to minimize to floating workout window (**Open**, **Complete**, pause/play).
+- **Workout Plan**: **Switch plan** to change duration (week / biweekly / month).
+
+**Workouts — free catalog**
+- **Discover** → **All Workouts** → pick type (**Yoga**, **Strength**, **HIIT**, **Cardio**) → pick exercise → **Free Workout** screen → **Start Workout** (same pause / complete / minimize behavior).
+- Tap heart (**Favourite**) on a workout to save it.
+
+**Nutrition — personalised plan**
+- **Home** → **View Nutrition Guidance** → **Nutrition Guidance**.
+- Browse meals by day; tap a meal for **Nutrition Meal Detail**.
+- Switch dietary chips (e.g. balanced / vegetarian options shown) to change meal suggestions.
+- **Switch plan** to change nutrition plan duration.
+
+**Nutrition — logging & library**
+- **Discover** → **All Nutrition** — top tabs: **Meal Library**, **Barcode**, **Log Meal**.
+- **Meal Library** — search recipes; tap food → **Food Detail**; tap tags → **Food By Tag**; heart icon to favourite.
+- **Barcode** — scan with camera or enter barcode number.
+- **Log Meal** — sub-tabs **Log meal** and **History**:
+  - **Manual** or **AI analyse** (meal photo) modes.
+  - Fill meal details → **Log meal**.
+  - **History** — view, edit (**Meal History Edit**), or delete past logged meals.
+
+**All Music**
+- **Discover** → **All Music** → **Add** / **Import from phone** to load songs.
+- **Search your music**; tap **30s** snippet or **Full** play.
+- Leaving the screen shows floating music mini player (**Open**, collapse, close).
+
+**AI Chatbot**
+- **Discover** → **AI Chatbot**.
+- Type a message or tap image icon → **Take Photo** / **Choose from Gallery** → optional caption → send.
+- **Chat history** (clock icon), **New chat**, suggested prompt chips.
+
+**Community tab**
+- Sub-tabs: **Community** (feed), **Friends**, **Chat**.
+- **Community** feed: search bar (**Search posts, tags, or people...**); **Manage** filter (**My like**, **My comment**, **My friend's post**); tap **#tag** for tag view.
+- Floating **New Post** — add text, photos, tags, achievement chips.
+- Top-right **Notifications** bell → **Community Notifications**.
+- Top-right profile avatar → **Community My Posts**.
+- Post actions: like, comment, share to chat, report, edit/delete (own posts).
+- **Friends** tab → **Add friend** → **Community Add Friend** (search users).
+- **Chat** tab → open thread → **Community Chat** (messages, photos, stickers); Support Admin chat available from profile/support entry points.
+
+**Progress tab**
+- Metric tabs: **Weight**, **Workout**, **Meal**.
+- Period tabs: **Weekly**, **Monthly**, **Yearly**.
+- **Log weight +** — log weight for a date.
+- **SEE ALL >** → **Progress Details** (full charts for current tab & period).
+- **Daily Steps** card → **Daily Steps** screen (**Tap for progress**) — step history & leaderboard.
+- **Water Intake** card → **Water Intake** (**Tap to record**) — log ml, view suggestion.
+- **Achievements** card → **Achievements** — badge categories + **Ranking** leaderboard.
+
+**Profile tab**
+- Stats cards: total calories, workouts, current weight.
+- **Edit Profile** — photo, name, gender, age, height, weight, **Activity Level**.
+- **My Report** — **Daily report** / **Weekly report**; share PDF.
+- **Reminders** — **Workout Reminder**, **Meal Reminder**, **Water Intake** schedules (add times, repeat days, enable/disable).
+- **Favourites** — saved **Workouts** and **Nutrition** items.
+- **My Goals** — change fitness goal.
+- **Appearance** — light / dark / system theme.
+- **Terms of Service**.
+- **Change password**, **Delete account**, **Logout**.
+
+**Off-topic decline (always polite):** If the question is not about workouts, nutrition, or how to use this app, kindly explain that you focus on those topics, then offer examples you can help with. If they asked how to reach an app feature, answer with navigation steps instead of declining.
+
+Use profile data below when relevant — do not invent stats.
+
+**Vary your answers:** Change wording, examples, and structure when similar questions repeat. Keep facts accurate.
 `;
 
 /** Cap history size — large threads make native Gemini calls feel slow. */
@@ -53,30 +146,98 @@ function isExplainStyleQuestion(text: string): boolean {
   );
 }
 
-function buildCoachUserPrompt(userMessage: string): string {
+function isNavigationQuestion(text: string): boolean {
+  const q = text.trim().toLowerCase();
+  return (
+    /\b(how do i|how can i|how to|where (is|are|do i|can i)|show me how|take me to|open|navigate|find .+ in the app|which (tab|screen|page|button|feature)|what button|log .+ for me|help me (log|open|start|add|change|play|post|send|upload|import|scan|switch|set|enable|disable|view|see|check|access|use|record|share|favorite|favourite))\b/.test(
+      q
+    ) ||
+    /\b(in the app|in this app|using the app|app feature|app function|where .+ (feature|function|screen|page|tab|button))\b/.test(q)
+  );
+}
+
+function isOffTopicQuestion(text: string): boolean {
+  const q = text.trim().toLowerCase();
+  if (!q) return false;
+  if (/^(hi|hello|hey|thanks|thank you|ok|okay|good morning|good evening)\b/.test(q) && q.length < 40) {
+    return false;
+  }
+  const workoutNutritionApp =
+    /\b(workout|exercise|train|gym|cardio|hiit|yoga|strength|rep|set|muscle|calorie|kcal|macro|protein|carb|fat|meal|food|eat|diet|nutrition|bmi|weight|hydrat|water intake|log meal|workout plan|nutrition plan|barcode|recipe|community|friend|chat|post|notification|music|song|reminder|achievement|favourite|favorite|profile|progress|discover|home tab|report|appearance|password|register|login|schedule plan|ai chat|chatbot|step|leaderboard|barcode|meal library)\b/.test(
+      q
+    );
+  const appHowTo = isNavigationQuestion(q);
+  if (workoutNutritionApp || appHowTo) return false;
+  const clearlyOffTopic =
+    /\b(politics|election|president|homework|essay|movie|game|dating|relationship advice|stock|crypto|weather forecast|joke|poem|write code|programming homework)\b/.test(
+      q
+    );
+  return clearlyOffTopic;
+}
+
+function buildCoachUserPrompt(userMessage: string, hasImage: boolean): string {
   const styles = [
-    "Use a coaching tone with practical examples.",
-    "Lead with the key takeaway, then expand with bullets.",
-    "Use a friendly conversational tone with clear sections.",
-    "Start with a short overview, then give actionable tips.",
-    "Explain simply first, then add deeper detail.",
+    "Use a warm, polite coaching tone with practical examples.",
+    "Lead with the key takeaway, then expand with bullets — stay friendly throughout.",
+    "Use an encouraging conversational tone with clear sections.",
+    "Start with a brief friendly opener, then give actionable tips.",
+    "Explain simply first, then add deeper detail — never sound cold or robotic.",
   ];
   const styleHint = styles[Math.floor(Math.random() * styles.length)];
+  const message = userMessage.trim()
+    ? userMessage.trim()
+    : hasImage
+      ? "Please look at this photo and help with workout or nutrition advice."
+      : "";
 
-  if (!isExplainStyleQuestion(userMessage)) {
-    return `${userMessage}
+  if (hasImage) {
+    return `${message}
 
-[Reply instruction: Answer this question only. Vary your wording from previous replies. ${styleHint}]`;
+[Reply instruction: The user attached a photo. Analyze the image for workout/nutrition relevance (especially meal/food photos — estimate dish, portion, and rough calories/macros when possible). Answer their caption if they wrote one. Stay polite and friendly. ${styleHint}]`;
   }
-  return `${userMessage}
 
-[Reply instruction: Answer this question only. Give a complete explanation. Do not add app navigation steps. Do not say you lack access unless they asked you to perform an action in the app. Vary your wording and examples from previous replies. ${styleHint}]`;
+  if (isOffTopicQuestion(message)) {
+    return `${message}
+
+[Reply instruction: This question is outside workout and nutrition scope. Politely and warmly decline — thank them for asking, explain you focus on workouts, nutrition, and how to use those features in this app, then offer 2–3 example topics you can help with. Do not answer the off-topic content. ${styleHint}]`;
+  }
+
+  if (isNavigationQuestion(message)) {
+    return `${message}
+
+[Reply instruction: This is a how-to / navigation question. Give numbered steps using exact tab, screen, and button names from the system instructions App paths. Cover every tap needed — do not skip steps. Be polite and friendly. Do not claim you can perform the action for them. ${styleHint}]`;
+  }
+
+  if (!isExplainStyleQuestion(message)) {
+    return `${message}
+
+[Reply instruction: Answer this workout or nutrition question only. Stay polite and friendly. Vary your wording from previous replies. ${styleHint}]`;
+  }
+  return `${message}
+
+[Reply instruction: Answer this workout or nutrition question only. Give a complete explanation. Do not add app navigation steps unless they asked how to use the app. Do not say you lack access unless they asked you to perform an action in the app. Stay polite and friendly. Vary your wording and examples. ${styleHint}]`;
+}
+
+async function imageUriToBase64Jpeg(uri: string): Promise<string> {
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 768 } }],
+    {
+      compress: 0.6,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    }
+  );
+  if (!result.base64) {
+    throw new Error("Could not prepare the photo for the chat.");
+  }
+  return result.base64;
 }
 
 export function buildCoachSystemInstruction(userContext?: CoachUserContext | null): string {
   const profileBlock = userContext ? formatCoachContextForDisplay(userContext) : "";
   if (!profileBlock) {
-    return `${APP_SCOPE}\n\nNo user profile loaded yet. Give general fitness guidance and mention they can complete their profile for personalized tips.`;
+    return `${APP_SCOPE}\n\nNo user profile loaded yet. Give general workout and nutrition guidance in a friendly tone, and mention they can complete their profile for personalized tips.`;
   }
   return `${APP_SCOPE}\n\nCurrent user profile (from the app — use when relevant):\n${profileBlock}`;
 }
@@ -131,26 +292,36 @@ function compactHistory(history: CoachChatTurn[]): CoachChatTurn[] {
   }));
 }
 
-function buildRequestBody(
+async function buildRequestBody(
   history: CoachChatTurn[],
   userMessage: string,
   userContext: CoachUserContext | null | undefined,
-  thinkingMode: "budget" | "level" | "off"
+  thinkingMode: "budget" | "level" | "off",
+  image?: CoachImageAttachment | null
 ) {
-  const explainMode = isExplainStyleQuestion(userMessage);
+  const hasImage = Boolean(image?.uri);
+  const explainMode = hasImage || isExplainStyleQuestion(userMessage);
+  const promptText = buildCoachUserPrompt(userMessage, hasImage);
+  const userParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+  if (hasImage && image?.uri) {
+    const base64 = await imageUriToBase64Jpeg(image.uri);
+    userParts.push({ inlineData: { mimeType: "image/jpeg", data: base64 } });
+  }
+  userParts.push({ text: promptText });
+
   const contents = [
     ...compactHistory(history).map((turn) => ({
       role: turn.role === "user" ? "user" : "model",
       parts: [{ text: turn.text }],
     })),
-    { role: "user", parts: [{ text: buildCoachUserPrompt(userMessage) }] },
+    { role: "user", parts: userParts },
   ];
 
   const generationConfig: Record<string, unknown> = {
     temperature: explainMode ? 0.9 : 0.85,
     topP: 0.95,
     // Keep replies snappy; long caps make native waits feel slow.
-    maxOutputTokens: explainMode ? 1024 : 768,
+    maxOutputTokens: explainMode || hasImage ? 1024 : 768,
   };
 
   if (thinkingMode === "budget") {
@@ -219,12 +390,13 @@ function isRetryableConfigError(message: string): boolean {
   );
 }
 
-/** Send conversation history + new user message to Gemini; returns assistant reply text. */
+/** Send conversation history + new user message (optional image) to Gemini; returns assistant reply text. */
 export async function sendCoachMessage(
   history: CoachChatTurn[],
   userMessage: string,
   userContext?: CoachUserContext | null,
-  onPartial?: (text: string) => void
+  onPartial?: (text: string) => void,
+  image?: CoachImageAttachment | null
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
@@ -232,9 +404,12 @@ export async function sendCoachMessage(
       "Gemini API key is not set. Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file and restart Expo."
     );
   }
+  if (!userMessage.trim() && !image?.uri) {
+    throw new Error("Type a message or attach a photo first.");
+  }
 
   const controller = new AbortController();
-  const timeoutMs = 35_000;
+  const timeoutMs = image?.uri ? 45_000 : 35_000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -246,12 +421,8 @@ export async function sendCoachMessage(
     let lastError: unknown = null;
     for (const mode of modes) {
       try {
-        const text = await generateOnce(
-          apiKey,
-          buildRequestBody(history, userMessage, userContext, mode),
-          controller.signal,
-          onPartial
-        );
+        const body = await buildRequestBody(history, userMessage, userContext, mode, image);
+        const text = await generateOnce(apiKey, body, controller.signal, onPartial);
         preferredThinkingMode = mode;
         return text;
       } catch (err) {
@@ -266,7 +437,7 @@ export async function sendCoachMessage(
   } catch (e) {
     if (e instanceof Error && (e.name === "AbortError" || controller.signal.aborted)) {
       throw new Error(
-        "Gemini timed out after 35s. Check phone internet, that Google AI is reachable, and try again."
+        `Gemini timed out after ${Math.round(timeoutMs / 1000)}s. Check phone internet, that Google AI is reachable, and try again.`
       );
     }
     throw e instanceof Error

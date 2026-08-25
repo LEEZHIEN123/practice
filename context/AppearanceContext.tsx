@@ -1,22 +1,22 @@
+import { auth } from "@/firebaseConfig";
 import {
-  adminAppearanceThemes,
-  appearanceThemes,
-  loadAppearanceMode,
-  saveAppearanceMode,
-  type AppearanceMode,
-  type AppearanceTheme,
+    adminAppearanceThemes,
+    appearanceThemes,
+    loadAppearanceMode,
+    saveAppearanceMode,
+    type AppearanceMode,
+    type AppearanceTheme,
 } from "@/lib/appearance";
 import { isAdminEmail } from "@/lib/communityService";
-import { auth } from "@/firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 import { useColorScheme } from "nativewind";
 import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
 } from "react";
 
 type AppearanceContextValue = {

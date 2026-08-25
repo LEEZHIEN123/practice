@@ -1,4 +1,6 @@
 import { getExpoAvAudioOrNull } from "@/lib/expoAvSafe";
+import { auth } from "@/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
 import React, {
   createContext,
   useCallback,
@@ -380,6 +382,15 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     setDurationMillis(0);
     setShouldResumeOnActive(false);
   }, [unloadCurrent]);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        void stop();
+      }
+    });
+    return () => unsub();
+  }, [stop]);
 
   const skipNext = useCallback(async () => {
     const list = playlistRef.current;

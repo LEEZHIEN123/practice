@@ -79,6 +79,7 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { adminResendPasswordResetEmail } from "@/lib/adminUserManagement";
+import { completeWorkoutBeforeLogout } from "@/lib/workoutLogoutCleanup";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -855,20 +856,7 @@ export function AdminCommunityHub() {
   };
 
   const handleBlock = (report: CommunityReport) => {
-    const isComment = report.targetType === "comment";
-    Alert.alert(
-      isComment ? "Block Comment" : "Block Post",
-      isComment
-        ? "This comment will be removed. The reporter and comment author will be notified via Support Admin chat."
-        : "This post will be hidden from all users. The reporter and post author will be notified via Support Admin chat.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () => setBlockTarget({ type: "report", report }),
-        },
-      ]
-    );
+    setBlockTarget({ type: "report", report });
   };
 
   const exitReportDeleteMode = () => {
@@ -932,9 +920,15 @@ export function AdminCommunityHub() {
       Alert.alert("Sign in required", "Please sign in to post.");
       return;
     }
-    if (!postText.trim()) return;
+    const content = postText.trim();
+    if (!content || posting) return;
     setEditingPost(null);
-    setComposerVisible(true);
+    await handleSavePost({
+      content,
+      tags: [],
+      achievementIds: [],
+      imageUris: [],
+    });
   };
 
   const handleLike = async (post: CommunityPost) => {
@@ -1038,17 +1032,7 @@ export function AdminCommunityHub() {
 
   const requestBlockPost = (post: CommunityPost) => {
     setMenuPost(null);
-    Alert.alert(
-      "Block Post",
-      "This post will be removed and the author will be notified via Support Admin chat. It will also appear under Reviewed in report management.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () => setBlockTarget({ type: "post", post }),
-        },
-      ]
-    );
+    setBlockTarget({ type: "post", post });
   };
 
   const handleConfirmBlock = async (reason: string) => {
@@ -1329,6 +1313,7 @@ export function AdminCommunityHub() {
         onPress: () => {
           void (async () => {
             try {
+              await completeWorkoutBeforeLogout();
               await signOut(auth);
               router.replace("/login");
             } catch {
@@ -1735,11 +1720,16 @@ export function AdminCommunityHub() {
                 />
                 <Pressable
                   onPress={() => void handleCreatePost()}
-                  disabled={!postText.trim()}
+                  disabled={!postText.trim() || posting}
                   className="mt-3 rounded-full py-3 items-center"
-                  style={{ backgroundColor: postText.trim() ? theme.accent : theme.iconMuted }}
+                  style={{
+                    backgroundColor:
+                      postText.trim() && !posting ? theme.accent : theme.iconMuted,
+                  }}
                 >
-                  <Text className="text-sm font-extrabold text-white">Continue</Text>
+                  <Text className="text-sm font-extrabold text-white">
+                    {posting && !composerVisible ? "Posting…" : "Continue"}
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
@@ -2186,7 +2176,7 @@ export function AdminCommunityHub() {
                         onPress={() => handleApproveReReview(request)}
                         disabled={busy || reportDeleteMode}
                         className="flex-1 rounded-full py-2.5 items-center"
-                        style={{ backgroundColor: theme.accent, opacity: busy || reportDeleteMode ? 0.5 : 1 }}
+                        style={{ backgroundColor: "#52B69A", opacity: busy || reportDeleteMode ? 0.5 : 1 }}
                       >
                         <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                           Restore Post
@@ -2334,7 +2324,7 @@ export function AdminCommunityHub() {
                           onPress={() => handleApproveReReviewFromReport(report)}
                           disabled={cardDisabled}
                           className="flex-1 rounded-full py-2.5 items-center"
-                          style={{ backgroundColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
+                          style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
                         >
                           <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                             Restore Post
@@ -2560,7 +2550,7 @@ export function AdminCommunityHub() {
                         }
                         disabled={cardDisabled}
                         className="flex-1 rounded-full py-2.5 items-center"
-                        style={{ backgroundColor: theme.accent, opacity: cardDisabled ? 0.5 : 1 }}
+                        style={{ backgroundColor: "#52B69A", opacity: cardDisabled ? 0.5 : 1 }}
                       >
                         <Text className="text-xs font-extrabold" style={{ color: "#ffffff" }}>
                           {report.targetType === "comment" ? "Restore Comment" : "Restore Post"}
@@ -3275,11 +3265,7 @@ export function AdminCommunityHub() {
                   ? "Provide a reason. The comment author will be notified via Support Admin chat, and this action will appear under Reviewed."
                   : "Provide a reason. The content author will receive this via Support Admin chat, and this action will appear under Reviewed."
         }
-        presetReasons={
-          blockTarget?.type === "report" || blockTarget?.type === "reReview"
-            ? ADMIN_BLOCK_POST_REASONS
-            : undefined
-        }
+        presetReasons={ADMIN_BLOCK_POST_REASONS}
         onClose={() => setBlockTarget(null)}
         onConfirm={handleConfirmBlock}
       />

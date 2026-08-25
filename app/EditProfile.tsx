@@ -6,8 +6,15 @@ import {
   useProfileCardStyles,
 } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
-import { syncAuthorProfileImageOnPosts } from "@/lib/communityService";
+import { syncAuthorProfileImageOnChats, syncAuthorProfileImageOnPosts, syncAuthorProfileNameOnChats, syncAuthorProfileNameOnPosts } from "@/lib/communityService";
+import {
+  BMI_CATEGORY_PLAN_CHANGE_MESSAGE,
+  BMI_CATEGORY_PLAN_CHANGE_TITLE,
+  didBmiCategoryChange,
+} from "@/lib/bmiRecommendation";
 import { saveHomeUserCache } from "@/lib/homeUserCache";
+import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
+import { syncTodayWeightLogFromProfile } from "@/lib/weightAutoFill";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { ImageEditor } from "expo-dynamic-image-crop";
@@ -16,7 +23,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -41,6 +48,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 export default function EditProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const calendarTz = useUserCalendarTimezone();
   const { theme, screenStyle, cardStyle } = useThemedScreen();
   const { inputStyle, rowStyle, placeholderColor, modalCardStyle } = useProfileCardStyles();
 
@@ -62,9 +70,12 @@ export default function EditProfile() {
   const [ageError, setAgeError] = useState("");
   const [heightError, setHeightError] = useState("");
   const [weightError, setWeightError] = useState("");
+  const [nameError, setNameError] = useState("");
 
   const [activityLevel, setActivityLevel] = useState<ActivityKey | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Last saved height/weight — used to detect BMI category changes on save. */
+  const savedMetricsRef = useRef<{ height: number; weight: number }>({ height: 175, weight: 72 });
 
   const [editorVisible, setEditorVisible] = useState(false);
   const [editorImage, setEditorImage] = useState<string | null>(null);
@@ -174,11 +185,13 @@ export default function EditProfile() {
         if (typeof data.height === "number") {
           setHeight(data.height);
           setHeightText(data.height.toFixed(1));
+          savedMetricsRef.current.height = data.height;
         }
 
         if (typeof data.weight === "number") {
           setWeight(data.weight);
           setWeightText(data.weight.toFixed(1));
+          savedMetricsRef.current.weight = data.weight;
         }
 
         if (data.activityLevel) {
@@ -317,53 +330,50 @@ export default function EditProfile() {
     const user = auth.currentUser;
     if (!user) return;
 
+    const trimmedName = userName.trim();
+    let ok = true;
+
+    if (!trimmedName) {
+      setNameError("Full name is required.");
+      ok = false;
+    } else {
+      setNameError("");
+    }
+
+    const parsedAge = parseInt(ageText || "", 10);
+    let nextAge = 0;
+    if (!Number.isFinite(parsedAge) || parsedAge < 20 || parsedAge > 90) {
+      setAgeError("Age must be between 20 and 90.");
+      ok = false;
+    } else {
+      nextAge = parsedAge;
+      setAgeError("");
+    }
+
+    const parsedHeight = parseFloat(heightText || "");
+    let nextHeight = 0;
+    if (!Number.isFinite(parsedHeight) || parsedHeight < 120 || parsedHeight > 220) {
+      setHeightError("Height must be between 120 cm and 220 cm.");
+      ok = false;
+    } else {
+      nextHeight = parsedHeight;
+      setHeightError("");
+    }
+
+    const parsedWeight = parseFloat(weightText || "");
+    let nextWeight = 0;
+    if (!Number.isFinite(parsedWeight) || parsedWeight < 30 || parsedWeight > 200) {
+      setWeightError("Weight must be between 30 kg and 200 kg.");
+      ok = false;
+    } else {
+      nextWeight = parsedWeight;
+      setWeightError("");
+    }
+
+    if (!ok) return;
+
     try {
       setLoading(true);
-
-      const parsedAge = parseInt(ageText || "", 10);
-      if (!Number.isFinite(parsedAge)) {
-        setAgeError("Age must be between 20 and 90.");
-        Alert.alert("Invalid age", "Age must be between 20 and 90.");
-        return;
-      }
-      const nextAge = clamp(parsedAge, 20, 90);
-      if (nextAge !== parsedAge) {
-        setAgeError("Age must be between 20 and 90.");
-        Alert.alert("Invalid age", "Age must be between 20 and 90.");
-        return;
-      } else {
-        setAgeError("");
-      }
-
-      const parsedHeight = parseFloat(heightText || "");
-      if (!Number.isFinite(parsedHeight)) {
-        setHeightError("Height must be between 120 cm and 220 cm.");
-        Alert.alert("Invalid height", "Height must be between 120 cm and 220 cm.");
-        return;
-      }
-      const nextHeight = clamp(parsedHeight, 120, 220);
-      if (nextHeight !== parsedHeight) {
-        setHeightError("Height must be between 120 cm and 220 cm.");
-        Alert.alert("Invalid height", "Height must be between 120 cm and 220 cm.");
-        return;
-      } else {
-        setHeightError("");
-      }
-
-      const parsedWeight = parseFloat(weightText || "");
-      if (!Number.isFinite(parsedWeight)) {
-        setWeightError("Weight must be between 30 kg and 200 kg.");
-        Alert.alert("Invalid weight", "Weight must be between 30 kg and 200 kg.");
-        return;
-      }
-      const nextWeight = clamp(parsedWeight, 30, 200);
-      if (nextWeight !== parsedWeight) {
-        setWeightError("Weight must be between 30 kg and 200 kg.");
-        Alert.alert("Invalid weight", "Weight must be between 30 kg and 200 kg.");
-        return;
-      } else {
-        setWeightError("");
-      }
 
       setAge(nextAge);
       setAgeText(String(nextAge));
@@ -393,7 +403,7 @@ export default function EditProfile() {
       }
 
       await updateDoc(doc(db, "users", user.uid), {
-        name: userName.trim().slice(0, 14),
+        name: trimmedName.slice(0, 14),
         email: userEmail || user.email || null,
         gender,
         bio: userBio,
@@ -406,22 +416,53 @@ export default function EditProfile() {
         activityMultiplier: pickedActivity?.multiplier ?? null,
       });
 
+      // Keep Progress today's weight / chart in sync when profile weight changes.
+      if (Math.abs(nextWeight - savedMetricsRef.current.weight) >= 0.05) {
+        await syncTodayWeightLogFromProfile({
+          uid: user.uid,
+          weightKg: nextWeight,
+          calendarTz,
+        }).catch((e) => console.log("today weight log sync failed:", e));
+      }
+
       await saveHomeUserCache(user.uid, {
-        name: userName.trim().slice(0, 14),
+        name: trimmedName.slice(0, 14),
         profileImage:
           typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")
             ? profileImageUrl
             : null,
+        weight: nextWeight,
+        height: nextHeight,
+        age: nextAge,
+        gender,
+        activityMultiplier: pickedActivity?.multiplier ?? undefined,
       });
 
-      if (typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")) {
-        await syncAuthorProfileImageOnPosts(profileImageUrl).catch(() => {});
-      }
+      await Promise.all([
+        syncAuthorProfileNameOnChats(trimmedName.slice(0, 14)),
+        syncAuthorProfileNameOnPosts(trimmedName.slice(0, 14)),
+        typeof profileImageUrl === "string" && profileImageUrl.startsWith("http")
+          ? Promise.all([
+              syncAuthorProfileImageOnPosts(profileImageUrl),
+              syncAuthorProfileImageOnChats(profileImageUrl),
+            ])
+          : syncAuthorProfileImageOnChats(profileImageUrl),
+      ]).catch(() => {});
 
-      Alert.alert(
-        "Profile Updated",
-        "Your profile has been updated successfully!"
+      const previousBmi = calculateBMI(
+        savedMetricsRef.current.weight,
+        savedMetricsRef.current.height
       );
+      savedMetricsRef.current = { height: nextHeight, weight: nextWeight };
+
+      if (didBmiCategoryChange(previousBmi, bmi)) {
+        Alert.alert(BMI_CATEGORY_PLAN_CHANGE_TITLE, BMI_CATEGORY_PLAN_CHANGE_MESSAGE);
+      } else {
+        Alert.alert(
+          "Profile Updated",
+          "Your profile has been updated successfully!"
+        );
+      }
       router.push("/profile");
     } catch (error) {
       console.log("Error saving profile:", error);
@@ -514,13 +555,21 @@ export default function EditProfile() {
         </View>
         <TextInput
           value={userName}
-          onChangeText={(t) => setUserName(t.slice(0, 14))}
+          onChangeText={(t) => {
+            setUserName(t.slice(0, 14));
+            if (nameError) setNameError("");
+          }}
           maxLength={14}
-          className="rounded-xl px-4 py-3 mb-4"
+          className="rounded-xl px-4 py-3"
           style={inputStyle}
           placeholder="Enter your full name"
           placeholderTextColor={placeholderColor}
         />
+        {!!nameError ? (
+          <Text className="text-red-500 text-sm mt-1 ml-1 mb-4">{nameError}</Text>
+        ) : (
+          <View className="mb-4" />
+        )}
 
         <View className="mb-4">
           <ThemedText className="text-lg mb-2">Email Address</ThemedText>
@@ -752,7 +801,7 @@ export default function EditProfile() {
               <Pressable
                 key={o.key}
                 onPress={() => setActivityLevel(o.key)}
-                className="rounded-2xl p-4 flex-row items-center justify-between"
+                className="rounded-2xl p-4 flex-row items-center"
                 style={
                   isActive
                     ? {
@@ -763,9 +812,9 @@ export default function EditProfile() {
                     : cardStyle
                 }
               >
-                <View className="flex-row items-center">
+                <View className="min-w-0 flex-1 flex-row items-center pr-3">
                   <View
-                    className="w-14 h-14 rounded-2xl items-center justify-center"
+                    className="w-14 h-14 rounded-2xl items-center justify-center shrink-0"
                     style={{ backgroundColor: isActive ? theme.accent : theme.rowBg }}
                   >
                     <Ionicons
@@ -775,14 +824,16 @@ export default function EditProfile() {
                     />
                   </View>
 
-                  <View className="ml-4">
+                  <View className="ml-4 min-w-0 flex-1">
                     <ThemedText className="text-lg font-bold">{o.title}</ThemedText>
-                    <ThemedText variant="secondary">{o.subtitle}</ThemedText>
+                    <ThemedText variant="secondary" className="mt-1 shrink">
+                      {o.subtitle}
+                    </ThemedText>
                   </View>
                 </View>
 
                 <View
-                  className="w-6 h-6 rounded-full border-2 items-center justify-center"
+                  className="h-6 w-6 shrink-0 rounded-full border-2 items-center justify-center"
                   style={{ borderColor: isActive ? theme.accent : theme.iconMuted }}
                 >
                   {isActive && (

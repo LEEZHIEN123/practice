@@ -1,49 +1,53 @@
 import { Pressable } from "@/components/Pressable";
 import {
-  ProfileScreenHeader,
-  ThemedText,
-  useProfileCardStyles
+    ProfileScreenHeader,
+    ThemedText,
+    useProfileCardStyles
 } from "@/components/themed/ThemedUi";
+import { ZoomableImageModal } from "@/components/ZoomableImageModal";
 import { fetchCoachUserContext } from "@/lib/aiCoachContext";
+import { isRemoteImageUri, uploadAiCoachImage } from "@/lib/aiCoachImageStorage";
 import {
-  defaultWelcomeMessages,
-  deleteArchivedChat,
-  hasUserMessages,
-  loadActiveChat,
-  loadArchivedChats,
-  makeChatSessionId,
-  saveActiveChat,
-  upsertHistorySession,
-  type ArchivedChatSession,
-  type StoredChatMessage,
+    defaultWelcomeMessages,
+    deleteArchivedChat,
+    hasUserMessages,
+    loadActiveChat,
+    loadArchivedChats,
+    makeChatSessionId,
+    saveActiveChat,
+    upsertHistorySession,
+    type ArchivedChatSession,
+    type StoredChatMessage,
 } from "@/lib/aiCoachStorage";
 import { ChatFormattedText } from "@/lib/chatFormattedText";
 import { formatChatMessageTime } from "@/lib/chatMessageUtils";
 import {
-  isGeminiConfigured,
-  sendCoachMessage,
-  warmupGeminiConnection,
-  type CoachChatTurn,
+    isGeminiConfigured,
+    sendCoachMessage,
+    warmupGeminiConnection,
+    type CoachChatTurn,
 } from "@/lib/geminiCoach";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Keyboard,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-  type KeyboardEvent,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Keyboard,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
+    type KeyboardEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
@@ -51,15 +55,24 @@ import { auth } from "../firebaseConfig";
 const PROMPTS = [
   "What should I eat today for my fitness goal?",
   "Explain my workout plan schedule",
-  "How do I log water and see my step ranking?",
-  "Tips to stay on track with my fitness goal",
+  "How do I log a meal in the app?",
+  "Tips for hitting my calorie target",
   "How can I recover better after workouts?",
 ];
 
-type ChatMessage = StoredChatMessage;
+type ChatMessage = StoredChatMessage & {
+  /** Transient UI-only row while waiting for Gemini (never persisted). */
+  pending?: boolean;
+};
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function withoutPending(messages: ChatMessage[]): StoredChatMessage[] {
+  return messages
+    .filter((m) => !m.pending)
+    .map(({ pending: _pending, ...rest }) => rest);
 }
 
 function formatSessionDate(ms: number) {
@@ -71,12 +84,22 @@ function formatSessionDate(ms: number) {
   }).format(new Date(ms));
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  onOpenImage,
+  accentColor,
+}: {
+  message: ChatMessage;
+  onOpenImage?: (uri: string) => void;
+  accentColor?: string;
+}) {
   const { cardStyle, textSecondary } = useThemedScreen();
   const timeLabel =
     typeof message.createdAt === "number" && message.createdAt > 0
       ? formatChatMessageTime(message.createdAt)
       : "";
+  const hasText = message.text.trim().length > 0;
+  const imageUri = message.imageUri?.trim() || "";
 
   if (message.role === "assistant") {
     return (
@@ -86,15 +109,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         </View>
         <View className="flex-1 shrink" style={{ maxWidth: "88%" }}>
           <View className="rounded-2xl px-4 py-3" style={cardStyle}>
-            <ChatFormattedText
-              text={message.text}
-              className="text-base leading-6 text-left"
-              style={textSecondary}
-              boldClassName="font-extrabold"
-              selectable
-            />
+            {message.pending ? (
+              <View className="flex-row items-center">
+                <ActivityIndicator size="small" color={accentColor} />
+                <ThemedText variant="muted" className="text-sm ml-2 text-left">
+                  Thinking...
+                </ThemedText>
+              </View>
+            ) : (
+              <ChatFormattedText
+                text={message.text}
+                className="text-base leading-6 text-left"
+                style={textSecondary}
+                boldClassName="font-extrabold"
+                selectable
+              />
+            )}
           </View>
-          {timeLabel ? (
+          {timeLabel && !message.pending ? (
             <ThemedText variant="muted" className="text-[10px] mt-1 ml-1">
               {timeLabel}
             </ThemedText>
@@ -106,13 +138,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <View className="w-full items-end">
-      <View className="max-w-[88%] bg-[#76C893] rounded-2xl px-4 py-3">
-        <ChatFormattedText
-          text={message.text}
-          className="text-base text-white leading-6 text-left"
-          boldClassName="font-extrabold text-white"
-          selectable
-        />
+      <View className="max-w-[88%] bg-[#76C893] rounded-2xl px-3 py-3 overflow-hidden">
+        {imageUri ? (
+          <Pressable onPress={() => onOpenImage?.(imageUri)} className="mb-2 active:opacity-90">
+            <Image
+              source={{ uri: imageUri }}
+              style={{ width: 220, height: 160, borderRadius: 12 }}
+              contentFit="cover"
+            />
+          </Pressable>
+        ) : null}
+        {hasText ? (
+          <ChatFormattedText
+            text={message.text}
+            className="text-base text-white leading-6 text-left px-1"
+            boldClassName="font-extrabold text-white"
+            selectable
+          />
+        ) : null}
       </View>
       {timeLabel ? (
         <ThemedText variant="muted" className="text-[10px] mt-1 mr-1">
@@ -136,6 +179,8 @@ export default function AICoachScreen() {
   const [archivedSessions, setArchivedSessions] = useState<ArchivedChatSession[]>([]);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [input, setInput] = useState("");
+  const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
@@ -151,7 +196,7 @@ export default function AICoachScreen() {
   const persistActive = useCallback(async (nextUid?: string | null) => {
     const id = nextUid ?? uidRef.current;
     if (!id) return;
-    await saveActiveChat(id, sessionIdRef.current, messagesRef.current);
+    await saveActiveChat(id, sessionIdRef.current, withoutPending(messagesRef.current));
   }, []);
 
   useEffect(() => {
@@ -198,7 +243,7 @@ export default function AICoachScreen() {
   // Keep AsyncStorage in sync while chatting.
   useEffect(() => {
     if (!hydrated || !uid) return;
-    void saveActiveChat(uid, sessionIdRef.current, messages);
+    void saveActiveChat(uid, sessionIdRef.current, withoutPending(messages));
   }, [messages, hydrated, uid]);
 
   // Persist the exact on-screen chat when leaving (back / blur / unmount).
@@ -207,7 +252,7 @@ export default function AICoachScreen() {
       return () => {
         const id = uidRef.current;
         if (!id || !hydratedRef.current) return;
-        const current = messagesRef.current;
+        const current = withoutPending(messagesRef.current);
         const sessionId = sessionIdRef.current;
         void saveActiveChat(id, sessionId, current);
         if (sessionId && hasUserMessages(current)) {
@@ -225,18 +270,62 @@ export default function AICoachScreen() {
 
   const historyForApi = useCallback((chat: ChatMessage[]): CoachChatTurn[] => {
     return chat
-      .filter((m) => m.id !== "welcome")
-      .map((m) => ({ role: m.role, text: m.text }));
+      .filter((m) => m.id !== "welcome" && !m.pending)
+      .map((m) => ({
+        role: m.role,
+        text:
+          m.text.trim() ||
+          (m.imageUri ? "[User sent a photo]" : m.role === "user" ? "" : m.text),
+      }));
   }, []);
+
+  const pickChatImage = useCallback(async (useCamera: boolean) => {
+    if (sending) return;
+    const permission = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        useCamera
+          ? "Allow camera access to take a photo for the chat."
+          : "Allow photo library access to attach an image."
+      );
+      return;
+    }
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          quality: 0.8,
+          allowsMultipleSelection: false,
+        });
+    if (result.canceled || !result.assets[0]?.uri) return;
+    setPendingImageUri(result.assets[0].uri);
+    scrollToBottom();
+  }, [scrollToBottom, sending]);
+
+  const openImagePicker = useCallback(() => {
+    if (sending) return;
+    Alert.alert("Add photo", "Attach an image to ask about food, meals, or workouts.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Take Photo", onPress: () => void pickChatImage(true) },
+      { text: "Choose from Gallery", onPress: () => void pickChatImage(false) },
+    ]);
+  }, [pickChatImage, sending]);
 
   const openHistory = useCallback(async () => {
     if (!uid) return;
     // Flush current chat into history first so the list stays complete.
-    if (sessionIdRef.current && hasUserMessages(messagesRef.current)) {
+    const current = withoutPending(messagesRef.current);
+    if (sessionIdRef.current && hasUserMessages(current)) {
       const archives = await upsertHistorySession(
         uid,
         sessionIdRef.current,
-        messagesRef.current
+        current
       );
       setArchivedSessions(archives);
     } else {
@@ -249,12 +338,13 @@ export default function AICoachScreen() {
     async (session: ArchivedChatSession) => {
       if (!uid) return;
       // Archive whatever is on screen before switching.
+      const current = withoutPending(messagesRef.current);
       if (
         sessionIdRef.current &&
         sessionIdRef.current !== session.id &&
-        hasUserMessages(messagesRef.current)
+        hasUserMessages(current)
       ) {
-        await upsertHistorySession(uid, sessionIdRef.current, messagesRef.current);
+        await upsertHistorySession(uid, sessionIdRef.current, current);
       }
       sessionIdRef.current = session.id;
       messagesRef.current = session.messages;
@@ -295,11 +385,12 @@ export default function AICoachScreen() {
 
   const handleNewChat = useCallback(async () => {
     if (!uid || sending) return;
-    if (sessionIdRef.current && hasUserMessages(messagesRef.current)) {
+    const current = withoutPending(messagesRef.current);
+    if (sessionIdRef.current && hasUserMessages(current)) {
       const archives = await upsertHistorySession(
         uid,
         sessionIdRef.current,
-        messagesRef.current
+        current
       );
       setArchivedSessions(archives);
     }
@@ -308,14 +399,19 @@ export default function AICoachScreen() {
     messagesRef.current = fresh;
     setMessages(fresh);
     setInput("");
+    setPendingImageUri(null);
     await saveActiveChat(uid, null, fresh);
     scrollToBottom();
   }, [uid, sending, scrollToBottom]);
 
   const sendText = useCallback(
-    async (text: string) => {
+    async (text: string, imageUri?: string | null) => {
       const trimmed = text.trim();
-      if (!trimmed || sending) return;
+      const attachmentUri =
+        imageUri === undefined
+          ? pendingImageUri?.trim() || null
+          : imageUri?.trim() || null;
+      if ((!trimmed && !attachmentUri) || sending) return;
 
       if (!isGeminiConfigured()) {
         Alert.alert(
@@ -325,10 +421,37 @@ export default function AICoachScreen() {
         return;
       }
 
+      if (attachmentUri && !isRemoteImageUri(attachmentUri) && (!uid || uid === "guest")) {
+        Alert.alert("Sign in required", "Sign in to attach photos to your AI chat.");
+        return;
+      }
+
+      const userMsgId = makeId();
+      setSending(true);
+      setInput("");
+      setPendingImageUri(null);
+
+      let storedImageUri = attachmentUri;
+      if (attachmentUri && !isRemoteImageUri(attachmentUri)) {
+        try {
+          storedImageUri = await uploadAiCoachImage(attachmentUri, userMsgId);
+        } catch (e) {
+          setSending(false);
+          setInput(trimmed);
+          setPendingImageUri(attachmentUri);
+          Alert.alert(
+            "Upload failed",
+            e instanceof Error ? e.message : "Could not upload the photo. Please try again."
+          );
+          return;
+        }
+      }
+
       const userMsg: ChatMessage = {
-        id: makeId(),
+        id: userMsgId,
         role: "user",
         text: trimmed,
+        imageUri: storedImageUri || undefined,
         createdAt: Date.now(),
       };
 
@@ -336,14 +459,22 @@ export default function AICoachScreen() {
         sessionIdRef.current = makeChatSessionId();
       }
 
+      const assistantId = makeId();
+      const pendingAssistant: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        pending: true,
+        createdAt: Date.now(),
+      };
+
       const withUser = [...messagesRef.current, userMsg];
-      messagesRef.current = withUser;
-      setMessages(withUser);
-      setInput("");
-      setSending(true);
+      const withPending = [...withUser, pendingAssistant];
+      messagesRef.current = withPending;
+      setMessages(withPending);
       scrollToBottom();
       if (uid) {
-        await saveActiveChat(uid, sessionIdRef.current, withUser);
+        await saveActiveChat(uid, sessionIdRef.current, withoutPending(withPending));
       }
 
       try {
@@ -368,48 +499,54 @@ export default function AICoachScreen() {
 
         // Prior turns only — sendCoachMessage appends the new user message itself.
         const priorTurns = historyForApi(withUser.slice(0, -1));
-        const assistantId = makeId();
-        let sawPartial = false;
-        const reply = await sendCoachMessage(priorTurns, trimmed, context, (partial) => {
-          sawPartial = true;
-          const streamingMsg: ChatMessage = {
-            id: assistantId,
-            role: "assistant",
-            text: partial,
-            createdAt: Date.now(),
-          };
-          const live = [...withUser, streamingMsg];
-          messagesRef.current = live;
-          setMessages(live);
-          scrollToBottom();
-        });
+        const reply = await sendCoachMessage(
+          priorTurns,
+          trimmed,
+          context,
+          (partial) => {
+            const streamingMsg: ChatMessage = {
+              id: assistantId,
+              role: "assistant",
+              text: partial,
+              createdAt: Date.now(),
+            };
+            const live = [...withUser, streamingMsg];
+            messagesRef.current = live;
+            setMessages(live);
+            scrollToBottom();
+          },
+          attachmentUri ? { uri: attachmentUri } : null
+        );
         const assistantMsg: ChatMessage = {
           id: assistantId,
           role: "assistant",
           text: reply,
           createdAt: Date.now(),
         };
-        const fullMessages = sawPartial
-          ? messagesRef.current.map((m) => (m.id === assistantId ? assistantMsg : m))
-          : [...withUser, assistantMsg];
+        const fullMessages = [...withUser, assistantMsg];
         messagesRef.current = fullMessages;
         setMessages(fullMessages);
+        setSending(false);
         if (uid && sessionIdRef.current) {
-          await saveActiveChat(uid, sessionIdRef.current, fullMessages);
+          const toSave = withoutPending(fullMessages);
+          await saveActiveChat(uid, sessionIdRef.current, toSave);
           const archives = await upsertHistorySession(
             uid,
             sessionIdRef.current,
-            fullMessages
+            toSave
           );
           setArchivedSessions(archives);
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Could not reach Gemini. Please try again.";
         Alert.alert("Chat error", msg);
-        const rolledBack = messagesRef.current.filter((m) => m.id !== userMsg.id);
+        const rolledBack = withoutPending(
+          messagesRef.current.filter((m) => m.id !== userMsg.id && m.id !== assistantId)
+        );
         messagesRef.current = rolledBack;
         setMessages(rolledBack);
         setInput(trimmed);
+        setPendingImageUri(attachmentUri);
         if (uid) {
           await saveActiveChat(uid, sessionIdRef.current, rolledBack);
         }
@@ -418,7 +555,7 @@ export default function AICoachScreen() {
         scrollToBottom();
       }
     },
-    [calendarTz, historyForApi, scrollToBottom, sending, uid]
+    [calendarTz, historyForApi, pendingImageUri, scrollToBottom, sending, uid]
   );
 
   useEffect(() => {
@@ -497,26 +634,13 @@ export default function AICoachScreen() {
         >
           {messages.map((message) => (
             <View key={message.id} className="mb-3 w-full">
-              <MessageBubble message={message} />
+              <MessageBubble
+                message={message}
+                accentColor={theme.accent}
+                onOpenImage={(uri) => setViewerImageUri(uri)}
+              />
             </View>
           ))}
-
-          {sending ? (
-            <View className="mb-3 w-full flex-row items-start pr-1">
-              <View className="w-9 h-9 rounded-full bg-[#76C893] items-center justify-center mr-2 shrink-0">
-                <MaterialCommunityIcons name="robot-happy-outline" size={18} color="white" />
-              </View>
-              <View
-                className="flex-1 shrink rounded-2xl px-4 py-3 flex-row items-center"
-                style={[{ maxWidth: "88%" }, cardStyle]}
-              >
-                <ActivityIndicator size="small" color={theme.accent} />
-                <ThemedText variant="muted" className="text-sm ml-2 text-left">
-                  Thinking...
-                </ThemedText>
-              </View>
-            </View>
-          ) : null}
         </ScrollView>
 
         <View
@@ -535,14 +659,14 @@ export default function AICoachScreen() {
             {PROMPTS.map((prompt) => (
               <Pressable
                 key={prompt}
-                onPress={() => void sendText(prompt)}
-                disabled={sending}
+                onPress={() => void sendText(prompt, null)}
+                disabled={sending || Boolean(pendingImageUri)}
                 className="rounded-full px-3 py-2 active:opacity-80"
                 style={{
                   backgroundColor: theme.cardBg,
                   borderWidth: 1,
                   borderColor: theme.navBorder,
-                  opacity: sending ? 0.5 : 1,
+                  opacity: sending || pendingImageUri ? 0.5 : 1,
                 }}
               >
                 <ThemedText variant="secondary" className="text-xs font-semibold" numberOfLines={1}>
@@ -551,11 +675,50 @@ export default function AICoachScreen() {
               </Pressable>
             ))}
           </ScrollView>
+
+          {pendingImageUri ? (
+            <View className="mb-2 flex-row items-start">
+              <View className="relative">
+                <Image
+                  source={{ uri: pendingImageUri }}
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: theme.navBorder,
+                  }}
+                  contentFit="cover"
+                />
+                <Pressable
+                  onPress={() => setPendingImageUri(null)}
+                  disabled={sending}
+                  hitSlop={8}
+                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center"
+                  style={{ backgroundColor: theme.danger }}
+                >
+                  <Ionicons name="close" size={14} color="#fff" />
+                </Pressable>
+              </View>
+              <ThemedText variant="muted" className="text-xs ml-3 mt-1 flex-1">
+                Photo attached. Add a caption (optional), then send.
+              </ThemedText>
+            </View>
+          ) : null}
+
           <View className="flex-row items-end gap-2">
+            <Pressable
+              onPress={openImagePicker}
+              disabled={sending}
+              className="w-12 h-12 rounded-full items-center justify-center active:opacity-90"
+              style={iconButtonStyle}
+            >
+              <Ionicons name="image-outline" size={22} color={theme.textSecondary} />
+            </Pressable>
             <TextInput
               value={input}
               onChangeText={setInput}
-              placeholder="Ask something..."
+              placeholder={pendingImageUri ? "Add a caption (optional)..." : "Ask something..."}
               placeholderTextColor={placeholderColor}
               multiline
               maxLength={2000}
@@ -568,10 +731,11 @@ export default function AICoachScreen() {
             />
             <Pressable
               onPress={() => void sendText(input)}
-              disabled={sending || !input.trim()}
+              disabled={sending || (!input.trim() && !pendingImageUri)}
               className="w-12 h-12 rounded-full items-center justify-center active:opacity-90"
               style={{
-                backgroundColor: sending || !input.trim() ? theme.iconMuted : theme.accent,
+                backgroundColor:
+                  sending || (!input.trim() && !pendingImageUri) ? theme.iconMuted : theme.accent,
               }}
             >
               {sending ? (
@@ -583,6 +747,12 @@ export default function AICoachScreen() {
           </View>
         </View>
       </View>
+
+      <ZoomableImageModal
+        visible={Boolean(viewerImageUri)}
+        uri={viewerImageUri ?? undefined}
+        onClose={() => setViewerImageUri(null)}
+      />
 
       <Modal visible={historyVisible} transparent animationType="fade" onRequestClose={() => setHistoryVisible(false)}>
         <Pressable

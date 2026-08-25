@@ -1,8 +1,8 @@
 import { Pressable } from "@/components/Pressable";
 import { checkIsAdmin } from "@/lib/communityService";
-import { warmHomeUserCacheFromUserData } from "@/lib/homeUserCache";
+import { warmHomeUserCacheFromUserDataSync } from "@/lib/homeUserCache";
 import { isOnboardingGate } from "@/lib/onboardingGate";
-import { isOnboardingPath, resolvePostAuthRoute } from "@/lib/onboardingRoute";
+import { isOnboardingPath, resolvePostAuthRouteFromData } from "@/lib/onboardingRoute";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePathname, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
@@ -62,17 +62,21 @@ export default function WelcomeScreen() {
           }
           try {
             const snap = await getDoc(doc(db, "users", user.uid));
-            if (snap.exists()) {
-              await warmHomeUserCacheFromUserData(user.uid, snap.data() as Record<string, unknown>);
-            }
+            const userData = snap.exists()
+              ? (snap.data() as Record<string, unknown>)
+              : {};
+            warmHomeUserCacheFromUserDataSync(user.uid, userData);
+            const next = resolvePostAuthRouteFromData(userData);
+            if (isOnboardingGate()) return;
+            // Never land on Home while registration is incomplete.
+            if (next === "/home" && isOnboardingGate()) return;
+            router.replace(next as any);
+            return;
           } catch {
             // Home still loads from Firestore / disk cache.
           }
-          const next = await resolvePostAuthRoute(user.uid);
           if (isOnboardingGate()) return;
-          // Never land on Home while registration is incomplete.
-          if (next === "/home" && isOnboardingGate()) return;
-          router.replace(next as any);
+          router.replace("/profiledetails");
         } catch {
           if (isOnboardingGate()) return;
           router.replace("/profiledetails");

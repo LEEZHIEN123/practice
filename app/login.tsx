@@ -1,19 +1,19 @@
 import { Pressable } from "@/components/Pressable";
 import {
   backfillAccountEmailIfSignedIn,
-  isRegisteredAccountEmail,
+  isRegisteredAccountEmailWithFallback,
+  resolveUserLoginFailureKind,
 } from "@/lib/accountEmailRegistry";
 import { isAdminEmail, syncAdminConfig } from "@/lib/communityService";
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
-import { warmHomeUserCacheFromUserData } from "@/lib/homeUserCache";
-import { resolvePostAuthRoute } from "@/lib/onboardingRoute";
+import { warmHomeUserCacheFromUserDataSync } from "@/lib/homeUserCache";
+import { resolvePostAuthRouteFromData } from "@/lib/onboardingRoute";
 import { useLightScreen } from "@/lib/useLightScreen";
 import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
-    fetchSignInMethodsForEmail,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
     signOut,
@@ -93,6 +93,37 @@ export default function Login() {
     setForgotVisible(false);
   };
 
+  const showUnregisteredEmailError = () => {
+    setEmailError("Email not registered.");
+    setPasswordError("");
+  };
+
+  const showWrongPasswordAlert = () => {
+    setEmailError("");
+    setPasswordError("");
+    Alert.alert(
+      "Wrong password",
+      "The password is incorrect. Use Forgot Password to reset it."
+    );
+  };
+
+  const completeUserLogin = async (uid: string) => {
+    void backfillAccountEmailIfSignedIn();
+
+    let userData: Record<string, unknown> = {};
+    try {
+      const snap = await getDoc(doc(db, "users", uid));
+      if (snap.exists()) {
+        userData = snap.data() as Record<string, unknown>;
+        warmHomeUserCacheFromUserDataSync(uid, userData);
+      }
+    } catch {
+      // Home will still load from Firestore / disk cache.
+    }
+
+    router.replace(resolvePostAuthRouteFromData(userData) as any);
+  };
+
   const validateLoginFields = () => {
     const cleanEmail = email.trim().toLowerCase();
     let ok = true;
@@ -121,15 +152,42 @@ export default function Login() {
 
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, cleanEmail, password);
+
+      if (isAdminMode && !isAdminEmail(cleanEmail)) {
+        setEmailError("The email is wrong.");
+        return;
+      }
+
+      if (!isAdminMode) {
+        try {
+          await signInWithEmailAndPassword(auth, cleanEmail, password);
+        } catch (signInError: unknown) {
+          const signInCode = (signInError as { code?: string })?.code;
+
+          if (
+            signInCode === "auth/invalid-credential" ||
+            signInCode === "auth/wrong-password" ||
+            signInCode === "auth/user-not-found"
+          ) {
+            const failureKind = await resolveUserLoginFailureKind(cleanEmail, signInCode);
+            if (failureKind === "wrong-password") {
+              showWrongPasswordAlert();
+            } else {
+              showUnregisteredEmailError();
+            }
+            return;
+          }
+
+          throw signInError;
+        }
+      } else {
+        await signInWithEmailAndPassword(auth, cleanEmail, password);
+      }
 
       if (isAdminMode) {
         if (!isAdminEmail(cleanEmail)) {
           await signOut(auth);
-          Alert.alert(
-            "Admin only",
-            "Only the admin account can sign in here. Use the User tab for a regular account."
-          );
+          setEmailError("The email is wrong.");
           return;
         }
         void syncAdminConfig().catch(() => {});
@@ -146,21 +204,9 @@ export default function Login() {
         return;
       }
 
-      void backfillAccountEmailIfSignedIn();
-
       const uid = auth.currentUser?.uid;
       if (uid) {
-        // Warm greeting cache before Home mounts so "Hello, …" has no wait.
-        try {
-          const snap = await getDoc(doc(db, "users", uid));
-          if (snap.exists()) {
-            await warmHomeUserCacheFromUserData(uid, snap.data() as Record<string, unknown>);
-          }
-        } catch {
-          // Home will still load from Firestore.
-        }
-        const next = await resolvePostAuthRoute(uid);
-        router.replace(next as any);
+        await completeUserLogin(uid);
       } else {
         router.replace("/home" as any);
       }
@@ -171,19 +217,20 @@ export default function Login() {
       } else if (code === "auth/network-request-failed") {
         Alert.alert("Connection error", firebaseAuthErrorMessage(e));
       } else if (code === "auth/user-not-found") {
-        Alert.alert(
-          "Account not found",
-          isAdminMode
-            ? "This email is not registered as an admin account."
-            : "This email is not registered yet. Tap Register to create an account first."
-        );
+        if (isAdminMode) {
+          setEmailError("The email is wrong.");
+        } else {
+          showUnregisteredEmailError();
+        }
       } else if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-        Alert.alert(
-          "Wrong password",
-          isAdminMode
-            ? "The password is incorrect. Please try again."
-            : "The password is incorrect. Use Forgot Password to reset it, or register if you have not created this account yet."
-        );
+        if (isAdminMode) {
+          Alert.alert(
+            "Wrong password",
+            "The password is incorrect. Please try again."
+          );
+        } else {
+          showWrongPasswordAlert();
+        }
       } else if (code === "auth/too-many-requests") {
         Alert.alert("Too many attempts", "Please wait a few minutes and try again.");
       } else {
@@ -220,22 +267,7 @@ export default function Login() {
     try {
       setSendingReset(true);
 
-      let registered = false;
-      try {
-        registered = await isRegisteredAccountEmail(cleanEmail);
-      } catch {
-        registered = false;
-      }
-
-      if (!registered) {
-        // Fallback for older accounts that are not in the email registry yet.
-        try {
-          const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
-          registered = methods.length > 0;
-        } catch {
-          registered = false;
-        }
-      }
+      const registered = await isRegisteredAccountEmailWithFallback(cleanEmail);
 
       if (!registered) {
         setForgotEmailError("This email is not registered yet.");

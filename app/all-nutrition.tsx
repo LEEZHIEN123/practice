@@ -13,8 +13,8 @@ import {
     prefetchFoodDataset,
     type FoodListItem,
 } from "@/lib/foodDataset";
-import { analyzeMealPhoto, isGeminiConfigured } from "@/lib/geminiFoodVision";
 import { warmupGeminiConnection } from "@/lib/geminiCoach";
+import { analyzeMealPhoto, isGeminiConfigured } from "@/lib/geminiFoodVision";
 import {
     MANUAL_MEAL_TYPE_LABELS,
     type ManualMealType,
@@ -229,10 +229,8 @@ function FoodLibrarySection({
     if (q.length < 2) return foods;
 
     if (fullDatasetReady) {
-      return getFoodDatasetForSearch().filter(
-        (food) =>
-          food.name.toLowerCase().includes(q) ||
-          food.ingredients.some((item) => item.toLowerCase().includes(q))
+      return getFoodDatasetForSearch().filter((food) =>
+        food.name.toLowerCase().includes(q)
       );
     }
 
@@ -259,30 +257,6 @@ function FoodLibrarySection({
     [handleSelectFood, theme.accentText, theme.iconMuted, theme.rowBg]
   );
 
-  const listHeader = useMemo(
-    () => (
-      <View>
-        <ThemedText variant="muted" className="text-sm mb-3 leading-5">
-          Browse {foods.length} recipes with calories, nutrition, ingredients, and directions. Tap a food to log it.
-        </ThemedText>
-
-        <CommunitySearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search recipes or ingredients"
-          className="mb-4"
-        />
-
-        {searchQuery.trim().length >= 2 && !fullDatasetReady ? (
-          <ThemedText variant="muted" className="text-xs mb-3">
-            Searching recipe names first. Ingredient search appears once recipes finish loading.
-          </ThemedText>
-        ) : null}
-      </View>
-    ),
-    [foods.length, fullDatasetReady, searchQuery]
-  );
-
   const listEmpty = useMemo(
     () => (
       <ThemedText variant="muted" className="text-sm text-center py-6 px-3">
@@ -293,21 +267,36 @@ function FoodLibrarySection({
   );
 
   return (
-    <FlatList
-      data={filteredFoods}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      ListHeaderComponent={listHeader}
-      ListEmptyComponent={listEmpty}
-      initialNumToRender={10}
-      maxToRenderPerBatch={8}
-      windowSize={7}
-      updateCellsBatchingPeriod={50}
-      removeClippedSubviews
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: bottomInset, paddingHorizontal: 12 }}
-      ItemSeparatorComponent={FoodLibrarySeparator}
-    />
+    <View className="flex-1">
+      <View className="px-3 pb-2" style={{ backgroundColor: theme.screenBg }}>
+        <ThemedText variant="muted" className="text-sm mb-3 leading-5">
+          Browse {foods.length} recipes with calories, nutrition, ingredients, and directions. Tap a
+          food to log it.
+        </ThemedText>
+
+        <CommunitySearchBar
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search recipe name"
+          className="mb-2"
+        />
+      </View>
+
+      <FlatList
+        data={filteredFoods}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        ListEmptyComponent={listEmpty}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: bottomInset, paddingHorizontal: 12 }}
+        ItemSeparatorComponent={FoodLibrarySeparator}
+      />
+    </View>
   );
 }
 
@@ -332,7 +321,7 @@ function BarcodeSection({
     async (code: string) => {
       const trimmed = code.replace(/\D/g, "").trim();
       if (trimmed.length < 8) {
-        Alert.alert("Barcode", "Enter or scan a valid barcode.");
+        Alert.alert("Invalid Barcode", "Barcode must be at least 8 digits.");
         return;
       }
       try {
@@ -794,6 +783,107 @@ function MealLogSection({
     );
   };
 
+  const renderHistoryItem = useCallback(
+    ({ item }: { item: MealHistoryEntry }) => (
+      <View
+        className="rounded-2xl p-3 border relative"
+        style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder }}
+      >
+        <Pressable
+          onPress={() => confirmDeleteHistory(item)}
+          hitSlop={8}
+          className="absolute z-10 w-6 h-6 rounded-full items-center justify-center"
+          style={{ top: 4, right: 4, backgroundColor: "rgba(239, 68, 68, 0.18)" }}
+        >
+          <Ionicons name="close" size={14} color="#ef4444" />
+        </Pressable>
+
+        <View className="flex-row items-center pr-1">
+          <Pressable
+            onPress={() => setDetailItem(item)}
+            className="flex-1 min-w-0 flex-row items-center pr-2"
+          >
+            {item.photoUri ? (
+              <Image
+                source={{ uri: item.photoUri }}
+                className="w-16 h-16 rounded-xl mr-3"
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                className="w-16 h-16 rounded-xl mr-3 items-center justify-center"
+                style={{ backgroundColor: theme.accentSoft }}
+              >
+                <Ionicons name="restaurant-outline" size={24} color={theme.accentText} />
+              </View>
+            )}
+            <View className="flex-1 min-w-0">
+              <ThemedText className="text-base font-extrabold" numberOfLines={1}>
+                {item.title}
+              </ThemedText>
+              <ThemedText variant="muted" className="text-sm mt-0.5">
+                {item.calories} kcal
+                {item.mealType ? ` · ${MANUAL_MEAL_TYPE_LABELS[item.mealType]}` : ""}
+              </ThemedText>
+              {formatHistoryMacros(item) ? (
+                <ThemedText variant="secondary" className="text-xs mt-0.5">
+                  {formatHistoryMacros(item)}
+                </ThemedText>
+              ) : null}
+              {formatDescriptionPreview(item) ? (
+                <ThemedText variant="secondary" className="text-xs mt-1" numberOfLines={2}>
+                  {formatDescriptionPreview(item)}
+                </ThemedText>
+              ) : null}
+            </View>
+          </Pressable>
+
+          <View className="flex-row gap-3 shrink-0" style={{ marginRight: 6 }}>
+            <Pressable
+              onPress={() => confirmLogFromHistory(item)}
+              disabled={logging}
+              className="rounded-full px-4 py-2.5 items-center bg-[#52B69A] min-w-[64px]"
+            >
+              <Text className="text-sm font-extrabold" style={{ color: "#ffffff" }}>
+                Log
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => openEditHistory(item)}
+              className="rounded-full px-4 py-2.5 items-center border-2 min-w-[64px]"
+              style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
+            >
+              <Text className="text-sm font-extrabold" style={{ color: theme.textPrimary }}>
+                Edit
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    ),
+    [confirmDeleteHistory, confirmLogFromHistory, logging, openEditHistory, theme]
+  );
+
+  const historyEmptyComponent = useMemo(() => {
+    if (historyLoading) {
+      return <ActivityIndicator color={theme.accent} className="my-4" />;
+    }
+    if (history.length === 0) {
+      return (
+        <ThemedText variant="secondary" className="text-sm text-center py-4">
+          No meal history yet. Log your first meal in the Log meal tab.
+        </ThemedText>
+      );
+    }
+    return (
+      <ThemedText variant="secondary" className="text-sm text-center py-4">
+        {historyCategoryFilter !== "all" || historySearch.trim()
+          ? "No meals match your filters."
+          : "No meal history yet. Log your first meal in the Log meal tab."}
+      </ThemedText>
+    );
+  }, [history.length, historyCategoryFilter, historyLoading, historySearch, theme.accent]);
+
   return (
     <View className="flex-1">
       <View className="px-3 mb-4">
@@ -981,123 +1071,32 @@ function MealLogSection({
           </ScrollView>
         </KeyboardAvoidingView>
       ) : (
-        <ScrollView
-          className="flex-1 px-3"
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-          keyboardShouldPersistTaps="handled"
-        >
-      <ThemedCard className="p-4">
-        <ThemedText variant="muted" className="text-sm mb-4 leading-5">
-          Tap a meal to view details. Use Log or Edit on the right; tap × to remove from history.
-        </ThemedText>
+        <View className="flex-1">
+          <View className="px-3 pb-2" style={{ backgroundColor: theme.screenBg }}>
+            <CommunitySearchBar
+              className="mb-2"
+              value={historySearch}
+              onChangeText={setHistorySearch}
+              placeholder="Search meals by name or notes..."
+            />
 
-        <CommunitySearchBar
-          className="mb-3"
-          value={historySearch}
-          onChangeText={setHistorySearch}
-          placeholder="Search meals by name or notes..."
-        />
-
-        <MealHistoryFilterBar
-          value={historyCategoryFilter}
-          onChange={setHistoryCategoryFilter}
-        />
-
-        {historyLoading ? (
-          <ActivityIndicator color={theme.accent} className="my-4" />
-        ) : history.length === 0 ? (
-          <ThemedText variant="secondary" className="text-sm text-center py-4">
-            No meal history yet. Log your first meal in the Log meal tab.
-          </ThemedText>
-        ) : filteredHistory.length === 0 ? (
-          <ThemedText variant="secondary" className="text-sm text-center py-4">
-            {historyCategoryFilter !== "all" || historySearch.trim()
-              ? "No meals match your filters."
-              : "No meal history yet. Log your first meal in the Log meal tab."}
-          </ThemedText>
-        ) : (
-          <View className="gap-3">
-            {filteredHistory.map((item) => (
-                  <View
-                key={item.id}
-                className="rounded-2xl p-3 border relative"
-                    style={{ backgroundColor: theme.rowBg, borderColor: theme.cardBorder }}
-                  >
-                <Pressable
-                  onPress={() => confirmDeleteHistory(item)}
-                  hitSlop={8}
-                  className="absolute z-10 w-6 h-6 rounded-full items-center justify-center"
-                  style={{ top: 4, right: 4, backgroundColor: "rgba(239, 68, 68, 0.18)" }}
-                >
-                  <Ionicons name="close" size={14} color="#ef4444" />
-                </Pressable>
-
-                <View className="flex-row items-center pr-1">
-                  <Pressable onPress={() => setDetailItem(item)} className="flex-1 min-w-0 flex-row items-center pr-2">
-                    {item.photoUri ? (
-                      <Image
-                        source={{ uri: item.photoUri }}
-                        className="w-16 h-16 rounded-xl mr-3"
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View
-                        className="w-16 h-16 rounded-xl mr-3 items-center justify-center"
-                        style={{ backgroundColor: theme.accentSoft }}
-                      >
-                        <Ionicons name="restaurant-outline" size={24} color={theme.accentText} />
-                      </View>
-                    )}
-                    <View className="flex-1 min-w-0">
-                      <ThemedText className="text-base font-extrabold" numberOfLines={1}>
-                        {item.title}
-                      </ThemedText>
-                      <ThemedText variant="muted" className="text-sm mt-0.5">
-                        {item.calories} kcal
-                        {item.mealType
-                          ? ` · ${MANUAL_MEAL_TYPE_LABELS[item.mealType]}`
-                          : ""}
-                      </ThemedText>
-                      {formatHistoryMacros(item) ? (
-                        <ThemedText variant="secondary" className="text-xs mt-0.5">
-                          {formatHistoryMacros(item)}
-                        </ThemedText>
-                      ) : null}
-                      {formatDescriptionPreview(item) ? (
-                        <ThemedText variant="secondary" className="text-xs mt-1" numberOfLines={2}>
-                          {formatDescriptionPreview(item)}
-                        </ThemedText>
-                      ) : null}
-                    </View>
-                  </Pressable>
-
-                  <View className="flex-row gap-3 shrink-0" style={{ marginRight: 6 }}>
-                    <Pressable
-                      onPress={() => confirmLogFromHistory(item)}
-                      disabled={logging}
-                      className="rounded-full px-4 py-2.5 items-center bg-[#52B69A] min-w-[64px]"
-                    >
-                      <Text className="text-sm font-extrabold" style={{ color: "#ffffff" }}>
-                        Log
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => openEditHistory(item)}
-                      className="rounded-full px-4 py-2.5 items-center border-2 min-w-[64px]"
-                      style={{ borderColor: theme.cardBorder, backgroundColor: theme.cardBg }}
-                    >
-                      <Text className="text-sm font-extrabold" style={{ color: theme.textPrimary }}>
-                        Edit
-                    </Text>
-                    </Pressable>
-                  </View>
-                </View>
-                  </View>
-                ))}
+            <MealHistoryFilterBar
+              value={historyCategoryFilter}
+              onChange={setHistoryCategoryFilter}
+            />
           </View>
-        )}
-      </ThemedCard>
-        </ScrollView>
+
+          <FlatList
+            data={historyLoading ? [] : filteredHistory}
+            keyExtractor={(item) => item.id}
+            renderItem={renderHistoryItem}
+            ListEmptyComponent={() => historyEmptyComponent}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 24 }}
+            ItemSeparatorComponent={() => <View className="h-3" />}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
       )}
 
       <Modal

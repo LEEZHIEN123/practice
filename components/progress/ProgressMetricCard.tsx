@@ -42,9 +42,9 @@ export function ProgressMetricCard({
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-1 rounded-3xl overflow-hidden active:opacity-95 ${className}`}
+      className={`flex-1 self-stretch rounded-3xl overflow-hidden active:opacity-95 ${className}`}
     >
-      <View className="p-4 pb-5">
+      <View className="flex-1 p-4 pb-5">
         <Image
           source={PROGRESS_METRIC_CARD_IMAGES[cardKey]}
           style={StyleSheet.absoluteFillObject}
@@ -61,15 +61,16 @@ export function ProgressMetricCard({
 
         <View className="flex-row items-center justify-between">
           <Text
-            className="text-lg font-extrabold"
+            className="text-lg font-extrabold flex-1 mr-2"
             style={{ color: "#ffffff", ...textShadow }}
+            numberOfLines={1}
           >
             {title}
           </Text>
           {icon}
         </View>
 
-        <View>{children}</View>
+        <View className="flex-1">{children}</View>
       </View>
     </Pressable>
   );
@@ -132,7 +133,7 @@ export function ProgressMetricLink({
 }) {
   return (
     <Text
-      className="text-sm font-semibold mt-1.5"
+      className="text-sm font-semibold mt-auto pt-1.5"
       style={{
         color: bright ? "#ff3333" : "#ef4444",
         textShadowColor: "rgba(0,0,0,0.45)",

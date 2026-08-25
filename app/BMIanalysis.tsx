@@ -1,5 +1,6 @@
 import { Pressable } from "@/components/Pressable";
 import { ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
+import { getBmiRecommendation } from "@/lib/bmiRecommendation";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -11,60 +12,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
 
-type PlanKey = "gain" | "maintain" | "lose";
-
 const BMI_CATEGORY_COLORS = [
   { bg: "#0c2a3d", bgLight: "#f0f9ff", border: "#0284c7", text: "#38bdf8", textLight: "#0284c7" },
   { bg: "#0f2e24", bgLight: "#ecfdf5", border: "#059669", text: "#34d399", textLight: "#059669" },
   { bg: "#2e2208", bgLight: "#fffbeb", border: "#d97706", text: "#fbbf24", textLight: "#d97706" },
   { bg: "#2e1212", bgLight: "#fef2f2", border: "#dc2626", text: "#f87171", textLight: "#dc2626" },
 ] as const;
-
-function getPlan(bmi: number): {
-  planKey: PlanKey;
-  titleTop: string;
-  status: string;
-  recommendationTitle: string;
-  recommendationSubtitle: string;
-  description: string;
-} {
-  if (bmi < 18.5) {
-    return {
-      planKey: "gain",
-      titleTop: "Your BMI is",
-      status: "Underweight",
-      recommendationTitle: "Gain Weight",
-      recommendationSubtitle: "Reach a healthier BMI range",
-      description:
-        "A BMI of {BMI} is below the ideal range.\n" +
-        "Gaining weight gradually with a balanced diet and strength training can help you reach a healthier range.",
-    };
-  }
-
-  if (bmi < 25) {
-    return {
-      planKey: "maintain",
-      titleTop: "Your BMI is",
-      status: "Normal",
-      recommendationTitle: "Maintain Weight",
-      recommendationSubtitle: "Stay within a healthy BMI range",
-      description:
-        "A BMI of {BMI} is within the ideal range.\n" +
-        "Having the balanced meals and regular activity helps keep you healthy.",
-    };
-  }
-
-  return {
-    planKey: "lose",
-    titleTop: "Your BMI is",
-    status: "Overweight",
-    recommendationTitle: "Lose Weight",
-    recommendationSubtitle: "Achieve a healthier BMI range",
-    description:
-      "A BMI of {BMI} is above the ideal range.\n" +
-      "Reducing your weight can significantly reduce the risk of chronic illnesses and improve your quality of life.",
-  };
-}
 
 export default function BmiAnalysis() {
   const router = useRouter();
@@ -105,7 +58,7 @@ export default function BmiAnalysis() {
     return Number.isFinite(value) ? value : 0;
   }, [heightCm, weightKg]);
 
-  const plan = useMemo(() => getPlan(bmi || 0), [bmi]);
+  const plan = useMemo(() => getBmiRecommendation(bmi || 0), [bmi]);
 
   const bmiCategoryIdx = useMemo(() => {
     if (!bmi) return 1;
@@ -158,6 +111,12 @@ export default function BmiAnalysis() {
   const goNext = async () => {
     try {
       setSaving(true);
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db, "users", user.uid), {
+          bmiAnalysisComplete: true,
+        });
+      }
       router.replace("/home");
     } finally {
       setSaving(false);

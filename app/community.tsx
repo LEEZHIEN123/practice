@@ -1,4 +1,3 @@
-import { AddFriendModal } from "@/components/community/AddFriendModal";
 import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
 import { FriendsSection } from "@/components/community/FriendsSection";
@@ -64,9 +63,15 @@ import {
     chatPreviewForUser,
     createPost,
     deletePost,
+    displayCommunityUserName,
     ensureChatsForFriends,
     ensureDirectChat,
+    chatParticipantImage,
     ensureSupportChatWithAdmin,
+    ACCOUNT_UNAVAILABLE_MESSAGE,
+    loadExistingUserIdSet,
+    loadLikerProfiles,
+    userAccountExists,
     fetchPostIdsCommentedByUser,
     fetchPostsByIds,
     subscribePostIdsCommentedByUser,
@@ -77,8 +82,6 @@ import {
     getPublicUserProfile,
     isSupportAdminPlaceholder,
     loadFriendRelations,
-    loadLikerProfiles,
-    loadProfileImageMap,
     rejectFriendRequest,
     resolveFriendRequestNotificationByRequestId,
     sendFriendRequest,
@@ -268,7 +271,7 @@ export default function CommunityScreen() {
   useAdminRedirect();
   const { cardStyle, screenStyle, surfaceStyle, textPrimary, textMuted, textSecondary, iconButtonStyle, theme } =
     useThemedScreen();
-  const { modalCardStyle } = useProfileCardStyles();
+  const { modalCardStyle, inputStyle, placeholderColor } = useProfileCardStyles();
   const bootstrap = getCommunityBootstrapSnapshot();
 
   const [activeTab, setActiveTab] = useState<"feed" | "friends" | "chat">("feed");
@@ -284,6 +287,8 @@ export default function CommunityScreen() {
   const [posts, setPosts] = useState<CommunityPost[]>(bootstrap.posts);
   const [postsHydrated, setPostsHydrated] = useState(bootstrap.postsHydrated);
   const [authorAvatarById, setAuthorAvatarById] = useState<Record<string, string | null>>({});
+  const [authorNameById, setAuthorNameById] = useState<Record<string, string>>({});
+  const [existingUserIds, setExistingUserIds] = useState<Set<string>>(new Set());
   const [friendRelations, setFriendRelations] = useState<Record<string, FriendRelation>>({});
   const [chats, setChats] = useState<ChatConversation[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -291,7 +296,7 @@ export default function CommunityScreen() {
   const [pendingReviewPostIds, setPendingReviewPostIds] = useState<string[]>([]);
 
   const [composerVisible, setComposerVisible] = useState(false);
-  const [addFriendVisible, setAddFriendVisible] = useState(false);
+  const [postText, setPostText] = useState("");
   const [editingPost, setEditingPost] = useState<CommunityPost | null>(null);
   const [posting, setPosting] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
@@ -343,20 +348,37 @@ export default function CommunityScreen() {
     setFirestoreError(error.message || "Could not load community data.");
   }, []);
 
-  const displayChats = useMemo(
-    () =>
-      currentUserId
-        ? buildChatListWithSupportAdmin(chats, currentUserId, adminUid, adminProfileImage)
-        : chats,
-    [chats, currentUserId, adminUid, adminProfileImage]
-  );
+  const displayChats = useMemo(() => {
+    const list = currentUserId
+      ? buildChatListWithSupportAdmin(chats, currentUserId, adminUid, adminProfileImage)
+      : chats;
+    return list.filter((chat) => {
+      if (!currentUserId) return true;
+      const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
+      if (!otherUid) return false;
+      if (adminUid && otherUid === adminUid) return true;
+      if (isSupportAdminPlaceholder(chat.id)) return true;
+      // Hide chats with deleted accounts once we know which users still exist.
+      if (existingUserIds.size > 0 && !existingUserIds.has(otherUid)) {
+        return false;
+      }
+      return true;
+    });
+  }, [chats, currentUserId, adminUid, adminProfileImage, existingUserIds]);
 
   const friendIdSet = useMemo(() => new Set(friendIds), [friendIds]);
 
   const filteredPosts = useMemo(() => {
-    // Author-hidden posts stay off the community feed (visible only on the author's profile).
+    // Author-hidden posts stay off the community feed (visible only on the author's own profile).
+    // Also hide posts whose author account was deleted.
     let list = filterPostsByTag(
-      posts.filter((p) => !p.authorHidden),
+      posts.filter(
+        (p) =>
+          !p.authorHidden &&
+          (existingUserIds.size === 0 ||
+            existingUserIds.has(p.authorId) ||
+            (adminUid != null && p.authorId === adminUid))
+      ),
       tagFilterView ? activeTagFilter : null
     );
 
@@ -390,6 +412,8 @@ export default function CommunityScreen() {
     commentedPostIds,
     commentedFilterPosts,
     friendIds,
+    existingUserIds,
+    adminUid,
   ]);
 
   const profilePosts = useMemo(
@@ -439,6 +463,31 @@ export default function CommunityScreen() {
     return unsubAuth;
   }, []);
 
+  /** Keep Support Admin avatar in sync with users/{adminUid}.profileImage. */
+  useEffect(() => {
+    if (!adminUid) {
+      setAdminProfileImage(null);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "users", adminUid),
+      (snap) => {
+        if (!snap.exists()) {
+          setAdminProfileImage(null);
+          return;
+        }
+        const data = snap.data() as { profileImage?: unknown };
+        setAdminProfileImage(
+          typeof data.profileImage === "string" && data.profileImage.length > 0
+            ? data.profileImage
+            : null
+        );
+      },
+      () => setAdminProfileImage(null)
+    );
+    return unsub;
+  }, [adminUid]);
+
   /** Always show the signed-in user's avatar in the header (never another account's cached image). */
   useEffect(() => {
     if (!currentUserId) {
@@ -476,21 +525,48 @@ export default function CommunityScreen() {
     );
   }, [currentUserId, handleFirestoreError]);
 
-  /** Prefer live users/{uid}.profileImage so updated photos show on old posts. */
+  /** Prefer live users/{uid} profile fields so names/photos match across friends and chat. */
   useEffect(() => {
-    const authorIds = [...new Set(posts.map((p) => p.authorId).filter(Boolean))];
-    if (authorIds.length === 0) {
+    const ids = new Set<string>();
+    for (const post of posts) {
+      if (post.authorId) ids.add(post.authorId);
+    }
+    for (const chat of chats) {
+      for (const participantId of chat.participants) {
+        if (participantId && participantId !== currentUserId) ids.add(participantId);
+      }
+    }
+    for (const friendId of friendIds) {
+      if (friendId) ids.add(friendId);
+    }
+    if (adminUid) ids.add(adminUid);
+
+    const userIds = [...ids].filter(Boolean);
+    if (userIds.length === 0) {
       setAuthorAvatarById({});
+      setAuthorNameById({});
+      setExistingUserIds(new Set());
       return;
     }
     let cancelled = false;
-    void loadProfileImageMap(authorIds).then((map) => {
-      if (!cancelled) setAuthorAvatarById(map);
-    });
+    void Promise.all([loadLikerProfiles(userIds), loadExistingUserIdSet(userIds)]).then(
+      ([profiles, existing]) => {
+        if (cancelled) return;
+        const avatarMap: Record<string, string | null> = {};
+        const nameMap: Record<string, string> = {};
+        for (const profile of profiles) {
+          avatarMap[profile.id] = profile.profileImage;
+          nameMap[profile.id] = profile.name;
+        }
+        setAuthorAvatarById(avatarMap);
+        setAuthorNameById(nameMap);
+        setExistingUserIds(existing);
+      }
+    );
     return () => {
       cancelled = true;
     };
-  }, [posts]);
+  }, [posts, chats, friendIds, adminUid, currentUserId]);
 
   useEffect(() => {
     const openPostId = params.openPostId ? String(params.openPostId) : "";
@@ -618,12 +694,23 @@ export default function CommunityScreen() {
     if (!currentUserId) return;
 
     const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
-    const name = chatDisplayName(chat, currentUserId, adminUid);
-    const image = chat.participantImages[otherUid] ?? null;
+    const name = chatDisplayName(chat, currentUserId, adminUid, authorNameById);
+    const image = chatParticipantImage(
+      otherUid,
+      chat,
+      adminUid,
+      adminProfileImage,
+      authorAvatarById
+    );
     const isSupport =
       chat.isSupportChat === true ||
       isSupportAdminPlaceholder(chat.id) ||
       (adminUid != null && otherUid === adminUid);
+
+    if (!isSupport && otherUid && existingUserIds.size > 0 && !existingUserIds.has(otherUid)) {
+      Alert.alert("Unavailable", ACCOUNT_UNAVAILABLE_MESSAGE);
+      return;
+    }
 
     let chatId = chat.id;
     if (isSupport && adminUid) {
@@ -676,6 +763,7 @@ export default function CommunityScreen() {
           return merged.sort((a, b) => b.createdAt - a.createdAt);
         });
         setPostsHydrated(true);
+        setPostText("");
         setActiveTab("feed");
         setSearchQuery("");
         setTagFilterView(false);
@@ -752,14 +840,22 @@ export default function CommunityScreen() {
     setProfileLoading(true);
     setProfileData(null);
     try {
+      if (!(await userAccountExists(userId))) {
+        Alert.alert("Unavailable", ACCOUNT_UNAVAILABLE_MESSAGE);
+        setProfileUserId(null);
+        return;
+      }
       const profile = await getPublicUserProfile(userId);
       setProfileData(profile);
       if (userId !== currentUserId) {
         const relation = await loadFriendRelations([userId]);
         setFriendRelations((prev) => ({ ...prev, ...relation }));
       }
-    } catch {
-      Alert.alert("Error", "Could not load profile.");
+    } catch (e: unknown) {
+      Alert.alert(
+        "Error",
+        e instanceof Error ? e.message : "Could not load profile."
+      );
       setProfileUserId(null);
     } finally {
       setProfileLoading(false);
@@ -815,6 +911,10 @@ export default function CommunityScreen() {
 
   const handleChatFromProfile = async () => {
     if (!profileUserId || profileUserId === currentUserId) return;
+    if (!(await userAccountExists(profileUserId))) {
+      Alert.alert("Unavailable", ACCOUNT_UNAVAILABLE_MESSAGE);
+      return;
+    }
     const relation = friendRelations[profileUserId] ?? "none";
     if (relation !== "friends") {
       Alert.alert("Add friend first", "You can chat after becoming friends.");
@@ -844,11 +944,16 @@ export default function CommunityScreen() {
   const openFriendChat = async (friend: { id: string; name: string; profileImage: string | null }) => {
     try {
       const chatId = await ensureDirectChat(friend.id);
+      const displayName = displayCommunityUserName(
+        friend.id,
+        authorNameById[friend.id] ?? friend.name,
+        adminUid
+      );
       router.push({
         pathname: "/community-chat" as any,
         params: {
           chatId,
-          name: friend.name,
+          name: displayName,
           image: friend.profileImage ?? "",
           isSupport: "0",
           otherUserId: friend.id,
@@ -1155,6 +1260,58 @@ export default function CommunityScreen() {
       >
         {activeTab === "feed" ? (
               <View className="gap-3 px-4 pb-4">
+                {!tagFilterView ? (
+                  <View className="rounded-2xl px-4 py-4" style={cardStyle}>
+                    <View className="flex-row items-center">
+                      <ProfileAvatar uri={myProfileImage} />
+                      <View className="flex-1 ml-3">
+                        <Text className="text-base font-extrabold" style={textPrimary}>
+                          Share something
+                        </Text>
+                        <Text className="text-sm mt-1" style={textMuted}>
+                          Post updates and tips with friends in the community.
+                        </Text>
+                      </View>
+                    </View>
+                    <TextInput
+                      value={postText}
+                      onChangeText={setPostText}
+                      placeholder="What would you like to share today?"
+                      multiline
+                      className="mt-4 rounded-2xl px-4 py-4 text-sm min-h-[80px]"
+                      style={inputStyle}
+                      placeholderTextColor={placeholderColor}
+                    />
+                    <Pressable
+                      onPress={() => {
+                        if (!auth.currentUser?.uid) {
+                          Alert.alert("Sign in required", "Please sign in to post in the community.");
+                          return;
+                        }
+                        const content = postText.trim();
+                        if (!content || posting) return;
+                        setEditingPost(null);
+                        void handleCreateOrUpdatePost({
+                          content,
+                          tags: [],
+                          achievementIds: [],
+                          imageUris: [],
+                        });
+                      }}
+                      disabled={!postText.trim() || posting}
+                      className="mt-3 rounded-full py-3 items-center"
+                      style={{
+                        backgroundColor:
+                          postText.trim() && !posting ? theme.accent : theme.iconMuted,
+                      }}
+                    >
+                      <Text className="text-sm font-extrabold text-white">
+                        {posting && !composerVisible ? "Posting…" : "Continue"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
                 {!postsHydrated && filteredPosts.length === 0 ? (
                   <View className="px-4 py-10 rounded-2xl items-center" style={cardStyle}>
                     <ActivityIndicator size="small" color={theme.accent} />
@@ -1216,6 +1373,7 @@ export default function CommunityScreen() {
                             authorId={post.authorId}
                             authorName={post.authorName}
                             adminUid={adminUid}
+                            liveNamesById={authorNameById}
                             textStyle={textPrimary}
                             ownSuffix={
                               isOwnPost ? (
@@ -1340,6 +1498,7 @@ export default function CommunityScreen() {
                         adminUid={adminUid}
                         friendIds={friendIdSet}
                         authorAvatarById={authorAvatarById}
+                        liveNamesById={authorNameById}
                         onSeeMore={() => openPostDetail(post.id)}
                         onOpenProfile={(userId) => void openUserProfile(userId)}
                       />
@@ -1350,6 +1509,8 @@ export default function CommunityScreen() {
           ) : activeTab === "friends" ? (
             <View className="px-4">
               <FriendsSection
+                adminUid={adminUid}
+                liveNamesById={authorNameById}
                 onOpenProfile={(userId) => void openUserProfile(userId)}
                 onOpenChat={(friend) => openFriendChat(friend)}
               />
@@ -1365,8 +1526,14 @@ export default function CommunityScreen() {
               ) : null}
               {displayChats.map((chat) => {
                 const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
-                const name = chatDisplayName(chat, currentUserId ?? "", adminUid);
-                const image = chat.participantImages[otherUid] ?? null;
+                const name = chatDisplayName(chat, currentUserId ?? "", adminUid, authorNameById);
+                const image = chatParticipantImage(
+      otherUid,
+      chat,
+      adminUid,
+      adminProfileImage,
+      authorAvatarById
+    );
                 const unread = currentUserId ? (chat.unreadCount[currentUserId] ?? 0) : 0;
                 const isSupport = adminUid != null && otherUid === adminUid;
 
@@ -1421,13 +1588,13 @@ export default function CommunityScreen() {
           style={{ bottom: tabBarPadding - 56 }}
         >
           <Ionicons name="add" size={28} color="white" />
-          <Text className="text-base font-extrabold text-white ml-1.5">New post</Text>
+          <Text className="text-base font-extrabold text-white ml-1.5">New Post</Text>
         </Pressable>
       ) : null}
 
       {activeTab === "friends" ? (
         <Pressable
-          onPress={() => setAddFriendVisible(true)}
+          onPress={() => router.push("/community-add-friend" as any)}
           className="absolute right-5 flex-row items-center rounded-full bg-[#52B69A] px-6 py-4 shadow-lg"
           style={{ bottom: tabBarPadding - 56 }}
         >
@@ -1436,18 +1603,9 @@ export default function CommunityScreen() {
         </Pressable>
       ) : null}
 
-      <AddFriendModal
-        visible={addFriendVisible}
-        onClose={() => setAddFriendVisible(false)}
-        onOpenProfile={(userId) => {
-          setAddFriendVisible(false);
-          void openUserProfile(userId);
-        }}
-      />
-
       <PostComposerModal
         visible={composerVisible}
-        title={editingPost ? "Edit post" : "New post"}
+        title={editingPost ? "Edit post" : "New Post"}
         submitting={posting}
         initial={
           editingPost
@@ -1457,7 +1615,14 @@ export default function CommunityScreen() {
                 achievementIds: editingPost.achievementIds ?? [],
                 imageUris: editingPost.imageUrls,
               }
-            : undefined
+            : postText.trim()
+              ? {
+                  content: postText,
+                  tags: [],
+                  achievementIds: [],
+                  imageUris: [],
+                }
+              : undefined
         }
         onClose={() => {
           setComposerVisible(false);
@@ -1595,16 +1760,17 @@ export default function CommunityScreen() {
           setPendingReviewPostIds((prev) =>
             prev.includes(postId) ? prev : [...prev, postId]
           );
-          setPosts((prev) => {
-            const next = prev.map((item) =>
+          setPosts((prev) =>
+            prev.map((item) =>
               item.id === postId
                 ? { ...item, underReview: true, blocked: false }
                 : item
-            );
-            const updated = next.find((item) => item.id === postId);
-            if (updated) patchCommunityPost(updated);
-            return next;
-          });
+            )
+          );
+          const updated = posts.find((item) => item.id === postId);
+          if (updated) {
+            patchCommunityPost({ ...updated, underReview: true, blocked: false });
+          }
         }}
       />
 

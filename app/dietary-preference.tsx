@@ -179,7 +179,7 @@ export default function DietaryPreferenceScreen() {
 
       setOnboardingInProgress(false);
       reset();
-      router.replace("/BMIanalysis");
+      router.replace("/schedule-plan");
     } catch (error: any) {
       if (error?.code === "permission-denied") {
         Alert.alert(

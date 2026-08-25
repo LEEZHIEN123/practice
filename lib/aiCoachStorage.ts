@@ -1,9 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  loadActiveChatCloud,
+  loadArchivedChatsCloud,
+  replaceArchivedChatsCloud,
+  saveActiveChatCloud,
+  upsertHistorySessionCloud,
+} from "./aiCoachCloudStorage";
 
 export type StoredChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** Firebase Storage download URL or legacy local URI for older chats. */
+  imageUri?: string;
   /** Unix ms when the message was sent. */
   createdAt?: number;
 };
@@ -21,7 +30,7 @@ export type ActiveChatState = {
 };
 
 const WELCOME_TEXT =
-  "Hi! I'm your fitness assistant. Ask me anything about fitness, or how to use this app — I'll answer based on your question.";
+  "Hi! I'm your workout and nutrition assistant. Ask me about exercise, meals, calories, or how to find features in the app — I'm happy to help!";
 
 function activeKey(uid: string) {
   return `aiCoach:active:${uid}`;
@@ -38,6 +47,10 @@ export function defaultWelcomeMessages(): StoredChatMessage[] {
 function normalizeStoredMessage(message: StoredChatMessage): StoredChatMessage {
   return {
     ...message,
+    imageUri:
+      typeof message.imageUri === "string" && message.imageUri.trim().length > 0
+        ? message.imageUri.trim()
+        : undefined,
     createdAt:
       typeof message.createdAt === "number" && Number.isFinite(message.createdAt) && message.createdAt > 0
         ? message.createdAt
@@ -72,7 +85,9 @@ export function buildSessionTitle(messages: StoredChatMessage[]): string {
   if (!firstUser) return "Chat";
 
   const firstAssistant = messages.find((m) => m.role === "assistant" && m.id !== "welcome");
-  const question = truncate(stripMarkdown(firstUser.text), 40);
+  const questionSource =
+    firstUser.text.trim() || (firstUser.imageUri ? "Photo question" : "Chat");
+  const question = truncate(stripMarkdown(questionSource), 40);
 
   if (!firstAssistant) return question;
 
@@ -81,6 +96,27 @@ export function buildSessionTitle(messages: StoredChatMessage[]): string {
 }
 
 export async function loadActiveChat(uid: string): Promise<ActiveChatState> {
+  const local = await loadActiveChatLocal(uid);
+
+  if (uid !== "guest") {
+    try {
+      const cloud = await loadActiveChatCloud(uid);
+      if (cloud) {
+        await saveActiveChatLocal(uid, cloud.sessionId, cloud.messages);
+        return cloud;
+      }
+      if (hasUserMessages(local.messages) || local.sessionId) {
+        await saveActiveChatCloud(uid, local.sessionId, local.messages).catch(() => {});
+      }
+    } catch {
+      // Fall back to device cache when offline or rules not deployed.
+    }
+  }
+
+  return local;
+}
+
+async function loadActiveChatLocal(uid: string): Promise<ActiveChatState> {
   try {
     const raw = await AsyncStorage.getItem(activeKey(uid));
     if (!raw) return { sessionId: null, messages: defaultWelcomeMessages() };
@@ -107,7 +143,7 @@ export async function loadActiveChat(uid: string): Promise<ActiveChatState> {
   }
 }
 
-export async function saveActiveChat(
+async function saveActiveChatLocal(
   uid: string,
   sessionId: string | null,
   messages: StoredChatMessage[]
@@ -116,7 +152,39 @@ export async function saveActiveChat(
   await AsyncStorage.setItem(activeKey(uid), JSON.stringify(payload));
 }
 
+export async function saveActiveChat(
+  uid: string,
+  sessionId: string | null,
+  messages: StoredChatMessage[]
+): Promise<void> {
+  await saveActiveChatLocal(uid, sessionId, messages);
+  if (uid !== "guest") {
+    await saveActiveChatCloud(uid, sessionId, messages).catch(() => {});
+  }
+}
+
 export async function loadArchivedChats(uid: string): Promise<ArchivedChatSession[]> {
+  const local = await loadArchivedChatsLocal(uid);
+
+  if (uid !== "guest") {
+    try {
+      const cloud = await loadArchivedChatsCloud(uid);
+      if (cloud && cloud.length > 0) {
+        await saveArchivedChatsLocal(uid, cloud);
+        return cloud;
+      }
+      if (local.length > 0) {
+        await replaceArchivedChatsCloud(uid, local).catch(() => {});
+      }
+    } catch {
+      // Fall back to device cache.
+    }
+  }
+
+  return local;
+}
+
+async function loadArchivedChatsLocal(uid: string): Promise<ArchivedChatSession[]> {
   try {
     const raw = await AsyncStorage.getItem(archiveKey(uid));
     if (!raw) return [];
@@ -133,12 +201,19 @@ export async function loadArchivedChats(uid: string): Promise<ArchivedChatSessio
   }
 }
 
-export async function saveArchivedChats(uid: string, sessions: ArchivedChatSession[]): Promise<void> {
+async function saveArchivedChatsLocal(uid: string, sessions: ArchivedChatSession[]): Promise<void> {
   await AsyncStorage.setItem(archiveKey(uid), JSON.stringify(sessions));
 }
 
+export async function saveArchivedChats(uid: string, sessions: ArchivedChatSession[]): Promise<void> {
+  await saveArchivedChatsLocal(uid, sessions);
+  if (uid !== "guest") {
+    await replaceArchivedChatsCloud(uid, sessions).catch(() => {});
+  }
+}
+
 export async function deleteArchivedChat(uid: string, sessionId: string): Promise<ArchivedChatSession[]> {
-  const sessions = await loadArchivedChats(uid);
+  const sessions = await loadArchivedChatsLocal(uid);
   const next = sessions.filter((s) => s.id !== sessionId);
   await saveArchivedChats(uid, next);
   return next;
@@ -162,5 +237,8 @@ export async function upsertHistorySession(
 
   const next = [session, ...sessions.filter((s) => s.id !== sessionId)];
   await saveArchivedChats(uid, next);
+  if (uid !== "guest") {
+    await upsertHistorySessionCloud(uid, sessionId, messages).catch(() => {});
+  }
   return next;
 }

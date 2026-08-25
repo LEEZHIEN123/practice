@@ -104,7 +104,7 @@ export function scannedProductToSearchResult(product: ScannedFoodProduct): FoodS
 
 export async function fetchFoodByBarcode(barcode: string): Promise<ScannedFoodProduct> {
   const code = barcode.replace(/\D/g, "").trim();
-  if (code.length < 8) throw new Error("Enter a valid barcode (at least 8 digits).");
+  if (code.length < 8) throw new Error("Barcode must be at least 8 digits.");
 
   const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_quantity,serving_size,nutriments,ingredients_text,code`;
   const res = await fetch(url);

@@ -12,6 +12,7 @@ import {
 import { firebaseAuthErrorMessage } from "@/lib/firebaseAuthErrors";
 import { subscribeProfileWorkoutStats } from "@/lib/profileStats";
 import { useAdminRedirect } from "@/lib/useAdminRedirect";
+import { completeWorkoutBeforeLogout } from "@/lib/workoutLogoutCleanup";
 import {
   bmiBandKey,
   buildWorkoutPlanArchiveEntry,
@@ -73,6 +74,7 @@ export default function ProfileScreen() {
   const [totalWorkouts, setTotalWorkouts] = useState(0);
 
   const [goalModalVisible, setGoalModalVisible] = useState(false);
+  const [pendingGoal, setPendingGoal] = useState<GoalLabel>("Lose Weight");
   const [savingGoal, setSavingGoal] = useState(false);
 
   const [deletePasswordModal, setDeletePasswordModal] = useState(false);
@@ -290,6 +292,7 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           try {
+            await completeWorkoutBeforeLogout();
             await signOut(auth);
             router.replace("/");
           } catch (error) {
@@ -575,7 +578,10 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => setGoalModalVisible(true)}
+            onPress={() => {
+              setPendingGoal(goal);
+              setGoalModalVisible(true);
+            }}
             className="rounded-3xl px-4 py-3.5 flex-row items-center justify-between mb-2.5 shadow-sm"
             style={rowStyle}
           >
@@ -730,13 +736,13 @@ export default function ProfileScreen() {
                   return true;
                 })
                 .map((o) => {
-                const active = goal === o.label;
+                const active = pendingGoal === o.label;
                 const recommended = recommendedGoalLabel === o.label;
                 return (
                   <Pressable
                     key={o.label}
                     disabled={savingGoal}
-                    onPress={() => void setGoalAndPersist(o.label)}
+                    onPress={() => setPendingGoal(o.label)}
                     className="rounded-2xl border p-4"
                     style={
                       active
@@ -770,7 +776,7 @@ export default function ProfileScreen() {
               })}
             </View>
 
-            {recommendedGoalLabel && goal !== recommendedGoalLabel ? (
+            {recommendedGoalLabel && pendingGoal !== recommendedGoalLabel ? (
               <View
                 className="mt-5 rounded-2xl p-4 border"
                 style={{ backgroundColor: theme.accentSoft, borderColor: theme.accent }}
@@ -790,13 +796,27 @@ export default function ProfileScreen() {
               </View>
             ) : null}
 
-            <View className="flex-row justify-end mt-6">
+            <View className="flex-row justify-end items-center mt-6 gap-2">
               <Pressable
                 onPress={() => setGoalModalVisible(false)}
                 disabled={savingGoal}
                 className="px-4 py-3"
               >
                 <Text className="font-extrabold" style={{ color: theme.textMuted }}>Close</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void setGoalAndPersist(pendingGoal)}
+                disabled={savingGoal || pendingGoal === goal}
+                className="px-5 py-3 rounded-2xl"
+                style={{
+                  backgroundColor:
+                    savingGoal || pendingGoal === goal ? theme.iconMuted : theme.accent,
+                  opacity: savingGoal || pendingGoal === goal ? 0.55 : 1,
+                }}
+              >
+                <Text className="font-extrabold text-white">
+                  {savingGoal ? "Updating…" : "Change"}
+                </Text>
               </Pressable>
             </View>
           </Pressable>

@@ -14,6 +14,7 @@ import {
   type TermsSection,
 } from "@/lib/termsOfService";
 import { setTermsPreview } from "@/lib/termsPreview";
+import { useScrollFieldAboveKeyboard } from "@/lib/useScrollFieldAboveKeyboard";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRouter } from "expo-router";
@@ -77,6 +78,17 @@ export default function AdminEditTermsScreen() {
     Record<number, { title?: string; body?: string }>
   >({});
   const allowLeaveRef = useRef(false);
+  const { scrollRef, scrollFieldIntoView, scrollBottomPad, onScroll } =
+    useScrollFieldAboveKeyboard(32, { gapAboveKeyboard: 24 });
+  const fieldWrapRefs = useRef<Map<string, View | null>>(new Map());
+
+  const setFieldWrapRef = (key: string) => (node: View | null) => {
+    fieldWrapRefs.current.set(key, node);
+  };
+
+  const focusField = (key: string) => {
+    scrollFieldIntoView({ current: fieldWrapRefs.current.get(key) ?? null });
+  };
 
   const isDirty = useMemo(
     () => !sectionsEqual(sections, initialSections),
@@ -333,14 +345,21 @@ export default function AdminEditTermsScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{
           paddingHorizontal: 12,
-          paddingBottom: insets.bottom + 24,
+          paddingBottom: scrollBottomPad + 24,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        onScroll={(e) => onScroll(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       >
         {sections.map((section, index) => {
           const errors = fieldErrors[index];
+          const titleKey = `title-${index}`;
+          const bodyKey = `body-${index}`;
+          const bulletsKey = `bullets-${index}`;
           return (
           <ThemedCard key={`section-${index}`} className="p-4 mb-4">
             <View className="flex-row items-center justify-between mb-3">
@@ -350,59 +369,68 @@ export default function AdminEditTermsScreen() {
               </Pressable>
             </View>
 
-            <ThemedText variant="muted" className="text-xs mb-1">
-              Title <Text style={{ color: theme.danger }}>*</Text>
-            </ThemedText>
-            <TextInput
-              value={section.title}
-              onChangeText={(title) => updateSection(index, { title })}
-              className="rounded-xl px-3 py-3 text-base"
-              style={[
-                inputStyle,
-                errors?.title ? { borderColor: theme.danger, borderWidth: 1 } : null,
-              ]}
-              placeholderTextColor={placeholderColor}
-              placeholder="Section title"
-            />
-            {!!errors?.title && (
-              <Text className="text-red-500 text-xs mt-1.5 ml-1 mb-2">{errors.title}</Text>
-            )}
-            {!errors?.title ? <View className="mb-3" /> : null}
+            <View ref={setFieldWrapRef(titleKey)}>
+              <ThemedText variant="muted" className="text-xs mb-1">
+                Title <Text style={{ color: theme.danger }}>*</Text>
+              </ThemedText>
+              <TextInput
+                value={section.title}
+                onChangeText={(title) => updateSection(index, { title })}
+                onFocus={() => focusField(titleKey)}
+                className="rounded-xl px-3 py-3 text-base"
+                style={[
+                  inputStyle,
+                  errors?.title ? { borderColor: theme.danger, borderWidth: 1 } : null,
+                ]}
+                placeholderTextColor={placeholderColor}
+                placeholder="Section title"
+              />
+              {!!errors?.title && (
+                <Text className="text-red-500 text-xs mt-1.5 ml-1 mb-2">{errors.title}</Text>
+              )}
+              {!errors?.title ? <View className="mb-3" /> : null}
+            </View>
 
-            <ThemedText variant="muted" className="text-xs mb-1">
-              Body <Text style={{ color: theme.danger }}>*</Text>
-            </ThemedText>
-            <TextInput
-              value={section.body}
-              onChangeText={(body) => updateSection(index, { body })}
-              multiline
-              textAlignVertical="top"
-              className="rounded-xl px-3 py-3 text-base min-h-[100px]"
-              style={[
-                inputStyle,
-                errors?.body ? { borderColor: theme.danger, borderWidth: 1 } : null,
-              ]}
-              placeholderTextColor={placeholderColor}
-              placeholder="Section body"
-            />
-            {!!errors?.body && (
-              <Text className="text-red-500 text-xs mt-1.5 ml-1 mb-2">{errors.body}</Text>
-            )}
-            {!errors?.body ? <View className="mb-3" /> : null}
+            <View ref={setFieldWrapRef(bodyKey)}>
+              <ThemedText variant="muted" className="text-xs mb-1">
+                Body <Text style={{ color: theme.danger }}>*</Text>
+              </ThemedText>
+              <TextInput
+                value={section.body}
+                onChangeText={(body) => updateSection(index, { body })}
+                onFocus={() => focusField(bodyKey)}
+                multiline
+                textAlignVertical="top"
+                className="rounded-xl px-3 py-3 text-base min-h-[100px]"
+                style={[
+                  inputStyle,
+                  errors?.body ? { borderColor: theme.danger, borderWidth: 1 } : null,
+                ]}
+                placeholderTextColor={placeholderColor}
+                placeholder="Section body"
+              />
+              {!!errors?.body && (
+                <Text className="text-red-500 text-xs mt-1.5 ml-1 mb-2">{errors.body}</Text>
+              )}
+              {!errors?.body ? <View className="mb-3" /> : null}
+            </View>
 
-            <ThemedText variant="muted" className="text-xs mb-1">
-              Bullet points (one per line, optional)
-            </ThemedText>
-            <TextInput
-              value={bulletsToText(section.bullets)}
-              onChangeText={(text) => updateSection(index, { bullets: textToBullets(text) })}
-              multiline
-              textAlignVertical="top"
-              className="rounded-xl px-3 py-3 text-base min-h-[80px]"
-              style={inputStyle}
-              placeholderTextColor={placeholderColor}
-              placeholder={"Line 1\nLine 2"}
-            />
+            <View ref={setFieldWrapRef(bulletsKey)}>
+              <ThemedText variant="muted" className="text-xs mb-1">
+                Bullet points (one per line, optional)
+              </ThemedText>
+              <TextInput
+                value={bulletsToText(section.bullets)}
+                onChangeText={(text) => updateSection(index, { bullets: textToBullets(text) })}
+                onFocus={() => focusField(bulletsKey)}
+                multiline
+                textAlignVertical="top"
+                className="rounded-xl px-3 py-3 text-base min-h-[80px]"
+                style={inputStyle}
+                placeholderTextColor={placeholderColor}
+                placeholder={"Line 1\nLine 2"}
+              />
+            </View>
           </ThemedCard>
           );
         })}

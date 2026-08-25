@@ -30,11 +30,21 @@ let postsUnsub: Unsubscribe | null = null;
 const postListeners = new Set<PostsListener>();
 let prefetchInFlight: Promise<void> | null = null;
 let prefetchInFlightUid: string | null = null;
+let postNotifyScheduled = false;
 
+function flushPostListeners() {
+  postNotifyScheduled = false;
+  const posts = cachedPosts;
+  for (const listener of postListeners) listener(posts);
+}
+
+/** Notify feed listeners on the next microtask to avoid cross-screen setState during render. */
 function notifyPosts(posts: CommunityPost[]) {
   cachedPosts = posts;
   postsHydrated = true;
-  for (const listener of postListeners) listener(posts);
+  if (postNotifyScheduled) return;
+  postNotifyScheduled = true;
+  queueMicrotask(flushPostListeners);
 }
 
 /** Show a newly created post immediately while Firestore syncs. */

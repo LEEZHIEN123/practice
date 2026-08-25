@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
@@ -323,6 +323,7 @@ export default function MyReportScreen() {
   const [report, setReport] = useState<UserReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const reportCacheRef = useRef<Partial<Record<ReportPeriod, UserReport>>>({});
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -342,12 +343,36 @@ export default function MyReportScreen() {
     return () => unsub();
   }, [authUid]);
 
+  // Keep the visible report name in sync without reloading Firestore data.
+  useEffect(() => {
+    setReport((prev) => (prev && prev.userName !== userName ? { ...prev, userName } : prev));
+    (["daily", "weekly"] as const).forEach((key) => {
+      const cached = reportCacheRef.current[key];
+      if (cached && cached.userName !== userName) {
+        reportCacheRef.current[key] = { ...cached, userName };
+      }
+    });
+  }, [userName]);
+
+  useEffect(() => {
+    reportCacheRef.current = {};
+  }, [authUid, calendarTz]);
+
   const refreshReport = useCallback(async () => {
     if (!authUid) {
       setReport(null);
+      reportCacheRef.current = {};
       setLoading(false);
       return;
     }
+
+    const cached = reportCacheRef.current[period];
+    if (cached) {
+      setReport(cached.userName === userName ? cached : { ...cached, userName });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const next = await loadUserReport({
@@ -356,6 +381,7 @@ export default function MyReportScreen() {
         calendarTz,
         userName,
       });
+      reportCacheRef.current[period] = next;
       setReport(next);
     } catch (e: unknown) {
       setReport(null);

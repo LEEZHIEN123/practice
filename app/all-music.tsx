@@ -39,6 +39,23 @@ function fmtMmSs(ms: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function formatSkippedSongsMessage(skippedTitles: string[]): string {
+  if (skippedTitles.length === 0) return "";
+
+  if (skippedTitles.length === 1) {
+    return `"${skippedTitles[0]}" was not added because it is already in your library.`;
+  }
+
+  const listed = skippedTitles
+    .slice(0, 5)
+    .map((title) => `• ${title}`)
+    .join("\n");
+  const more =
+    skippedTitles.length > 5 ? `\n…and ${skippedTitles.length - 5} more.` : "";
+
+  return `These songs were not added because they are already in your library:\n${listed}${more}`;
+}
+
 export default function AllMusicScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -122,25 +139,25 @@ export default function AllMusicScreen() {
       setTracks(merged);
 
       if (added.length === 0 && skippedTitles.length > 0) {
-        if (skippedTitles.length === 1) {
-          Alert.alert("Already in library", `"${skippedTitles[0]}" is already in your music list.`);
-        } else {
-          Alert.alert(
-            "Already in library",
-            `${skippedTitles.length} songs were skipped because they are already in your library.`
-          );
-        }
+        Alert.alert("Music already in the library", formatSkippedSongsMessage(skippedTitles));
         return;
       }
 
       if (added.length === 1) {
         const skippedNote =
-          skippedTitles.length > 0 ? ` ${skippedTitles.length} duplicate skipped.` : "";
+          skippedTitles.length > 0
+            ? `\n\n${formatSkippedSongsMessage(skippedTitles)}`
+            : "";
         Alert.alert("Music added", `"${added[0].title}" is ready to play.${skippedNote}`);
       } else if (added.length > 0) {
         const skippedNote =
-          skippedTitles.length > 0 ? ` ${skippedTitles.length} duplicate(s) skipped.` : "";
-        Alert.alert("Music added", `${added.length} songs added to your library.${skippedNote}`);
+          skippedTitles.length > 0
+            ? `\n\n${formatSkippedSongsMessage(skippedTitles)}`
+            : "";
+        Alert.alert(
+          "Music added",
+          `${added.length} songs added to your library.${skippedNote}`
+        );
       }
     } catch (e: unknown) {
       Alert.alert("Import failed", e instanceof Error ? e.message : "Could not import music.");

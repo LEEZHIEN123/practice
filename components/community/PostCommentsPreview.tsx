@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityComment } from "@/lib/communityTypes";
 import {
-  loadProfileImageMap,
+  loadLikerProfiles,
   subscribeComments,
   subscribePendingCommunityCommentIds,
 } from "@/lib/communityService";
@@ -52,6 +52,7 @@ type PostCommentsPreviewProps = {
   adminUid?: string | null;
   friendIds?: Set<string>;
   authorAvatarById?: Record<string, string | null>;
+  liveNamesById?: Record<string, string>;
   onSeeMore: () => void;
   onOpenProfile?: (userId: string) => void;
 };
@@ -63,6 +64,7 @@ export function PostCommentsPreview({
   adminUid = null,
   friendIds,
   authorAvatarById,
+  liveNamesById,
   onSeeMore,
   onOpenProfile,
 }: PostCommentsPreviewProps) {
@@ -70,6 +72,7 @@ export function PostCommentsPreview({
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [pendingReviewCommentIds, setPendingReviewCommentIds] = useState<string[]>([]);
   const [liveAvatars, setLiveAvatars] = useState<Record<string, string | null>>({});
+  const [liveNames, setLiveNames] = useState<Record<string, string>>({});
   const friendSet = friendIds ?? new Set<string>();
 
   useEffect(() => {
@@ -86,11 +89,20 @@ export function PostCommentsPreview({
     const ids = [...new Set(comments.map((c) => c.authorId).filter(Boolean))];
     if (ids.length === 0) {
       setLiveAvatars({});
+      setLiveNames({});
       return;
     }
     let cancelled = false;
-    void loadProfileImageMap(ids).then((map) => {
-      if (!cancelled) setLiveAvatars(map);
+    void loadLikerProfiles(ids).then((profiles) => {
+      if (cancelled) return;
+      const avatarMap: Record<string, string | null> = {};
+      const nameMap: Record<string, string> = {};
+      for (const profile of profiles) {
+        avatarMap[profile.id] = profile.profileImage;
+        nameMap[profile.id] = profile.name;
+      }
+      setLiveAvatars(avatarMap);
+      setLiveNames(nameMap);
     });
     return () => {
       cancelled = true;
@@ -100,6 +112,11 @@ export function PostCommentsPreview({
   // Subscription is oldest→newest; show the latest three on the community feed.
   const preview = useMemo(() => comments.slice(-3), [comments]);
   const totalCount = Math.max(commentCount, comments.length);
+
+  const mergedLiveNames = useMemo(
+    () => ({ ...liveNames, ...liveNamesById }),
+    [liveNames, liveNamesById]
+  );
 
   if (preview.length === 0) return null;
 
@@ -117,6 +134,7 @@ export function PostCommentsPreview({
             authorId={comment.authorId}
             authorName={comment.authorName}
             adminUid={adminUid}
+            liveNamesById={mergedLiveNames}
             textClassName="text-xs font-extrabold"
             textStyle={textPrimary}
             iconSize={12}

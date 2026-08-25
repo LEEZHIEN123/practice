@@ -1,10 +1,12 @@
 import {
+  arrayRemove,
   collection,
   collectionGroup,
   deleteDoc,
   doc,
   getDocs,
   query,
+  updateDoc,
   where,
   writeBatch,
   type CollectionReference,
@@ -27,6 +29,9 @@ const USER_SUBCOLLECTIONS = [
   "mealLogs",
   "dailyStats",
   "friends",
+  "commentedPosts",
+  "aiCoach",
+  "aiCoachSessions",
 ] as const;
 
 async function deleteQueryDocs(q: Query | CollectionReference): Promise<void> {
@@ -81,7 +86,23 @@ async function deleteUserSubcollections(uid: string): Promise<void> {
   }
 }
 
+async function removeUserLikesFromPosts(uid: string): Promise<void> {
+  const snap = await getDocs(
+    query(collection(db, "communityPosts"), where("likedBy", "array-contains", uid))
+  );
+  for (const postDoc of snap.docs) {
+    const data = postDoc.data() as { likedBy?: unknown; likeCount?: unknown };
+    const likedBy = Array.isArray(data.likedBy) ? data.likedBy.map(String) : [];
+    if (!likedBy.includes(uid)) continue;
+    await updateDoc(postDoc.ref, {
+      likedBy: arrayRemove(uid),
+      likeCount: Math.max(0, (Number(data.likeCount) || likedBy.length) - 1),
+    }).catch(() => {});
+  }
+}
+
 async function deleteUserCommunityData(uid: string): Promise<void> {
+  // Posts authored by this user (and their comments).
   await safe(async () => {
     const postsSnap = await getDocs(
       query(collection(db, "communityPosts"), where("authorId", "==", uid))
@@ -92,11 +113,14 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
     }
   });
 
+  // Comments left on other people's posts.
   await safe(() =>
     deleteQueryDocs(
       query(collectionGroup(db, "comments"), where("authorId", "==", uid))
     )
   );
+
+  await safe(() => removeUserLikesFromPosts(uid));
 
   await safe(() =>
     deleteQueryDocs(
@@ -125,6 +149,11 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
       query(collection(db, "communityNotifications"), where("userId", "==", uid))
     )
   );
+  await safe(() =>
+    deleteQueryDocs(
+      query(collection(db, "communityNotifications"), where("fromUserId", "==", uid))
+    )
+  );
 
   await safe(() =>
     deleteQueryDocs(
@@ -137,6 +166,7 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
     )
   );
 
+  // All direct / support chats involving this user.
   await safe(async () => {
     const chatsSnap = await getDocs(
       query(
@@ -153,10 +183,32 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
   });
 }
 
+async function deleteUserRankingEntries(uid: string): Promise<void> {
+  await safe(() => deleteDoc(doc(db, "achievementRankings", uid)));
+  await safe(async () => {
+    const snap = await getDocs(
+      query(collectionGroup(db, "entries"), where("uid", "==", uid))
+    );
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const d of snap.docs) {
+      batch.delete(d.ref);
+      n++;
+      if (n >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        n = 0;
+      }
+    }
+    if (n > 0) await batch.commit();
+  });
+}
+
+/** Deletes Firestore profile + community data for a user (posts, chats, friends, etc.). */
 export async function deleteUserFirestoreProfile(uid: string): Promise<void> {
   await deleteUserSubcollections(uid);
   await deleteUserCommunityData(uid);
-  await safe(() => deleteDoc(doc(db, "achievementRankings", uid)));
+  await deleteUserRankingEntries(uid);
   await deleteDoc(doc(db, "users", uid));
 }
 

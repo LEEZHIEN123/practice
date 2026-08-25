@@ -115,6 +115,31 @@ async function getUserProfile(uid: string): Promise<UserProfile> {
   };
 }
 
+/** True when users/{uid} still exists (account not deleted). */
+export async function userAccountExists(uid: string): Promise<boolean> {
+  if (!uid) return false;
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists();
+}
+
+export const ACCOUNT_UNAVAILABLE_MESSAGE = "This account is no longer available.";
+
+/** Ids from the list that still have a Firestore user profile. */
+export async function loadExistingUserIdSet(userIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  const existing = new Set<string>();
+  await Promise.all(
+    unique.map(async (id) => {
+      try {
+        if (await userAccountExists(id)) existing.add(id);
+      } catch {
+        // Skip unverifiable ids.
+      }
+    })
+  );
+  return existing;
+}
+
 function mapPost(id: string, data: Record<string, unknown>): CommunityPost {
   const editHistory: PostEditSnapshot[] = Array.isArray(data.editHistory)
     ? data.editHistory.map((entry) => {
@@ -648,32 +673,27 @@ export async function requestBlockedPostReReview(
   const authorName = String(data.authorName ?? profile.name ?? "User");
   const now = Date.now();
 
-  const reopenedCount = await reopenResolvedReportsForAuthorReReview({
-    postId,
-    authorId: user.uid,
-    authorName: profile.name,
-    requestReason: trimmedReason,
-  });
+  // Authors can read/delete their own report cards, but cannot update them (admin-only).
+  // Clear prior cards for this post, then create a fresh pending re-review request.
+  await deleteAuthorPostTargetReports(postId, user.uid);
 
-  if (reopenedCount === 0) {
-    await addDoc(collection(db, "communityReports"), {
-      targetType: "post",
-      targetId: postId,
-      postId,
-      reporterId: user.uid,
-      reporterName: profile.name,
-      reason: trimmedReason,
-      requestReason: trimmedReason,
-      source: "re_review",
-      status: "pending",
-      createdAt: now,
-      createdAtServer: serverTimestamp(),
-      targetContent: content,
-      targetAuthorId: user.uid,
-      targetAuthorName: authorName,
-      read: false,
-    });
-  }
+  await addDoc(collection(db, "communityReports"), {
+    targetType: "post",
+    targetId: postId,
+    postId,
+    reporterId: user.uid,
+    reporterName: profile.name,
+    reason: trimmedReason,
+    requestReason: trimmedReason,
+    source: "re_review",
+    status: "pending",
+    createdAt: now,
+    createdAtServer: serverTimestamp(),
+    targetContent: content,
+    targetAuthorId: user.uid,
+    targetAuthorName: authorName,
+    read: false,
+  });
 
   await updateDoc(postRef, { underReview: true });
   await setDoc(
@@ -691,35 +711,36 @@ export async function requestBlockedPostReReview(
   );
 }
 
-async function reopenResolvedReportsForAuthorReReview(params: {
-  postId: string;
-  authorId: string;
-  authorName: string;
-  requestReason: string;
-}): Promise<number> {
-  const { postId, authorId, authorName, requestReason } = params;
-  const now = Date.now();
-
-  const snap = await getDocs(query(collection(db, "communityReports"), where("postId", "==", postId)));
-  const resolved = snap.docs.filter(
-    (reportDoc) => (reportDoc.data() as Record<string, unknown>).status === "resolved"
-  );
-  if (resolved.length === 0) return 0;
-
-  const batch = writeBatch(db);
-  for (const reportDoc of resolved) {
-    batch.update(reportDoc.ref, {
-      status: "pending",
-      read: false,
-      source: "re_review",
-      requestReason,
-      reporterId: authorId,
-      reporterName: authorName,
-      createdAt: now,
+/** Author-safe cleanup: remove own post report cards before creating a re-review request. */
+async function deleteAuthorPostTargetReports(postId: string, authorId: string): Promise<void> {
+  try {
+    // Query by targetAuthorId so rules allow the list for the author.
+    const snap = await getDocs(
+      query(collection(db, "communityReports"), where("targetAuthorId", "==", authorId))
+    );
+    const toDelete = snap.docs.filter((reportDoc) => {
+      const data = reportDoc.data() as Record<string, unknown>;
+      if (String(data.postId ?? "") !== postId) return false;
+      if (data.targetType === "comment") return false;
+      return true;
     });
+    if (toDelete.length === 0) return;
+
+    let batch = writeBatch(db);
+    let ops = 0;
+    for (const reportDoc of toDelete) {
+      batch.delete(reportDoc.ref);
+      ops += 1;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+  } catch (e) {
+    console.warn("deleteAuthorPostTargetReports failed:", e);
   }
-  await batch.commit();
-  return resolved.length;
 }
 
 async function closePendingReportsForPost(
@@ -820,13 +841,11 @@ export async function approveReReviewRequest(postId: string): Promise<void> {
 
   await updateDoc(postRef, { blocked: false, underReview: false });
   await clearPostPendingReview(postId);
-  await closePendingReportsForPost(postId, "dismissed");
+  // Remove from Reviewed — restored posts should leave the admin queue.
+  await deletePostTargetReports(postId);
 
   if (authorId) {
-    await sendAdminDirectMessage(
-      authorId,
-      `Your request to check this post again has been reviewed.\n\n**Your post:**\n"${formatPostContentSnippet(content)}"\n\nThe post has been **restored to the community**.`
-    );
+    await sendAdminDirectMessage(authorId, buildPostRestoredAuthorMessage(content));
   }
 }
 
@@ -1434,6 +1453,58 @@ async function deleteReportsForPost(
   }
 }
 
+/** Drop admin report/review cards for a restored post (post targets only). */
+async function deletePostTargetReports(postId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, "communityReports"), where("postId", "==", postId))
+    );
+    let batch = writeBatch(db);
+    let ops = 0;
+    for (const reportDoc of snap.docs) {
+      const data = reportDoc.data() as Record<string, unknown>;
+      if (data.targetType === "comment") continue;
+      batch.delete(reportDoc.ref);
+      ops += 1;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+  } catch {
+    // Best-effort; restore should still succeed.
+  }
+}
+
+/** Drop admin report cards for a restored comment. */
+async function deleteCommentTargetReports(commentId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, "communityReports"),
+        where("targetType", "==", "comment"),
+        where("targetId", "==", commentId)
+      )
+    );
+    let batch = writeBatch(db);
+    let ops = 0;
+    for (const reportDoc of snap.docs) {
+      batch.delete(reportDoc.ref);
+      ops += 1;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+  } catch {
+    // Best-effort; restore should still succeed.
+  }
+}
+
 export function filterPostsByTag(posts: CommunityPost[], tag: string | null): CommunityPost[] {
   if (!tag) return posts;
   const needle = tag.trim().toLowerCase();
@@ -1462,14 +1533,20 @@ export async function loadLikerProfiles(userIds: string[]): Promise<LikerProfile
   const results = await Promise.all(
     unique.map(async (id) => {
       try {
-        const profile = await getUserProfile(id);
-        return { id, name: profile.name, profileImage: profile.profileImage };
+        const snap = await getDoc(doc(db, "users", id));
+        if (!snap.exists()) return null;
+        const data = snap.data() as Record<string, unknown>;
+        return {
+          id,
+          name: typeof data.name === "string" ? data.name : "User",
+          profileImage: typeof data.profileImage === "string" ? data.profileImage : null,
+        } satisfies LikerProfile;
       } catch {
-        return { id, name: "User", profileImage: null };
+        return null;
       }
     })
   );
-  return results;
+  return results.filter((p): p is LikerProfile => p != null);
 }
 
 /** Live profileImage URLs keyed by user id (for feed avatars). */
@@ -1480,6 +1557,16 @@ export async function loadProfileImageMap(
   const map: Record<string, string | null> = {};
   for (const p of profiles) {
     map[p.id] = p.profileImage;
+  }
+  return map;
+}
+
+/** Live display names keyed by user id (for chat list + friends). */
+export async function loadProfileNameMap(userIds: string[]): Promise<Record<string, string>> {
+  const profiles = await loadLikerProfiles(userIds);
+  const map: Record<string, string> = {};
+  for (const p of profiles) {
+    map[p.id] = p.name;
   }
   return map;
 }
@@ -1510,6 +1597,95 @@ export async function syncAuthorProfileImageOnPosts(
   }
 }
 
+/** Keep denormalized post author names in sync after a profile name change. */
+export async function syncAuthorProfileNameOnPosts(displayName: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const adminUid = await resolveAdminUid();
+  const nameToStore =
+    adminUid === user.uid
+      ? SUPPORT_ADMIN_NAME
+      : displayCommunityUserName(user.uid, displayName.trim(), adminUid);
+
+  const snap = await getDocs(
+    query(collection(db, "communityPosts"), where("authorId", "==", user.uid))
+  );
+  if (snap.empty) return;
+
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    const chunk = docs.slice(i, i + 400);
+    for (const d of chunk) {
+      batch.update(d.ref, { authorName: nameToStore });
+    }
+    await batch.commit();
+  }
+}
+
+/** Keep denormalized chat avatars in sync after a profile photo change. */
+export async function syncAuthorProfileImageOnChats(
+  profileImageUrl: string | null
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const snap = await getDocs(
+    query(collection(db, "communityChats"), where("participants", "array-contains", user.uid))
+  );
+  if (snap.empty) return;
+
+  await Promise.all(
+    snap.docs.map((chatDoc) =>
+      updateDoc(chatDoc.ref, {
+        [`participantImages.${user.uid}`]: profileImageUrl,
+      }).catch(() => {})
+    )
+  );
+}
+
+/** Keep denormalized chat display names in sync after a profile name change. */
+export async function syncAuthorProfileNameOnChats(displayName: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const adminUid = await resolveAdminUid();
+  const nameToStore =
+    adminUid === user.uid
+      ? SUPPORT_ADMIN_NAME
+      : displayCommunityUserName(user.uid, displayName.trim(), adminUid);
+
+  const snap = await getDocs(
+    query(collection(db, "communityChats"), where("participants", "array-contains", user.uid))
+  );
+  if (snap.empty) return;
+
+  await Promise.all(
+    snap.docs.map((chatDoc) =>
+      updateDoc(chatDoc.ref, {
+        [`participantNames.${user.uid}`]: nameToStore,
+      }).catch(() => {})
+    )
+  );
+}
+
+export function chatParticipantImage(
+  participantId: string,
+  chat: ChatConversation,
+  adminUid: string | null,
+  adminProfileImage: string | null,
+  liveAvatars?: Record<string, string | null>
+): string | null {
+  if (liveAvatars && Object.prototype.hasOwnProperty.call(liveAvatars, participantId)) {
+    return liveAvatars[participantId] ?? null;
+  }
+  if (adminUid && participantId === adminUid && adminProfileImage) {
+    return adminProfileImage;
+  }
+  return chat.participantImages[participantId] ?? null;
+}
+
 export async function ensureChatsForFriends(): Promise<void> {
   const user = auth.currentUser;
   if (!user) return;
@@ -1534,26 +1710,38 @@ export function subscribeFriendsList(
     collection(db, "users", user.uid, "friends"),
     (snap) => {
       void (async () => {
-        const friends = await Promise.all(
-          snap.docs.map(async (friendDoc) => {
-            const data = friendDoc.data() as Record<string, unknown>;
-            let email = "";
-            try {
-              const userSnap = await getDoc(doc(db, "users", friendDoc.id));
-              const userData = userSnap.data() as Record<string, unknown> | undefined;
-              email = typeof userData?.email === "string" ? userData.email : "";
-            } catch {
-              // Omit email if profile read fails
+        const friends: FriendListEntry[] = [];
+        for (const friendDoc of snap.docs) {
+          const data = friendDoc.data() as Record<string, unknown>;
+          let email = "";
+          let liveName: string | null = null;
+          let liveImage: string | null = null;
+          try {
+            const userSnap = await getDoc(doc(db, "users", friendDoc.id));
+            if (!userSnap.exists()) {
+              // Friend deleted their account — drop the leftover link.
+              void deleteDoc(doc(db, "users", user.uid, "friends", friendDoc.id)).catch(() => {});
+              continue;
             }
-            return {
-              id: friendDoc.id,
-              name: typeof data.friendName === "string" ? data.friendName : "User",
-              profileImage:
-                typeof data.friendProfileImage === "string" ? data.friendProfileImage : null,
-              email,
-            } satisfies FriendListEntry;
-          })
-        );
+            const userData = userSnap.data() as Record<string, unknown>;
+            email = typeof userData.email === "string" ? userData.email : "";
+            liveName = typeof userData.name === "string" ? userData.name : null;
+            liveImage =
+              typeof userData.profileImage === "string" ? userData.profileImage : null;
+          } catch {
+            // Omit email if profile read fails
+          }
+          friends.push({
+            id: friendDoc.id,
+            name:
+              liveName ??
+              (typeof data.friendName === "string" ? data.friendName : "User"),
+            profileImage:
+              liveImage ??
+              (typeof data.friendProfileImage === "string" ? data.friendProfileImage : null),
+            email,
+          });
+        }
         friends.sort((a, b) => a.name.localeCompare(b.name));
         onData(friends);
       })();
@@ -1622,6 +1810,9 @@ export async function searchUsersForAdding(searchText: string): Promise<Register
 
 export async function getPublicUserProfile(userId: string): Promise<PublicUserProfile> {
   const snap = await getDoc(doc(db, "users", userId));
+  if (!snap.exists()) {
+    throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
+  }
   const data = snap.data() as Record<string, unknown> | undefined;
   const weight = typeof data?.weight === "number" ? data.weight : null;
   const height = typeof data?.height === "number" ? data.height : null;
@@ -2046,6 +2237,9 @@ export async function sendFriendRequest(toUserId: string): Promise<void> {
   if (await isCommunityAdminUserId(toUserId)) {
     throw new Error("You cannot add Support Admin as a friend");
   }
+  if (!(await userAccountExists(toUserId))) {
+    throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
+  }
 
   const relation = await getFriendRelation(toUserId);
   if (relation !== "none") throw new Error("Friend request already exists");
@@ -2092,6 +2286,11 @@ async function ensureChat(uidA: string, uidB: string, options?: { isSupportChat?
     const code = (e as { code?: string }).code ?? "";
     if (code !== "permission-denied") throw e;
     // Missing doc can surface as permission-denied with older rules; try create below.
+  }
+
+  const [existsA, existsB] = await Promise.all([userAccountExists(uidA), userAccountExists(uidB)]);
+  if (!existsA || !existsB) {
+    throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
   }
 
   const [profileA, profileB] = await Promise.all([getUserProfile(uidA), getUserProfile(uidB)]);
@@ -2181,12 +2380,19 @@ export async function ensureDirectChat(otherUserId: string): Promise<string> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
   if (user.uid === otherUserId) throw new Error("Cannot chat with yourself");
+  if (!(await userAccountExists(otherUserId))) {
+    throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
+  }
   return ensureChat(user.uid, otherUserId);
 }
 
 export async function acceptFriendRequest(request: FriendRequest): Promise<void> {
   const user = auth.currentUser;
   if (!user || user.uid !== request.toUserId) throw new Error("Not allowed");
+  if (!(await userAccountExists(request.fromUserId))) {
+    await updateDoc(doc(db, "friendRequests", request.id), { status: "rejected" }).catch(() => {});
+    throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
+  }
 
   const batch = writeBatch(db);
   batch.update(doc(db, "friendRequests", request.id), { status: "accepted" });
@@ -2968,6 +3174,16 @@ export function buildAdminBlockCommentAuthorMessage(reason: string, content: str
   return `Your comment has been removed from the community after a review.\n\n**Your comment:**\n"${snippet}"\n\nReason: **${trimmedReason}**\n\nIf you have questions, please message Support Admin here.`;
 }
 
+export function buildPostRestoredAuthorMessage(content: string): string {
+  const snippet = formatPostContentSnippet(content);
+  return `Your post has been **restored to the community** after review.\n\n**Your post:**\n"${snippet}"\n\nIf you need help, please message Support Admin here.`;
+}
+
+export function buildCommentRestoredAuthorMessage(content: string): string {
+  const snippet = formatPostContentSnippet(content);
+  return `Your comment has been **restored to the community** after review.\n\n**Your comment:**\n"${snippet}"\n\nIf you need help, please message Support Admin here.`;
+}
+
 export async function blockReportedComment(
   report: CommunityReport,
   reason: string
@@ -3114,14 +3330,25 @@ export async function syncPendingReviewFlags(reports: CommunityReport[]): Promis
 export async function restoreReportedPost(report: CommunityReport): Promise<void> {
   if (report.targetType !== "post") throw new Error("Only post reports can be restored");
   await clearPostPendingReview(report.postId);
-  await updateDoc(doc(db, "communityPosts", report.postId), {
+
+  const postRef = doc(db, "communityPosts", report.postId);
+  const postSnap = await getDoc(postRef);
+  const liveContent =
+    postSnap.exists() && typeof postSnap.data()?.content === "string"
+      ? String(postSnap.data()?.content)
+      : "";
+  const contentForMessage = liveContent.trim() || report.targetContent;
+
+  await updateDoc(postRef, {
     blocked: false,
     underReview: false,
   });
   await sendAdminDirectMessage(
     report.targetAuthorId,
-    `Your post has been restored after an additional review.\n\nIf you need help, please message Support Admin here.`
+    buildPostRestoredAuthorMessage(contentForMessage)
   );
+  // Leave Reviewed empty for this post once it is live again.
+  await deletePostTargetReports(report.postId);
 }
 
 export async function restoreReportedComment(report: CommunityReport): Promise<void> {
@@ -3169,8 +3396,10 @@ export async function restoreReportedComment(report: CommunityReport): Promise<v
   await clearCommentPendingReview(report.targetId);
   await sendAdminDirectMessage(
     report.targetAuthorId,
-    `Your comment has been restored after an additional review.\n\nIf you need help, please message Support Admin here.`
+    buildCommentRestoredAuthorMessage(report.targetContent)
   );
+  // Leave Reviewed empty for this comment once it is live again.
+  await deleteCommentTargetReports(report.targetId);
 }
 
 async function deleteAllPostComments(postId: string): Promise<void> {
@@ -3602,6 +3831,22 @@ export function isSupportAdminPlaceholder(chatId: string): boolean {
   return chatId === SUPPORT_ADMIN_PLACEHOLDER_ID;
 }
 
+function withLiveAdminChatImages(
+  chats: ChatConversation[],
+  adminUid: string | null,
+  adminProfileImage: string | null
+): ChatConversation[] {
+  if (!adminUid || !adminProfileImage) return chats;
+  return chats.map((chat) =>
+    chat.participants.includes(adminUid)
+      ? {
+          ...chat,
+          participantImages: { ...chat.participantImages, [adminUid]: adminProfileImage },
+        }
+      : chat
+  );
+}
+
 export function buildChatListWithSupportAdmin(
   chats: ChatConversation[],
   currentUserId: string,
@@ -3613,31 +3858,50 @@ export function buildChatListWithSupportAdmin(
   const hasAdminChat = chats.some(
     (c) => c.participants.includes(adminUid) && c.participants.includes(currentUserId)
   );
-  if (hasAdminChat) return sortChatsForUser(chats, currentUserId, adminUid);
+  const list = hasAdminChat
+    ? chats
+    : [
+        {
+          id: SUPPORT_ADMIN_PLACEHOLDER_ID,
+          participants: [currentUserId, adminUid],
+          participantNames: { [adminUid]: SUPPORT_ADMIN_NAME },
+          participantImages: { [adminUid]: adminProfileImage },
+          lastMessage: SUPPORT_CHAT_WELCOME_MESSAGE,
+          lastMessageAt: Date.now(),
+          unreadCount: {},
+          clearedAt: {},
+          isSupportChat: true,
+        } satisfies ChatConversation,
+        ...chats,
+      ];
 
-  const placeholder: ChatConversation = {
-    id: SUPPORT_ADMIN_PLACEHOLDER_ID,
-    participants: [currentUserId, adminUid],
-    participantNames: { [adminUid]: SUPPORT_ADMIN_NAME },
-    participantImages: { [adminUid]: adminProfileImage },
-    lastMessage: SUPPORT_CHAT_WELCOME_MESSAGE,
-    lastMessageAt: Date.now(),
-    unreadCount: {},
-    clearedAt: {},
-    isSupportChat: true,
-  };
+  return sortChatsForUser(
+    withLiveAdminChatImages(list, adminUid, adminProfileImage),
+    currentUserId,
+    adminUid
+  );
+}
 
-  return sortChatsForUser([placeholder, ...chats], currentUserId, adminUid);
+export function resolveChatParticipantName(
+  participantId: string,
+  chat: ChatConversation,
+  adminUid: string | null,
+  liveNames?: Record<string, string>
+): string {
+  if (adminUid && participantId === adminUid) return SUPPORT_ADMIN_NAME;
+  const stored = chat.participantNames[participantId] ?? "Friend";
+  const raw = liveNames?.[participantId] ?? stored;
+  return displayCommunityUserName(participantId, raw, adminUid);
 }
 
 export function chatDisplayName(
   chat: ChatConversation,
   currentUserId: string,
-  adminUid: string | null
+  adminUid: string | null,
+  liveNames?: Record<string, string>
 ): string {
   const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
-  if (adminUid && otherUid === adminUid) return SUPPORT_ADMIN_NAME;
-  return chat.participantNames[otherUid] ?? "Friend";
+  return resolveChatParticipantName(otherUid, chat, adminUid, liveNames);
 }
 
 export { getCurrentUserProfile, getUserProfile };
