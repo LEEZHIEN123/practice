@@ -63,7 +63,7 @@ export default function CommunityAdminScreen() {
   const handleDismiss = (report: CommunityReport) => {
     Alert.alert(
       "Dismiss report",
-      "Dismiss this report? The reporter will be notified via Support Admin chat that no action was taken.",
+      "Dismiss this report? The reporter and the content author will both be notified via Support Admin chat that no action was taken.",
       [
         { text: "Cancel", style: "cancel" },
         {

@@ -372,7 +372,7 @@ export default function CommunityNotificationsScreen() {
       case "post_comment":
         return "commented on your post";
       case "post_reported":
-        return "Your post is hidden and pending Support Admin review";
+        return "Your post is under review by Support Admin";
       case "comment_reported":
         return "Your comment is hidden and pending Support Admin review";
       default:

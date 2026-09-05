@@ -1,5 +1,6 @@
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { normalizeNutritionActivity, normalizeNutritionDietary } from "./nutritionPlan";
 
 const ONBOARDING_ROUTES = new Set([
   "/register",
@@ -22,22 +23,25 @@ export function resolvePostAuthRouteFromData(
   const profile = data ?? {};
   const hasGender = profile.gender === "male" || profile.gender === "female";
   const hasActivity =
-    typeof profile.activityLevel === "string" && profile.activityLevel.length > 0;
+    normalizeNutritionActivity(
+      typeof profile.activityLevel === "string" ? profile.activityLevel : null,
+      typeof profile.activityMultiplier === "number" ? profile.activityMultiplier : null
+    ) != null;
   const hasDietary =
-    profile.dietaryPreference === "omnivore" ||
-    profile.dietaryPreference === "vegetarian" ||
-    profile.dietaryPreference === "vegan";
+    normalizeNutritionDietary(
+      typeof profile.dietaryPreference === "string" ? profile.dietaryPreference : null
+    ) != null;
   const hasPlanDuration =
     profile.planDuration === "week" ||
     profile.planDuration === "biweekly" ||
     profile.planDuration === "monthly";
+  const onboardingDone = profile.onboardingComplete === true || hasPlanDuration;
 
+  if (onboardingDone) return "/home";
   if (!hasGender) return "/profiledetails";
   if (!hasActivity) return "/activitylevel";
   if (!hasDietary) return "/dietary-preference";
-  if (!hasPlanDuration) return "/schedule-plan";
-  if (profile.bmiAnalysisComplete === false) return "/BMIanalysis";
-  return "/home";
+  return "/schedule-plan";
 }
 
 export async function resolvePostAuthRoute(uid: string): Promise<string> {

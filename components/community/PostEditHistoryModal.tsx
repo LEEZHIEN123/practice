@@ -1,4 +1,3 @@
-import { Pressable } from "@/components/Pressable";
 import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { ThemedBackButton, ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
@@ -25,10 +24,15 @@ export function PostEditHistoryModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1" style={[screenStyle, { paddingTop: insets.top }]}>
-        <View className="flex-row items-center px-4 py-3">
-          <ThemedBackButton onPress={onClose} className="mr-3" />
-          <ThemedText className="text-xl font-extrabold flex-1">Edit history</ThemedText>
+      <View className="flex-1" style={screenStyle}>
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 12, paddingBottom: 8 }}>
+          <View className="flex-row items-center">
+            <ThemedBackButton onPress={onClose} />
+            <ThemedText className="flex-1 text-center text-xl font-extrabold" numberOfLines={1}>
+              Edit history
+            </ThemedText>
+            <View className="w-12" />
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}>

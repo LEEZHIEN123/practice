@@ -66,6 +66,8 @@ export type CommunityReport = {
   source?: "report" | "re_review" | "admin_direct";
   /** Author's original request-review reason when source is re_review. */
   requestReason?: string;
+  /** Admin's original hide/block reason, preserved when the author requests another review. */
+  blockReason?: string;
 };
 
 /** Author asked Support Admin to check a blocked post again. */

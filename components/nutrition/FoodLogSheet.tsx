@@ -57,7 +57,10 @@ export function FoodLogSheet({
       try {
         await onLog(servings, totalCalories);
         onClose();
-        Alert.alert("Logged", `${title} (${totalCalories} kcal) added to today.`);
+        // Defer alert so the sheet can dismiss without waiting on the dialog.
+        setTimeout(() => {
+          Alert.alert("Logged", `${title} (${totalCalories} kcal) added to today.`);
+        }, 0);
       } catch (e: unknown) {
         Alert.alert("Error", e instanceof Error ? e.message : "Could not log meal.");
       }

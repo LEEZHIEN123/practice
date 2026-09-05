@@ -3,15 +3,18 @@ import {
   ThemedScreen,
   ThemedText,
 } from "@/components/themed/ThemedUi";
+import { resolvePostAuthRouteFromData } from "@/lib/onboardingRoute";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRegistration, type ActivityKey } from "../context/registrationContext";
+import { auth, db } from "../firebaseConfig";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -22,6 +25,32 @@ export default function ActivityLevel() {
   const { theme, cardStyle } = useThemedScreen();
 
   const [selected, setSelected] = useState<ActivityKey | null>(null);
+
+  useEffect(() => {
+    if (account && profile) return;
+    const user = auth.currentUser;
+    if (!user) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (!snap.exists() || cancelled) return;
+        const data = snap.data() as Record<string, unknown>;
+        const next = resolvePostAuthRouteFromData(data);
+        if (next !== "/activitylevel") {
+          router.replace(next as any);
+          return;
+        }
+      } catch {
+        // Stay on this screen so the user can still pick an activity level.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [account, profile, router]);
 
   const options = useMemo(
     () => [
@@ -54,9 +83,9 @@ export default function ActivityLevel() {
         icon: "fitness-outline" as IoniconName,
       },
       {
-        key: "super_active" as const,
-        title: "Super Active",
-        subtitle: "Very hard exercise or physically demanding work",
+        key: "extra_active" as const,
+        title: "Extra Active",
+        subtitle: "Exercise 2 times a day",
         multiplier: 1.9,
         icon: "flash-outline" as IoniconName,
       },
@@ -67,13 +96,34 @@ export default function ActivityLevel() {
   const continueNext = () => {
     const picked = options.find((o) => o.key === selected);
     if (!picked) return;
-    if (!account || !profile) {
+
+    const activity = { activityLevel: picked.key, activityMultiplier: picked.multiplier };
+    setActivity(activity);
+
+    if (account && profile) {
+      router.push("/dietary-preference" as any);
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
       router.replace("/register");
       return;
     }
 
-    setActivity({ activityLevel: picked.key, activityMultiplier: picked.multiplier });
-    router.push("/dietary-preference" as any);
+    void (async () => {
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          activityLevel: picked.key,
+          activityMultiplier: picked.multiplier,
+        });
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+        router.replace(resolvePostAuthRouteFromData(data) as any);
+      } catch {
+        router.replace("/dietary-preference" as any);
+      }
+    })();
   };
 
   return (

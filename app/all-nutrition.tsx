@@ -547,7 +547,7 @@ function MealLogSection({
 
       const switchingToAi = mode === "ai";
       Alert.alert(
-        switchingToAi ? "Switch to AI analyse?" : "Switch to Manual?",
+        switchingToAi ? "Switch to AI analysis?" : "Switch to Manual?",
         switchingToAi
           ? "Switching will clear any meal details you entered. Continue?"
           : "Switching will clear the analysed photo and filled meal details. Continue?",
@@ -629,7 +629,7 @@ function MealLogSection({
     }
     try {
       setLogging(true);
-      await logMealFood({
+      const result = await logMealFood({
         title: input.title,
         calories: input.calories,
         source: "manual",
@@ -641,8 +641,12 @@ function MealLogSection({
         fatG: input.fatG,
         calendarTz,
       });
-      const rows = await loadMealHistory(authUid);
-      setHistory(rows);
+      if (result.history) {
+        setHistory(result.history);
+      } else if (authUid) {
+        const rows = await loadMealHistory(authUid);
+        setHistory(rows);
+      }
       Alert.alert("Logged", `${input.title} (${input.calories} kcal) added to today.`);
       return true;
     } catch (e: unknown) {

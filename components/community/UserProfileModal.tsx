@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { PostImagesGallery } from "@/components/community/PostImagesGallery";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
+import { CommunityProfileAvatar } from "@/components/community/CommunityProfileAvatar";
 import {
   ProfileScreenHeader,
   ThemedCard,
@@ -9,25 +10,8 @@ import {
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import type { CommunityPost, FriendRelation, PublicUserProfile } from "@/lib/communityTypes";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-function ProfileAvatar({ uri, size = 72 }: { uri: string | null; size?: number }) {
-  const { theme } = useThemedScreen();
-  return (
-    <View
-      className="rounded-full items-center justify-center overflow-hidden"
-      style={{ width: size, height: size, backgroundColor: theme.accent }}
-    >
-      {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
-      ) : (
-        <Ionicons name="person" size={size * 0.42} color="white" />
-      )}
-    </View>
-  );
-}
 
 function friendLabel(relation: FriendRelation): string {
   if (relation === "friends") return "Friends";
@@ -113,7 +97,7 @@ export function UserProfileModal({
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
             <View className="items-center mb-5">
-              <ProfileAvatar uri={profile.profileImage} />
+              <CommunityProfileAvatar uri={profile.profileImage} size={72} />
               <View className="flex-row items-center justify-center mt-3">
                 <ThemedText className="text-2xl font-extrabold">
                   {isSupportAdmin ? "Support Admin" : profile.name}

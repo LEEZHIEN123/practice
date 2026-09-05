@@ -31,7 +31,7 @@ export function MealLogModePicker({
 
   const options: { key: MealLogMode; label: string }[] = [
     { key: "manual", label: "Manual" },
-    { key: "ai", label: "AI analyse" },
+    { key: "ai", label: "AI analysis" },
   ];
 
   return (

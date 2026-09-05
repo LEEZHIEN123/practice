@@ -1,6 +1,8 @@
 import type { User } from "firebase/auth";
 import {
     addDoc,
+    arrayRemove,
+    arrayUnion,
     collection,
     collectionGroup,
     deleteDoc,
@@ -17,6 +19,7 @@ import {
     updateDoc,
     where,
     writeBatch,
+    type QueryDocumentSnapshot,
     type Unsubscribe
 } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -46,6 +49,8 @@ import { calcBmi } from "./workoutPlan";
 
 const PENDING_POSTS_COLLECTION = "communityPendingPosts";
 const PENDING_COMMENTS_COLLECTION = "communityPendingComments";
+const PENDING_AUTHOR_REPORTS_COLLECTION = "communityPendingAuthorReports";
+const SUPPORT_AUTO_MESSAGES_COLLECTION = "communitySupportAutoMessages";
 
 async function localUriToBlob(uri: string): Promise<Blob> {
   if (uri.startsWith("file://") || uri.startsWith("content://")) {
@@ -230,7 +235,12 @@ async function mergePendingPosts(
   return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function markPostPendingReview(postId: string, authorId?: string): Promise<void> {
+async function markPostPendingReview(
+  postId: string,
+  authorId?: string,
+  reporterId?: string,
+  authorAutoMessage?: string
+): Promise<void> {
   let resolvedAuthorId = (authorId ?? "").trim();
   if (!resolvedAuthorId) {
     try {
@@ -242,15 +252,29 @@ async function markPostPendingReview(postId: string, authorId?: string): Promise
       // Best-effort — pending flag still works without authorId.
     }
   }
+  const resolvedReporterId = (reporterId ?? auth.currentUser?.uid ?? "").trim();
+  const trimmedAutoMessage = (authorAutoMessage ?? "").trim();
   await setDoc(
     doc(db, PENDING_POSTS_COLLECTION, postId),
     {
       postId,
       ...(resolvedAuthorId ? { authorId: resolvedAuthorId } : {}),
+      ...(resolvedReporterId ? { reporterId: resolvedReporterId } : {}),
+      ...(trimmedAutoMessage
+        ? { authorAutoMessage: trimmedAutoMessage, authorAutoMessageDelivered: false }
+        : {}),
       updatedAt: Date.now(),
     },
     { merge: true }
   );
+  if (resolvedAuthorId && resolvedReporterId && resolvedAuthorId !== resolvedReporterId) {
+    await setDoc(doc(db, PENDING_AUTHOR_REPORTS_COLLECTION, resolvedAuthorId), {
+      authorId: resolvedAuthorId,
+      postId,
+      reporterId: resolvedReporterId,
+      updatedAt: Date.now(),
+    });
+  }
   // Rules only allow flipping `underReview` (flagPostUnderReviewOnly). Do not touch `blocked`.
   await updateDoc(doc(db, "communityPosts", postId), {
     underReview: true,
@@ -258,10 +282,36 @@ async function markPostPendingReview(postId: string, authorId?: string): Promise
 }
 
 async function clearPostPendingReview(postId: string): Promise<void> {
+  let authorId = "";
+  try {
+    const pendingSnap = await getDoc(doc(db, PENDING_POSTS_COLLECTION, postId));
+    if (pendingSnap.exists()) {
+      authorId = String((pendingSnap.data() as Record<string, unknown>).authorId ?? "");
+    }
+  } catch {
+    // Ignore missing flag docs.
+  }
+  if (!authorId) {
+    try {
+      const postSnap = await getDoc(doc(db, "communityPosts", postId));
+      if (postSnap.exists()) {
+        authorId = String((postSnap.data() as Record<string, unknown>).authorId ?? "");
+      }
+    } catch {
+      // Best-effort author lookup for companion cleanup.
+    }
+  }
   try {
     await deleteDoc(doc(db, PENDING_POSTS_COLLECTION, postId));
   } catch {
     // Ignore missing flag docs.
+  }
+  if (authorId) {
+    try {
+      await deleteDoc(doc(db, PENDING_AUTHOR_REPORTS_COLLECTION, authorId));
+    } catch {
+      // Ignore missing companion docs.
+    }
   }
 }
 
@@ -351,6 +401,10 @@ function mapReport(id: string, data: Record<string, unknown>): CommunityReport {
       typeof data.requestReason === "string" && data.requestReason.length > 0
         ? data.requestReason
         : undefined,
+    blockReason:
+      typeof data.blockReason === "string" && data.blockReason.length > 0
+        ? data.blockReason
+        : undefined,
   };
 }
 
@@ -415,6 +469,7 @@ async function createCommunityNotification(input: {
   postId?: string;
   commentId?: string;
   postPreview?: string;
+  supportAutoMessage?: string;
 }): Promise<void> {
   if (input.userId === input.fromUserId) return;
 
@@ -429,6 +484,8 @@ async function createCommunityNotification(input: {
     postId: input.postId ?? null,
     commentId: input.commentId ?? null,
     postPreview: input.postPreview ?? null,
+    supportAutoMessage: input.supportAutoMessage?.trim() || null,
+    supportAutoMessageDelivered: false,
     read: false,
     createdAt: Date.now(),
     createdAtServer: serverTimestamp(),
@@ -672,6 +729,7 @@ export async function requestBlockedPostReReview(
   const content = String(data.content ?? "");
   const authorName = String(data.authorName ?? profile.name ?? "User");
   const now = Date.now();
+  const originalBlockReason = await findOriginalBlockReason(postId, data, user.uid);
 
   // Authors can read/delete their own report cards, but cannot update them (admin-only).
   // Clear prior cards for this post, then create a fresh pending re-review request.
@@ -683,8 +741,9 @@ export async function requestBlockedPostReReview(
     postId,
     reporterId: user.uid,
     reporterName: profile.name,
-    reason: trimmedReason,
+    reason: originalBlockReason,
     requestReason: trimmedReason,
+    ...(originalBlockReason ? { blockReason: originalBlockReason } : {}),
     source: "re_review",
     status: "pending",
     createdAt: now,
@@ -709,6 +768,39 @@ export async function requestBlockedPostReReview(
     user.uid,
     buildReReviewRequestReceivedMessage(content, trimmedReason)
   );
+}
+
+/** Look up the original admin block/hide reason before replacing report cards. */
+async function findOriginalBlockReason(
+  postId: string,
+  postData: Record<string, unknown>,
+  authorId: string
+): Promise<string> {
+  const fromPost = String(postData.blockReason ?? "").trim();
+  if (fromPost) return fromPost;
+
+  try {
+    const snap = await getDocs(
+      query(collection(db, "communityReports"), where("targetAuthorId", "==", authorId))
+    );
+    const candidates = snap.docs
+      .map((reportDoc) => reportDoc.data() as Record<string, unknown>)
+      .filter((row) => String(row.postId ?? "") === postId && row.targetType !== "comment")
+      .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+
+    for (const row of candidates) {
+      const stored = String(row.blockReason ?? "").trim();
+      if (stored) return stored;
+    }
+    for (const row of candidates) {
+      if (row.status !== "resolved") continue;
+      const stored = String(row.reason ?? "").trim();
+      if (stored) return stored;
+    }
+  } catch {
+    // Best-effort — pending review still works without the original block reason.
+  }
+  return "";
 }
 
 /** Author-safe cleanup: remove own post report cards before creating a re-review request. */
@@ -880,9 +972,12 @@ export async function dismissReReviewRequest(postId: string, reason: string): Pr
     : null;
   const requestedBy = String(latestPendingData?.reporterId ?? authorId);
   const requestedByName = String(latestPendingData?.reporterName ?? authorName);
-  const requestReason = String(latestPendingData?.requestReason ?? latestPendingData?.reason ?? "");
+  const requestReason = String(latestPendingData?.requestReason ?? "");
+  const originalBlockReason = String(
+    latestPendingData?.blockReason ?? data.blockReason ?? ""
+  ).trim();
 
-  await updateDoc(postRef, { blocked: true, underReview: false });
+  await updateDoc(postRef, { blocked: true, underReview: false, blockReason: trimmedReason });
   await clearPostPendingReview(postId);
 
   if (pendingReports.length > 0) {
@@ -897,6 +992,7 @@ export async function dismissReReviewRequest(postId: string, reason: string): Pr
       reporterName: requestedByName,
       reason: trimmedReason,
       requestReason,
+      ...(originalBlockReason ? { blockReason: originalBlockReason } : {}),
       source: "re_review",
       status: "resolved",
       createdAt: Date.now(),
@@ -1077,6 +1173,7 @@ export function subscribePendingCommunityPostIds(
     collection(db, PENDING_POSTS_COLLECTION),
     (snap) => {
       onData(snap.docs.map((d) => d.id));
+      void deliverAuthorSupportMessagesFromPendingPosts(snap.docs);
     },
     (error) => onError?.(error)
   );
@@ -1878,23 +1975,14 @@ export function subscribeChatMeta(
 export async function togglePostLike(post: CommunityPost): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error("Not signed in");
-  await user.getIdToken(true).catch(() => {});
 
+  const liked = post.likedBy.includes(user.uid);
   const postRef = doc(db, "communityPosts", post.id);
-  const snap = await getDoc(postRef);
-  if (!snap.exists()) throw new Error("Post not found");
-
-  const data = snap.data() as Record<string, unknown>;
-  const likedBy = Array.isArray(data.likedBy) ? data.likedBy.map(String) : [];
-  const liked = likedBy.includes(user.uid);
-  const nextLikedBy = liked
-    ? likedBy.filter((id) => id !== user.uid)
-    : [...likedBy, user.uid];
 
   try {
     await updateDoc(postRef, {
-      likedBy: nextLikedBy,
-      likeCount: nextLikedBy.length,
+      likedBy: liked ? arrayRemove(user.uid) : arrayUnion(user.uid),
+      likeCount: increment(liked ? -1 : 1),
     });
   } catch (e) {
     throw firestoreWriteError(e, "update like");
@@ -2148,12 +2236,21 @@ export async function submitReport(params: {
     read: false,
   });
 
-  await markPostPendingReview(params.postId, params.targetAuthorId);
+  const notifyAuthor = Boolean(params.targetAuthorId && params.targetAuthorId !== uid);
+  const authorAutoMessage =
+    params.targetType === "comment"
+      ? buildCommentReportReceivedAuthorMessage(params.targetContent)
+      : buildReportReceivedAuthorMessage(params.targetContent);
+
+  await markPostPendingReview(
+    params.postId,
+    params.targetAuthorId,
+    uid,
+    params.targetType === "post" && notifyAuthor ? authorAutoMessage : undefined
+  );
   if (params.targetType === "comment") {
     await markCommentPendingReview(params.targetId, params.postId);
   }
-
-  const notifyAuthor = params.targetAuthorId && params.targetAuthorId !== uid;
 
   if (notifyAuthor) {
     let adminProfileImage: string | null = null;
@@ -2176,25 +2273,14 @@ export async function submitReport(params: {
       postId: params.postId,
       commentId: params.targetType === "comment" ? params.targetId : undefined,
       postPreview: params.targetContent.slice(0, 80),
+      supportAutoMessage: authorAutoMessage,
     });
   }
 
   if (params.targetType === "post") {
-    await sendAdminDirectMessage(
+    await sendOrQueueAdminDirectMessage(
       uid,
       buildReportReceivedReporterMessage(params.targetAuthorName, params.targetContent)
-    );
-
-    if (notifyAuthor) {
-      await sendAdminDirectMessage(
-        params.targetAuthorId,
-        buildReportReceivedAuthorMessage(params.targetContent)
-      );
-    }
-  } else if (params.targetType === "comment" && notifyAuthor) {
-    await sendAdminDirectMessage(
-      params.targetAuthorId,
-      buildCommentReportReceivedAuthorMessage(params.targetContent)
     );
   }
 }
@@ -2309,6 +2395,11 @@ async function ensureChat(uidA: string, uidB: string, options?: { isSupportChat?
     clearedAt: {},
     isSupportChat: options?.isSupportChat === true,
     createdAt: Date.now(),
+  }).catch((e: unknown) => {
+    const code = (e as { code?: string }).code ?? "";
+    // Reporter may not be a participant in the author's Support Admin chat.
+    // If the chat already exists, reuse the deterministic id and write the message next.
+    if (code !== "permission-denied" && code !== "already-exists") throw e;
   });
   return chatId;
 }
@@ -2489,6 +2580,7 @@ export function subscribeNotifications(
         .map((d) => mapNotification(d.id, d.data() as Record<string, unknown>))
         .sort((a, b) => b.createdAt - a.createdAt);
       onData(items);
+      void deliverAuthorSupportMessagesFromNotificationDocs(snap.docs);
     },
     (error) => onError?.(error)
   );
@@ -3073,10 +3165,166 @@ export async function markReportRead(reportId: string): Promise<void> {
   await updateDoc(doc(db, "communityReports", reportId), { read: true });
 }
 
-async function sendAdminDirectMessage(recipientUserId: string, messageText: string): Promise<void> {
+const claimedAuthorSupportKeys = new Set<string>();
+
+async function supportChatAlreadyHasAutoMessage(
+  recipientUserId: string,
+  messageText: string
+): Promise<boolean> {
   const adminUid = await resolveAdminUid();
-  if (!adminUid) return;
-  if (recipientUserId === adminUid) return;
+  if (!adminUid) return false;
+  const chatId = chatIdForUsers(adminUid, recipientUserId);
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, "communityChats", chatId, "messages"),
+        orderBy("createdAt", "desc"),
+        limit(20)
+      )
+    );
+    return snap.docs.some((item) => String(item.data().text ?? "") === messageText);
+  } catch {
+    return false;
+  }
+}
+
+async function markAuthorReportAutoMessageDelivered(data: Record<string, unknown>): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+  const postId = typeof data.postId === "string" ? data.postId : "";
+  const commentId = typeof data.commentId === "string" ? data.commentId : "";
+
+  if (postId) {
+    try {
+      await updateDoc(doc(db, PENDING_POSTS_COLLECTION, postId), {
+        authorAutoMessageDelivered: true,
+      });
+    } catch {
+      // Pending doc may already be gone.
+    }
+  }
+
+  try {
+    const notifSnap = await getDocs(
+      query(collection(db, "communityNotifications"), where("userId", "==", user.uid))
+    );
+    const batch = writeBatch(db);
+    let ops = 0;
+    for (const item of notifSnap.docs) {
+      const row = item.data() as Record<string, unknown>;
+      if (row.supportAutoMessageDelivered === true) continue;
+      if (row.type !== "post_reported" && row.type !== "comment_reported") continue;
+      if (postId && String(row.postId ?? "") !== postId) continue;
+      if (commentId && String(row.commentId ?? "") !== commentId) continue;
+      if (!postId && !commentId) continue;
+      batch.update(item.ref, { supportAutoMessageDelivered: true });
+      ops += 1;
+    }
+    if (ops > 0) await batch.commit();
+  } catch {
+    // Best-effort so a later listener does not send again.
+  }
+}
+
+async function deliverSupportAutoMessageToCurrentUser(
+  deliveryKey: string,
+  text: string,
+  extraData: Record<string, unknown>
+): Promise<void> {
+  const user = auth.currentUser;
+  const trimmed = text.trim();
+  if (!user || !trimmed) return;
+  if (claimedAuthorSupportKeys.has(deliveryKey)) return;
+  claimedAuthorSupportKeys.add(deliveryKey);
+
+  try {
+    const alreadySent = await supportChatAlreadyHasAutoMessage(user.uid, trimmed);
+    if (!alreadySent) {
+      const sent = await sendAdminDirectMessage(user.uid, trimmed);
+      if (!sent) {
+        claimedAuthorSupportKeys.delete(deliveryKey);
+        return;
+      }
+    }
+    await markAuthorReportAutoMessageDelivered(extraData);
+  } catch (e) {
+    claimedAuthorSupportKeys.delete(deliveryKey);
+    console.warn("deliverSupportAutoMessageToCurrentUser failed:", e);
+  }
+}
+
+function reportSupportDeliveryKey(data: Record<string, unknown>, fallbackId: string): string {
+  const postId = typeof data.postId === "string" ? data.postId : "";
+  const commentId = typeof data.commentId === "string" ? data.commentId : "";
+  if (commentId) return `comment:${commentId}`;
+  if (postId) return `post:${postId}`;
+  return `doc:${fallbackId}`;
+}
+
+async function deliverAuthorSupportMessagesFromNotificationDocs(
+  docs: QueryDocumentSnapshot[]
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  for (const item of docs) {
+    const data = item.data() as Record<string, unknown>;
+    if (String(data.userId ?? "") !== user.uid) continue;
+    if (data.supportAutoMessageDelivered === true) continue;
+    if (data.type !== "post_reported" && data.type !== "comment_reported") continue;
+    const text = String(data.supportAutoMessage ?? "").trim();
+    if (!text) continue;
+    await deliverSupportAutoMessageToCurrentUser(
+      reportSupportDeliveryKey(data, item.id),
+      text,
+      { postId: data.postId, commentId: data.commentId }
+    );
+  }
+}
+
+async function deliverAuthorSupportMessagesFromPendingPosts(
+  docs: QueryDocumentSnapshot[]
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  for (const item of docs) {
+    const data = item.data() as Record<string, unknown>;
+    if (String(data.authorId ?? "") !== user.uid) continue;
+    if (data.authorAutoMessageDelivered === true) continue;
+    const text = String(data.authorAutoMessage ?? "").trim();
+    if (!text) continue;
+    await deliverSupportAutoMessageToCurrentUser(
+      reportSupportDeliveryKey({ postId: item.id }, item.id),
+      text,
+      { postId: item.id }
+    );
+  }
+}
+
+async function deliverUndeliveredAuthorSupportMessages(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+  try {
+    const notifSnap = await getDocs(
+      query(collection(db, "communityNotifications"), where("userId", "==", user.uid))
+    );
+    await deliverAuthorSupportMessagesFromNotificationDocs(notifSnap.docs);
+  } catch {
+    // Notifications query is best-effort.
+  }
+  try {
+    const pendingSnap = await getDocs(collection(db, PENDING_POSTS_COLLECTION));
+    await deliverAuthorSupportMessagesFromPendingPosts(pendingSnap.docs);
+  } catch {
+    // Pending-post query is best-effort.
+  }
+}
+
+async function sendAdminDirectMessage(recipientUserId: string, messageText: string): Promise<boolean> {
+  const adminUid = await resolveAdminUid();
+  if (!adminUid) return false;
+  if (recipientUserId === adminUid) return false;
 
   try {
     const chatId = await ensureChat(adminUid, recipientUserId, { isSupportChat: true });
@@ -3108,10 +3356,74 @@ async function sendAdminDirectMessage(recipientUserId: string, messageText: stri
       [`unreadCount.${recipientUserId}`]: increment(1),
     });
     await batch.commit();
+    return true;
   } catch (e) {
     // Report / moderation flows must not fail if the Support Admin chat write is blocked.
     console.warn("sendAdminDirectMessage failed:", e);
+    return false;
   }
+}
+
+async function queueSupportAutoMessage(recipientUserId: string, messageText: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !messageText.trim()) return;
+  try {
+    await addDoc(collection(db, SUPPORT_AUTO_MESSAGES_COLLECTION), {
+      recipientId: recipientUserId,
+      text: messageText,
+      createdBy: user.uid,
+      createdAt: Date.now(),
+    });
+  } catch (e) {
+    console.warn("queueSupportAutoMessage failed:", e);
+  }
+}
+
+async function sendOrQueueAdminDirectMessage(
+  recipientUserId: string,
+  messageText: string
+): Promise<void> {
+  const sent = await sendAdminDirectMessage(recipientUserId, messageText);
+  if (sent) return;
+  const user = auth.currentUser;
+  if (!user || user.uid === recipientUserId) return;
+  await queueSupportAutoMessage(recipientUserId, messageText);
+}
+
+let queuedSupportDelivery: Promise<void> | null = null;
+
+async function deliverQueuedSupportAutoMessages(): Promise<void> {
+  if (queuedSupportDelivery) return queuedSupportDelivery;
+  const user = auth.currentUser;
+  if (!user) return;
+
+  queuedSupportDelivery = (async () => {
+    let snap;
+    try {
+      snap = await getDocs(
+        query(
+          collection(db, SUPPORT_AUTO_MESSAGES_COLLECTION),
+          where("recipientId", "==", user.uid)
+        )
+      );
+    } catch {
+      return;
+    }
+    for (const item of snap.docs) {
+      const text = String((item.data() as Record<string, unknown>).text ?? "").trim();
+      const sent = text ? await sendAdminDirectMessage(user.uid, text) : true;
+      if (!sent) continue;
+      try {
+        await deleteDoc(item.ref);
+      } catch {
+        // Ignore if another client already claimed it.
+      }
+    }
+  })().finally(() => {
+    queuedSupportDelivery = null;
+  });
+
+  return queuedSupportDelivery;
 }
 
 const POST_SNIPPET_MAX = 120;
@@ -3130,7 +3442,7 @@ export function buildReportReceivedReporterMessage(authorName: string, content: 
 
 export function buildReportReceivedAuthorMessage(content: string): string {
   const snippet = formatPostContentSnippet(content);
-  return `Your post has been **hidden** and is **pending review** by Support Admin.\n\n**Your post:**\n"${snippet}"\n\nPlease follow community guidelines while we review it. We will update you here once the review is complete.`;
+  return `Your post is **under review** by Support Admin.\n\n**Your post:**\n"${snippet}"\n\nPlease follow community guidelines while we review it. We will update you here once the review is complete.`;
 }
 
 export function buildCommentReportReceivedAuthorMessage(content: string): string {
@@ -3138,9 +3450,24 @@ export function buildCommentReportReceivedAuthorMessage(content: string): string
   return `Your comment has been **hidden** and is **pending review** by Support Admin.\n\n**Your comment:**\n"${snippet}"\n\nPlease follow community guidelines while we review it. We will update you here once the review is complete.`;
 }
 
-export function buildReportDismissedReporterMessage(authorName: string, content: string): string {
+export function buildReportDismissedReporterMessage(
+  authorName: string,
+  content: string,
+  targetType: "post" | "comment" = "post"
+): string {
   const snippet = formatPostContentSnippet(content);
-  return `Your report has been reviewed for the following post:\n\n**Post by ${authorName}:**\n"${snippet}"\n\nAfter verification, we **dismissed the report and no action was taken on the content**. Thank you for helping keep our community safe.`;
+  const label = targetType === "comment" ? "comment" : "post";
+  const byLabel = targetType === "comment" ? "Comment" : "Post";
+  return `Your report has been reviewed for the following ${label}:\n\n**${byLabel} by ${authorName}:**\n"${snippet}"\n\nAfter verification, we **dismissed the report and no action was taken on the content**. Thank you for helping keep our community safe.`;
+}
+
+export function buildReportDismissedAuthorMessage(
+  content: string,
+  targetType: "post" | "comment" = "post"
+): string {
+  const snippet = formatPostContentSnippet(content);
+  const label = targetType === "comment" ? "comment" : "post";
+  return `A report about your ${label} has been reviewed.\n\n**Your ${label}:**\n"${snippet}"\n\nAfter verification, the report was **dismissed and no action was taken**. Your ${label} remains available in the community.\n\nIf you need help, please message Support Admin here.`;
 }
 
 export function buildReportBlockedReporterMessage(authorName: string, content: string): string {
@@ -3221,8 +3548,15 @@ export async function blockReportedPost(
   if (!trimmedReason) throw new Error("Reason is required");
 
   const batch = writeBatch(db);
-  batch.update(doc(db, "communityPosts", report.postId), { blocked: true, underReview: false });
-  batch.update(doc(db, "communityReports", report.id), { status: "resolved" });
+  batch.update(doc(db, "communityPosts", report.postId), {
+    blocked: true,
+    underReview: false,
+    blockReason: trimmedReason,
+  });
+  batch.update(doc(db, "communityReports", report.id), {
+    status: "resolved",
+    blockReason: trimmedReason,
+  });
   batch.delete(doc(db, PENDING_POSTS_COLLECTION, report.postId));
   if (report.targetType === "comment") {
     batch.delete(doc(db, PENDING_COMMENTS_COLLECTION, report.targetId));
@@ -3256,10 +3590,26 @@ export async function dismissReport(report: CommunityReport): Promise<void> {
   if (report.targetType === "comment") {
     await clearCommentPendingReview(report.targetId);
   }
-  await sendAdminDirectMessage(
-    report.reporterId,
-    buildReportDismissedReporterMessage(report.targetAuthorName, report.targetContent)
+
+  const reporterMessage = buildReportDismissedReporterMessage(
+    report.targetAuthorName,
+    report.targetContent,
+    report.targetType
   );
+  const authorMessage = buildReportDismissedAuthorMessage(
+    report.targetContent,
+    report.targetType
+  );
+
+  if (report.targetAuthorId === report.reporterId) {
+    await sendAdminDirectMessage(report.reporterId, reporterMessage);
+    return;
+  }
+
+  await Promise.all([
+    sendAdminDirectMessage(report.reporterId, reporterMessage),
+    sendAdminDirectMessage(report.targetAuthorId, authorMessage),
+  ]);
 }
 
 export async function reopenReport(report: CommunityReport): Promise<void> {
@@ -3548,7 +3898,11 @@ export async function adminBlockPost(post: CommunityPost, reason: string): Promi
   const adminUid = auth.currentUser?.uid;
   if (!adminUid) throw new Error("Not signed in");
 
-  await updateDoc(doc(db, "communityPosts", post.id), { blocked: true, underReview: false });
+  await updateDoc(doc(db, "communityPosts", post.id), {
+    blocked: true,
+    underReview: false,
+    blockReason: trimmedReason,
+  });
   await clearPostPendingReview(post.id);
 
   // Record in Reviewed so direct admin blocks appear in report management history.
@@ -3559,6 +3913,7 @@ export async function adminBlockPost(post: CommunityPost, reason: string): Promi
     reporterId: adminUid,
     reporterName: SUPPORT_ADMIN_NAME,
     reason: trimmedReason,
+    blockReason: trimmedReason,
     source: "admin_direct",
     status: "resolved",
     createdAt: Date.now(),
@@ -3781,6 +4136,7 @@ export async function ensureSupportChatWithAdmin(): Promise<string | null> {
     if (!adminUid || adminUid === user.uid) return null;
     const chatId = await ensureChat(user.uid, adminUid, { isSupportChat: true });
     await seedSupportWelcomeMessage(chatId);
+    void deliverUndeliveredAuthorSupportMessages();
     return chatId;
   } catch (e) {
     console.warn("ensureSupportChatWithAdmin failed:", e);

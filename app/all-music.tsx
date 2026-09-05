@@ -258,7 +258,7 @@ export default function AllMusicScreen() {
           </View>
           <ThemedText className="text-lg font-extrabold text-center">No music yet</ThemedText>
           <ThemedText variant="muted" className="text-sm text-center mt-2 leading-6">
-            Tap Add to import songs from your phone. Each account has its own library on this device.
+            Click the Import from phone or Add button to import songs from your phone.
           </ThemedText>
           <Pressable
             onPress={() => void importFromDevice()}

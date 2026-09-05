@@ -57,6 +57,38 @@ service cloud.firestore {
         && request.resource.data.messageType == "text"
         && request.resource.data.senderId in chat.participants;
     }
+    function configAdminUserId() {
+      return get(/databases/$(database)/documents/communityConfig/main).data.adminUserId;
+    }
+    function supportChatNonAdminUserId(chatData) {
+      let adminId = configAdminUserId();
+      let parts = chatData.participants;
+      return parts[0] == adminId ? parts[1] : parts[0];
+    }
+    function isReporterOfPendingAuthor(authorId) {
+      return authorId is string
+        && authorId.size() > 0
+        && exists(/databases/$(database)/documents/communityPendingAuthorReports/$(authorId))
+        && get(/databases/$(database)/documents/communityPendingAuthorReports/$(authorId)).data.reporterId
+          == request.auth.uid;
+    }
+    function canRelayPendingPostReportToAuthorChat(chatData) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/communityConfig/main)
+        && chatData.get("isSupportChat", false) == true
+        && chatData.participants.size() == 2
+        && configAdminUserId() in chatData.participants
+        && isReporterOfPendingAuthor(supportChatNonAdminUserId(chatData));
+    }
+    function canWritePendingReportAuthorAutoReply(chatId) {
+      return exists(/databases/$(database)/documents/communityChats/$(chatId))
+        && canRelayPendingPostReportToAuthorChat(
+          get(/databases/$(database)/documents/communityChats/$(chatId)).data
+        )
+        && request.resource.data.get("isAutoReply", false) == true
+        && request.resource.data.messageType == "text"
+        && request.resource.data.senderId == configAdminUserId();
+    }
     function canSendUserChatMessage(chatId) {
       let chat = get(/databases/$(database)/documents/communityChats/$(chatId)).data;
       return chat.get("isSupportChat", false) == true
@@ -278,6 +310,26 @@ service cloud.firestore {
       allow delete: if isSignedIn();
     }
 
+    match /communityPendingAuthorReports/{authorId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.authorId == authorId;
+      allow delete: if isSignedIn();
+    }
+
+    match /communitySupportAutoMessages/{messageId} {
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.text is string;
+      allow read, delete: if isSignedIn() && (
+        isAdmin()
+        || resource.data.recipientId == request.auth.uid
+        || resource.data.createdBy == request.auth.uid
+      );
+    }
+
     match /communityPendingComments/{commentId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn();
@@ -313,31 +365,44 @@ service cloud.firestore {
           || resource == null
           || request.auth.uid in resource.data.participants
         );
-      allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
+      allow create: if isSignedIn() && (
+        request.auth.uid in request.resource.data.participants
+        || canRelayPendingPostReportToAuthorChat(request.resource.data)
+      );
       allow update: if isSignedIn() && (
-        isAdmin() || request.auth.uid in resource.data.participants
+        isAdmin()
+        || request.auth.uid in resource.data.participants
+        || (
+          canRelayPendingPostReportToAuthorChat(resource.data)
+          && request.resource.data.participants == resource.data.participants
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["lastMessage", "lastMessageAt", "unreadCount"])
+        )
       );
       allow delete: if isAdmin()
         || (isSignedIn() && request.auth.uid in resource.data.participants);
 
       match /messages/{messageId} {
         allow read: if isChatParticipant(chatId) || isAdmin();
-        allow create: if isChatParticipant(chatId)
-          && (
-            (
-              request.resource.data.senderId == request.auth.uid
-              && canSendUserChatMessage(chatId)
-            )
-            || canSeedSupportWelcome(chatId)
-            || (
-              request.resource.data.get("isAutoReply", false) == true
-              && (
-                (
-                  exists(/databases/$(database)/documents/communityConfig/main)
-                  && request.resource.data.senderId
-                    == get(/databases/$(database)/documents/communityConfig/main).data.adminUserId
+        allow create: if canWritePendingReportAuthorAutoReply(chatId)
+          || (
+            isChatParticipant(chatId)
+            && (
+              (
+                request.resource.data.senderId == request.auth.uid
+                && canSendUserChatMessage(chatId)
+              )
+              || canSeedSupportWelcome(chatId)
+              || (
+                request.resource.data.get("isAutoReply", false) == true
+                && (
+                  (
+                    exists(/databases/$(database)/documents/communityConfig/main)
+                    && request.resource.data.senderId
+                      == get(/databases/$(database)/documents/communityConfig/main).data.adminUserId
+                  )
+                  || isAdminEmail()
                 )
-                || isAdminEmail()
               )
             )
           );

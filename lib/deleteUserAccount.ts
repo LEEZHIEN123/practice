@@ -132,6 +132,17 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
       query(collection(db, "communityPendingComments"), where("authorId", "==", uid))
     )
   );
+  await safe(() => deleteDoc(doc(db, "communityPendingAuthorReports", uid)));
+  await safe(() =>
+    deleteQueryDocs(
+      query(collection(db, "communitySupportAutoMessages"), where("recipientId", "==", uid))
+    )
+  );
+  await safe(() =>
+    deleteQueryDocs(
+      query(collection(db, "communitySupportAutoMessages"), where("createdBy", "==", uid))
+    )
+  );
 
   await safe(() =>
     deleteQueryDocs(

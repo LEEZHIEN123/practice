@@ -7,7 +7,7 @@ export type ActivityKey =
   | "light"
   | "moderate"
   | "very_active"
-  | "super_active";
+  | "extra_active";
 export type DietaryPreference = "omnivore" | "vegetarian" | "vegan";
 
 export type PendingAccount = {

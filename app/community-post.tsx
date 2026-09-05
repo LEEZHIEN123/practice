@@ -3,6 +3,10 @@ import { CommentMenuModal } from "@/components/community/CommentMenuModal";
 import { CommentReviewTip } from "@/components/community/CommentReviewTip";
 import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
 import { CommunityAuthorName } from "@/components/community/CommunityAuthorName";
+import {
+  CommunityProfileAvatar,
+  resolveProfileImageUri,
+} from "@/components/community/CommunityProfileAvatar";
 import { PersonNameSuffix } from "@/components/community/PersonNameSuffix";
 import { PostAchievementChips } from "@/components/community/PostAchievementChips";
 import { PostImagesGallery } from "@/components/community/PostImagesGallery";
@@ -69,21 +73,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth } from "../firebaseConfig";
 import { patchCommunityPost, removeCommunityPost } from "@/lib/communityBootstrap";
-
-function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
-  return (
-    <View
-      className="rounded-full bg-[#9fdfb6] items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
-    >
-      {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
-      ) : (
-        <Ionicons name="person" size={size * 0.42} color="white" />
-      )}
-    </View>
-  );
-}
 
 export default function CommunityPostScreen() {
   const router = useRouter();
@@ -557,8 +546,12 @@ export default function CommunityPostScreen() {
             <View className="px-4 py-4 rounded-2xl" style={cardStyle}>
               <View className="flex-row items-center">
                 <Pressable onPress={() => void openUserProfile(post.authorId)}>
-                  <ProfileAvatar
-                    uri={authorAvatarById[post.authorId] ?? post.authorProfileImage}
+                  <CommunityProfileAvatar
+                    uri={resolveProfileImageUri(
+                      authorAvatarById,
+                      post.authorId,
+                      post.authorProfileImage
+                    )}
                   />
                 </Pressable>
                 <Pressable
@@ -698,8 +691,12 @@ export default function CommunityPostScreen() {
                   {hasCommentReviewTip ? <CommentReviewTip /> : null}
                   <View className="flex-row items-center">
                     <Pressable onPress={() => void openUserProfile(comment.authorId)}>
-                      <ProfileAvatar
-                        uri={authorAvatarById[comment.authorId] ?? comment.authorProfileImage}
+                      <CommunityProfileAvatar
+                        uri={resolveProfileImageUri(
+                          authorAvatarById,
+                          comment.authorId,
+                          comment.authorProfileImage
+                        )}
                         size={36}
                       />
                     </Pressable>

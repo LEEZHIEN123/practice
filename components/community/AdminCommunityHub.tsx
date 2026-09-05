@@ -1,5 +1,9 @@
 import { PostPendingReviewTip } from "@/components/community/PostPendingReviewTip";
 import { CommunitySearchBar } from "@/components/community/CommunitySearchBar";
+import {
+  CommunityProfileAvatar,
+  resolveProfileImageUri,
+} from "@/components/community/CommunityProfileAvatar";
 import { Pressable } from "@/components/Pressable";
 import { BlockReasonModal } from "@/components/community/BlockReasonModal";
 import { CommunityUnreadBadge } from "@/components/community/CommunityUnreadBadge";
@@ -111,10 +115,39 @@ function matchesReportSearch(report: CommunityReport, query: string): boolean {
   return [
     report.reporterName,
     report.reason,
+    report.requestReason,
+    report.blockReason,
     report.targetContent,
     report.targetAuthorName,
     report.targetType,
-  ].some((field) => field.toLowerCase().includes(needle));
+    report.source,
+  ].some((field) => String(field ?? "").toLowerCase().includes(needle));
+}
+
+function isUserReportSource(report: CommunityReport): boolean {
+  return report.source === "report" || report.source === "admin_direct";
+}
+
+function isRequestReviewSource(report: CommunityReport): boolean {
+  return report.source === "re_review";
+}
+
+function reportRequestReason(report: CommunityReport): string {
+  return (report.requestReason ?? "").trim();
+}
+
+function reportBlockReason(report: CommunityReport): string {
+  const stored = (report.blockReason ?? "").trim();
+  if (stored) return stored;
+  const request = reportRequestReason(report);
+  const reason = (report.reason ?? "").trim();
+  if (report.status === "pending" && request && reason === request) return "";
+  if (report.status === "pending") return reason;
+  return "";
+}
+
+function reportKeepHiddenReason(report: CommunityReport): string {
+  return (report.reason ?? "").trim();
 }
 
 function commentFromCommunityReport(report: CommunityReport): CommunityComment {
@@ -130,21 +163,6 @@ function commentFromCommunityReport(report: CommunityReport): CommunityComment {
     createdAt: report.createdAt,
     blocked: true,
   };
-}
-
-function ProfileAvatar({ uri, size = 48 }: { uri: string | null; size?: number }) {
-  return (
-    <View
-      className="rounded-full items-center justify-center overflow-hidden"
-      style={{ width: size, height: size, backgroundColor: "#93c5fd" }}
-    >
-      {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" />
-      ) : (
-        <Ionicons name="person" size={size * 0.42} color="white" />
-      )}
-    </View>
-  );
 }
 
 function AdminBadge({ small }: { small?: boolean }) {
@@ -399,12 +417,8 @@ export function AdminCommunityHub() {
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
 
   const avatarFor = useCallback(
-    (userId: string | null | undefined, fallback?: string | null) => {
-      if (!userId) return fallback ?? null;
-      const live = avatarById[userId];
-      if (live !== undefined) return live;
-      return fallback ?? null;
-    },
+    (userId: string | null | undefined, fallback?: string | null) =>
+      resolveProfileImageUri(avatarById, userId, fallback),
     [avatarById]
   );
 
@@ -681,19 +695,22 @@ export function AdminCommunityHub() {
     return [...byTarget.values()].sort((a, b) => b.createdAt - a.createdAt);
   }, [reviewedReports]);
 
-  const filteredPendingReports = useMemo(() => {
-    if (!pendingReportSearch.trim()) return pendingReports;
-    return pendingReports.filter((report) => matchesReportSearch(report, pendingReportSearch));
-  }, [pendingReports, pendingReportSearch]);
-
   const filteredPendingQueue = useMemo(() => {
     const items: PendingQueueItem[] = [];
     const pendingReReviewPostIds = new Set(
-      pendingReports.filter((report) => report.source === "re_review").map((report) => report.postId)
+      pendingReports
+        .filter((report) => isRequestReviewSource(report) && report.postId)
+        .map((report) => report.postId)
     );
 
-    if (pendingSourceFilter !== "request_review") {
+    const includeReported =
+      pendingSourceFilter === "all" || pendingSourceFilter === "reported";
+    const includeRequestReview =
+      pendingSourceFilter === "all" || pendingSourceFilter === "request_review";
+
+    if (includeReported) {
       for (const report of pendingReports) {
+        if (!isUserReportSource(report)) continue;
         items.push({
           kind: "report",
           id: `report-${report.id}`,
@@ -703,7 +720,16 @@ export function AdminCommunityHub() {
       }
     }
 
-    if (pendingSourceFilter !== "reported") {
+    if (includeRequestReview) {
+      for (const report of pendingReports) {
+        if (!isRequestReviewSource(report)) continue;
+        items.push({
+          kind: "report",
+          id: `report-${report.id}`,
+          createdAt: report.createdAt,
+          report,
+        });
+      }
       for (const request of reReviewRequests) {
         if (pendingReReviewPostIds.has(request.postId)) continue;
         items.push({
@@ -734,7 +760,16 @@ export function AdminCommunityHub() {
     return filtered.sort((a, b) => b.createdAt - a.createdAt);
   }, [pendingReports, reReviewRequests, pendingSourceFilter, pendingReportSearch]);
 
+  const filteredPendingReports = useMemo(
+    () =>
+      filteredPendingQueue
+        .filter((item): item is Extract<PendingQueueItem, { kind: "report" }> => item.kind === "report")
+        .map((item) => item.report),
+    [filteredPendingQueue]
+  );
+
   const pendingQueueTotalCount = pendingReports.length + reReviewRequests.length;
+  const pendingQueueVisibleCount = filteredPendingQueue.length;
 
   const filteredReviewedReports = useMemo(() => {
     let list = uniqueReviewedReports;
@@ -1142,7 +1177,7 @@ export function AdminCommunityHub() {
             onPress={() => void openCommunityUserProfile(reportDetailPost.authorId)}
             className="flex-row items-center flex-1"
           >
-            <ProfileAvatar uri={avatarFor(reportDetailPost.authorId, reportDetailPost.authorProfileImage)} size={44} />
+            <CommunityProfileAvatar uri={avatarFor(reportDetailPost.authorId, reportDetailPost.authorProfileImage)} size={44} />
             <View className="ml-3 flex-1">
               <Text className="text-base font-extrabold" style={textPrimary} numberOfLines={1}>
                 {reportDetailPost.authorName}
@@ -1204,7 +1239,7 @@ export function AdminCommunityHub() {
           onPress={() => void openCommunityUserProfile(comment.authorId)}
           className="flex-row items-center flex-1"
         >
-          <ProfileAvatar uri={avatarFor(comment.authorId, comment.authorProfileImage)} size={40} />
+          <CommunityProfileAvatar uri={avatarFor(comment.authorId, comment.authorProfileImage)} size={40} />
           <View className="ml-3 flex-1">
             <Text className="text-sm font-extrabold" style={textPrimary}>
               {comment.authorName}
@@ -1387,7 +1422,7 @@ export function AdminCommunityHub() {
   const handleDismiss = useCallback((report: CommunityReport) => {
     Alert.alert(
       "Dismiss report",
-      "Dismiss this report? The reporter will be notified via Support Admin chat that no action was taken.",
+      "Dismiss this report? The reporter and the content author will both be notified via Support Admin chat that no action was taken.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1574,7 +1609,7 @@ export function AdminCommunityHub() {
               accessibilityRole="button"
               accessibilityLabel="View my profile and posts"
             >
-              <ProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} size={36} />
+              <CommunityProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} size={36} />
             </Pressable>
           }
         />
@@ -1696,7 +1731,7 @@ export function AdminCommunityHub() {
             {!tagFilterView ? (
               <View className="rounded-2xl px-4 py-4" style={cardStyle}>
                 <View className="flex-row items-center">
-                  <ProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} />
+                  <CommunityProfileAvatar uri={avatarFor(currentUserId, myProfileImage)} />
                   <View className="flex-1 ml-3">
                     <View className="flex-row items-center">
                       <Text className="text-base font-extrabold" style={textPrimary}>
@@ -1762,7 +1797,7 @@ export function AdminCommunityHub() {
                 <View key={post.id} className="rounded-2xl px-4 py-4" style={cardStyle}>
                   <View className="flex-row items-center">
                     <Pressable onPress={() => void openCommunityUserProfile(post.authorId)}>
-                      <ProfileAvatar
+                      <CommunityProfileAvatar
                         uri={avatarFor(post.authorId, post.authorProfileImage)}
                         size={40}
                       />
@@ -1895,7 +1930,7 @@ export function AdminCommunityHub() {
                       : undefined,
                   ]}
                 >
-                  <ProfileAvatar
+                  <CommunityProfileAvatar
                     uri={avatarFor(otherUid, image)}
                   />
                   <View className="flex-1 ml-3">
@@ -2057,7 +2092,9 @@ export function AdminCommunityHub() {
           <>
             {renderReportTotalsHeader(
               "Total pending",
-              pendingQueueTotalCount,
+              pendingSourceFilter === "all" && !pendingReportSearch.trim()
+                ? pendingQueueTotalCount
+                : pendingQueueVisibleCount,
               "#ef4444",
               "All posts and comments below are waiting for a decision. You can block or dismiss reports, and restore or keep hidden review requests."
             )}
@@ -2275,29 +2312,38 @@ export function AdminCommunityHub() {
                       </Text>
                     </View>
                   )}
-                  {isReReviewPending && report.requestReason ? (
+                  {isReReviewPending && reportRequestReason(report) ? (
                     <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
                       Request reason:{" "}
                       <Text className="font-extrabold" style={{ color: "#16a34a" }}>
-                        {report.requestReason}
+                        {reportRequestReason(report)}
                       </Text>
                     </Text>
                   ) : null}
-                  <Text
-                    className={`text-sm font-extrabold ${
-                      isReReviewPending && report.requestReason ? "mt-1" : "mt-2"
-                    }`}
-                    style={textPrimary}
-                  >
-                    {isReReviewPending
+                  {(() => {
+                    const blockReason = isReReviewPending
+                      ? reportBlockReason(report)
+                      : (report.reason ?? "").trim();
+                    const label = isReReviewPending
                       ? "Block reason: "
                       : report.source === "admin_direct"
                         ? "Block reason: "
-                        : "Report reason: "}
+                        : "Report reason: ";
+                    if (isReReviewPending && !blockReason) return null;
+                    return (
+                  <Text
+                    className={`text-sm font-extrabold ${
+                      isReReviewPending && reportRequestReason(report) ? "mt-1" : "mt-2"
+                    }`}
+                    style={textPrimary}
+                  >
+                    {label}
                     <Text className="font-extrabold" style={{ color: "#16a34a" }}>
-                      {report.reason}
+                      {blockReason}
                     </Text>
                   </Text>
+                    );
+                  })()}
                   <Text
                     className="text-sm mt-3 rounded-xl px-3 py-3 border"
                     style={[
@@ -2492,17 +2538,17 @@ export function AdminCommunityHub() {
                       </Text>
                     </View>
                   )}
-                  {report.source === "re_review" && report.requestReason ? (
+                  {report.source === "re_review" && reportRequestReason(report) ? (
                     <Text className="text-sm mt-2 font-extrabold" style={textPrimary}>
                       Request reason:{" "}
                       <Text className="font-extrabold" style={{ color: "#16a34a" }}>
-                        {report.requestReason}
+                        {reportRequestReason(report)}
                       </Text>
                     </Text>
                   ) : null}
                   <Text
                     className={`text-sm font-extrabold ${
-                      report.source === "re_review" && report.requestReason ? "mt-1" : "mt-2"
+                      report.source === "re_review" && reportRequestReason(report) ? "mt-1" : "mt-2"
                     }`}
                     style={textPrimary}
                   >
@@ -2512,7 +2558,9 @@ export function AdminCommunityHub() {
                         ? "Block reason: "
                         : "Report reason: "}
                     <Text className="font-extrabold" style={{ color: "#16a34a" }}>
-                      {report.reason}
+                      {report.source === "re_review"
+                        ? reportKeepHiddenReason(report)
+                        : report.reason}
                     </Text>
                   </Text>
                   <Text className="text-sm mt-1 font-extrabold" style={textPrimary}>
@@ -2624,7 +2672,7 @@ export function AdminCommunityHub() {
             style={surfaceStyle}
           >
             <View className="flex-row items-center">
-              <ProfileAvatar uri={avatarFor(user.id, user.profileImage)} size={40} />
+              <CommunityProfileAvatar uri={avatarFor(user.id, user.profileImage)} size={40} />
               <View className="flex-1 ml-3">
                 <Text className="text-sm font-extrabold" style={textPrimary}>
                   {user.name}
@@ -2942,7 +2990,7 @@ export function AdminCommunityHub() {
             {selectedUser ? (
               <>
                 <View className="items-center mb-5">
-                  <ProfileAvatar uri={avatarFor(selectedUser.id, selectedUser.profileImage)} size={72} />
+                  <CommunityProfileAvatar uri={avatarFor(selectedUser.id, selectedUser.profileImage)} size={72} />
                   <Text className="text-xl font-extrabold mt-3" style={textPrimary}>
                     {selectedUser.name}
                   </Text>
@@ -3334,8 +3382,28 @@ export function AdminCommunityHub() {
                     style={{ backgroundColor: theme.dangerSoft, borderColor: theme.danger }}
                   >
                     <Text className="text-xs font-extrabold uppercase" style={{ color: theme.danger }}>
-                      Report
+                      {reportDetailReport.source === "re_review" ? "Request review" : "Report"}
                     </Text>
+                    {reportDetailReport.source === "re_review" ? (
+                      <>
+                        {reportRequestReason(reportDetailReport) ? (
+                          <Text className="text-sm mt-2 leading-5" style={textSecondary}>
+                            Request reason:{" "}
+                            <Text style={{ color: theme.accentText, fontWeight: "800" }}>
+                              {reportRequestReason(reportDetailReport)}
+                            </Text>
+                          </Text>
+                        ) : null}
+                        {reportBlockReason(reportDetailReport) ? (
+                          <Text className="text-sm mt-2 leading-5" style={textSecondary}>
+                            Block reason:{" "}
+                            <Text style={{ color: theme.accentText, fontWeight: "800" }}>
+                              {reportBlockReason(reportDetailReport)}
+                            </Text>
+                          </Text>
+                        ) : null}
+                      </>
+                    ) : (
                     <Text className="text-sm mt-2 leading-5" style={textSecondary}>
                       By{" "}
                       <Text
@@ -3350,6 +3418,7 @@ export function AdminCommunityHub() {
                       </Text>
                       : {reportDetailReport.reason}
                     </Text>
+                    )}
                   </View>
                 ) : null}
                 {reportDetailReport?.targetType === "comment"

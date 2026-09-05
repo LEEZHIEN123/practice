@@ -7,7 +7,7 @@ export type NutritionActivityKey =
   | "light"
   | "moderate"
   | "very_active"
-  | "super_active";
+  | "extra_active";
 export type NutritionDietaryKey = "omnivore" | "vegetarian" | "vegan";
 export type NutritionBmiCategory = "Underweight" | "Normal" | "Overweight" | "Obese";
 
@@ -88,8 +88,8 @@ export function normalizeNutritionActivity(
   if (raw === "sedentary") return "sedentary";
   if (raw === "light" || raw === "lightly_active") return "light";
   if (raw === "moderate" || raw === "moderately_active") return "moderate";
-  if (raw === "very_active" || raw === "extra_active") return "very_active";
-  if (raw === "super_active") return "super_active";
+  if (raw === "very_active") return "very_active";
+  if (raw === "extra_active" || raw === "super_active") return "extra_active";
 
   const m = Number(activityMultiplier);
   if (!Number.isFinite(m) || m <= 0) return null;
@@ -97,7 +97,7 @@ export function normalizeNutritionActivity(
   if (m <= 1.4) return "light";
   if (m <= 1.6) return "moderate";
   if (m <= 1.8) return "very_active";
-  return "super_active";
+  return "extra_active";
 }
 
 export function normalizeNutritionDietary(
@@ -199,7 +199,7 @@ export function nutritionActivityLabel(a: NutritionActivityKey | null | undefine
   if (a === "light") return "Light";
   if (a === "moderate") return "Moderate";
   if (a === "very_active") return "Very Active";
-  if (a === "super_active") return "Super Active";
+  if (a === "extra_active") return "Extra Active";
   return "—";
 }
 
@@ -369,7 +369,7 @@ function parseKey(key: string): {
       activity !== "light" &&
       activity !== "moderate" &&
       activity !== "very_active" &&
-      activity !== "super_active") ||
+      activity !== "extra_active") ||
     (bmi !== "Underweight" && bmi !== "Normal" && bmi !== "Overweight" && bmi !== "Obese") ||
     (goal !== "gain" && goal !== "maintain" && goal !== "lose") ||
     (diet !== "omnivore" && diet !== "vegetarian" && diet !== "vegan")

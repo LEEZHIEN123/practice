@@ -567,14 +567,14 @@ export default function ProgressScreen() {
         const rows = snap.docs
           .map((d) => {
             const data = d.data() as any;
-            const createdAt =
-              getCreatedAtDate(data.logDate) ?? getCreatedAtDate(data.createdAt);
+            const loggedAt = getCreatedAtDate(data.createdAt) ?? getCreatedAtDate(data.logDate);
             const calories = typeof data.calories === "number" ? data.calories : 0;
-            if (!createdAt) return null;
+            if (!loggedAt) return null;
+            const mealDay = getCreatedAtDate(data.logDate) ?? loggedAt;
             return {
               calories,
-              createdAt,
-              dayKey: formatCalendarDayKey(createdAt, calendarTz),
+              createdAt: loggedAt,
+              dayKey: formatCalendarDayKey(mealDay, calendarTz),
             };
           })
           .filter((r): r is MealLogRowProgress => r != null && r.calories > 0);
@@ -601,14 +601,14 @@ export default function ProgressScreen() {
       });
     }
     if (period === "month") {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const buckets = [0, 0, 0, 0];
       for (const r of rows) {
-        if (r.createdAt < monthStart) continue;
-        if (r.createdAt.getMonth() !== now.getMonth() || r.createdAt.getFullYear() !== now.getFullYear())
-          continue;
-        const dom = r.createdAt.getDate();
-        const idx = Math.min(3, Math.floor((dom - 1) / 7));
+        const parts = r.dayKey.split("-");
+        const yy = parseInt(parts[0] ?? "0", 10);
+        const mm = parseInt(parts[1] ?? "0", 10) - 1;
+        const dd = parseInt(parts[2] ?? "0", 10);
+        if (yy !== now.getFullYear() || mm !== now.getMonth()) continue;
+        const idx = Math.min(3, Math.floor((dd - 1) / 7));
         buckets[idx] += r.calories;
       }
       return buckets;
@@ -616,8 +616,11 @@ export default function ProgressScreen() {
     const year = now.getFullYear();
     const sums = zeros(12);
     for (const r of rows) {
-      if (r.createdAt.getFullYear() !== year) continue;
-      sums[r.createdAt.getMonth()] += r.calories;
+      const parts = r.dayKey.split("-");
+      const yy = parseInt(parts[0] ?? "0", 10);
+      const mm = parseInt(parts[1] ?? "0", 10) - 1;
+      if (yy !== year) continue;
+      if (mm >= 0 && mm < 12) sums[mm] += r.calories;
     }
     return sums;
   }, [calendarTz, mealLogRows, period, tab]);

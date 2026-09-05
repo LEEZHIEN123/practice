@@ -41,7 +41,7 @@ type ActivityKey =
   | "light"
   | "moderate"
   | "very_active"
-  | "super_active";
+  | "extra_active";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -113,9 +113,9 @@ export default function EditProfile() {
         icon: "fitness-outline" as IoniconName,
       },
       {
-        key: "super_active" as const,
-        title: "Super Active",
-        subtitle: "Very hard exercise or physically demanding work",
+        key: "extra_active" as const,
+        title: "Extra Active",
+        subtitle: "Exercise 2 times a day",
         multiplier: 1.9,
         icon: "flash-outline" as IoniconName,
       },
@@ -196,7 +196,7 @@ export default function EditProfile() {
 
         if (data.activityLevel) {
           const level =
-            data.activityLevel === "extra_active" ? "very_active" : data.activityLevel;
+            data.activityLevel === "super_active" ? "extra_active" : data.activityLevel;
           setActivityLevel(level as ActivityKey);
         }
       } catch (error) {
@@ -412,8 +412,12 @@ export default function EditProfile() {
         height: nextHeight,
         weight: nextWeight,
         bmi,
-        activityLevel: pickedActivity?.key ?? null,
-        activityMultiplier: pickedActivity?.multiplier ?? null,
+        ...(pickedActivity
+          ? {
+              activityLevel: pickedActivity.key,
+              activityMultiplier: pickedActivity.multiplier,
+            }
+          : {}),
       });
 
       // Keep Progress today's weight / chart in sync when profile weight changes.

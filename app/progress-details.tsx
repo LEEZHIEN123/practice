@@ -464,13 +464,15 @@ export default function ProgressDetailsScreen() {
       const rows = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
         .map((r) => {
-          const createdAt = getCreatedAtDate(r.logDate) ?? getCreatedAtDate(r.createdAt) ?? new Date();
+          // createdAt is the real log clock time; logDate is date-only (midnight) for the meal day.
+          const loggedAt = getCreatedAtDate(r.createdAt) ?? getCreatedAtDate(r.logDate) ?? new Date();
+          const mealDay = getCreatedAtDate(r.logDate) ?? loggedAt;
           return {
             id: r.id,
             title: typeof r.title === "string" ? r.title : "Meal",
             calories: typeof r.calories === "number" ? r.calories : 0,
-            createdAt,
-            dayKey: formatCalendarDayKey(createdAt, calendarTz),
+            createdAt: loggedAt,
+            dayKey: formatCalendarDayKey(mealDay, calendarTz),
           };
         })
         .filter((r) => Math.round(r.calories) > 0) as MealRow[];
@@ -731,13 +733,14 @@ export default function ProgressDetailsScreen() {
       return;
     }
     if (period === "month") {
-      const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
       const buckets = [0, 0, 0, 0];
       for (const r of rows) {
-        if (r.createdAt < monthStart) continue;
-        if (r.createdAt.getMonth() !== anchor.getMonth() || r.createdAt.getFullYear() !== anchor.getFullYear()) continue;
-        const dom = r.createdAt.getDate();
-        const idx = Math.min(3, Math.floor((dom - 1) / 7));
+        const parts = r.dayKey.split("-");
+        const yy = parseInt(parts[0] ?? "0", 10);
+        const mm = parseInt(parts[1] ?? "0", 10) - 1;
+        const dd = parseInt(parts[2] ?? "0", 10);
+        if (yy !== anchor.getFullYear() || mm !== anchor.getMonth()) continue;
+        const idx = Math.min(3, Math.floor((dd - 1) / 7));
         buckets[idx] += r.calories;
       }
       setMealSeries(buckets);
@@ -746,8 +749,11 @@ export default function ProgressDetailsScreen() {
     const year = anchor.getFullYear();
     const sums = Array.from({ length: 12 }, () => 0);
     for (const r of rows) {
-      if (r.createdAt.getFullYear() !== year) continue;
-      sums[r.createdAt.getMonth()] += r.calories;
+      const parts = r.dayKey.split("-");
+      const yy = parseInt(parts[0] ?? "0", 10);
+      const mm = parseInt(parts[1] ?? "0", 10) - 1;
+      if (yy !== year) continue;
+      if (mm >= 0 && mm < 12) sums[mm] += r.calories;
     }
     setMealSeries(sums);
   }, [allMealRows, anchor, calendarTz, period, tab]);

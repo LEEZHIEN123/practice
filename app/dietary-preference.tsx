@@ -5,6 +5,8 @@ import {
 } from "@/components/themed/ThemedUi";
 import { registerAccountEmail } from "@/lib/accountEmailRegistry";
 import { ensureSupportChatWithAdmin } from "@/lib/communityService";
+import { normalizeNutritionActivity } from "@/lib/nutritionPlan";
+import { resolvePostAuthRouteFromData } from "@/lib/onboardingRoute";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -88,7 +90,15 @@ export default function DietaryPreferenceScreen() {
         }
         const data = snap.data() as Record<string, unknown>;
         const gender = data.gender === "female" ? "female" : data.gender === "male" ? "male" : null;
-        const activityLevel = data.activityLevel as ActivityKey | undefined;
+        const next = resolvePostAuthRouteFromData(data);
+        if (next !== "/dietary-preference") {
+          router.replace(next as any);
+          return;
+        }
+        const activityLevel = normalizeNutritionActivity(
+          typeof data.activityLevel === "string" ? data.activityLevel : null,
+          typeof data.activityMultiplier === "number" ? data.activityMultiplier : null
+        );
         if (!gender || !activityLevel) {
           router.replace(!gender ? "/profiledetails" : "/activitylevel");
           return;
@@ -102,8 +112,8 @@ export default function DietaryPreferenceScreen() {
             height: Number(data.height ?? 175),
             weight: Number(data.weight ?? 72),
             activityLevel:
-              String(activityLevel) === "extra_active"
-                ? "very_active"
+              String(activityLevel) === "super_active"
+                ? "extra_active"
                 : (activityLevel as ActivityKey),
             activityMultiplier: Number(data.activityMultiplier ?? 1.725),
           });

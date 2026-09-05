@@ -1,5 +1,10 @@
 import { formatCalendarDayKey, getDeviceIanaTimezone } from "@/lib/calendarDay";
-import { upsertMealHistory, descriptionsToLegacyString, normalizeMealDescriptions } from "@/lib/mealLogHistory";
+import {
+  upsertMealHistory,
+  descriptionsToLegacyString,
+  normalizeMealDescriptions,
+  type MealHistoryEntry,
+} from "@/lib/mealLogHistory";
 import { isManualMealType } from "@/lib/manualMealTypes";
 import { auth, db, storage } from "../firebaseConfig";
 import {
@@ -12,8 +17,10 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  type DocumentReference,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import * as ImageManipulator from "expo-image-manipulator";
 
 export type MealLogSource = "dataset" | "barcode" | "search" | "manual";
 
@@ -38,6 +45,15 @@ export type LogMealInput = {
   planDay?: number;
   planCreatedAt?: string | null;
   origin?: "nutritionPlan";
+  /**
+   * When true (default), local photos upload in the background after the meal is saved
+   * so Log Meal does not wait on Storage.
+   */
+  deferPhotoUpload?: boolean;
+};
+
+export type LogMealResult = {
+  history: MealHistoryEntry[] | null;
 };
 
 function isRemotePhotoUri(uri: string): boolean {
@@ -67,6 +83,19 @@ async function localUriToBlob(uri: string): Promise<Blob> {
   return response.blob();
 }
 
+async function compressLocalPhoto(localUri: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      localUri,
+      [{ resize: { width: 1280 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    return result.uri || localUri;
+  } catch {
+    return localUri;
+  }
+}
+
 /** Upload a local meal photo to Firebase Storage; returns the download URL. */
 export async function uploadMealPhoto(localUri: string): Promise<string> {
   const user = auth.currentUser;
@@ -76,7 +105,8 @@ export async function uploadMealPhoto(localUri: string): Promise<string> {
   if (!trimmed) throw new Error("Meal photo is missing.");
   if (isRemotePhotoUri(trimmed)) return trimmed;
 
-  const blob = await localUriToBlob(trimmed);
+  const compressedUri = await compressLocalPhoto(trimmed);
+  const blob = await localUriToBlob(compressedUri);
   if (blob.size < 1) throw new Error("Could not read meal photo.");
   if (blob.size > 10 * 1024 * 1024) {
     throw new Error("Meal photo must be smaller than 10 MB.");
@@ -96,7 +126,39 @@ export async function resolveMealPhotoUri(photoUri?: string | null): Promise<str
   return uploadMealPhoto(trimmed);
 }
 
-export async function logMealFood(input: LogMealInput): Promise<void> {
+function attachPhotoInBackground(
+  mealRef: DocumentReference,
+  uid: string,
+  localUri: string,
+  historyTitle: string,
+  calories: number,
+  macros: { proteinG?: number; carbsG?: number; fatG?: number },
+  mealType: string | undefined,
+  description: string | undefined,
+  descriptionSections: string[]
+) {
+  void (async () => {
+    try {
+      const remoteUrl = await uploadMealPhoto(localUri);
+      await updateDoc(mealRef, { photoUri: remoteUrl });
+      await upsertMealHistory(uid, {
+        title: historyTitle,
+        calories,
+        proteinG: macros.proteinG,
+        carbsG: macros.carbsG,
+        fatG: macros.fatG,
+        mealType: isManualMealType(mealType) ? mealType : undefined,
+        description,
+        descriptionSections,
+        photoUri: remoteUrl,
+      });
+    } catch (e) {
+      console.log("Background meal photo upload failed:", e);
+    }
+  })();
+}
+
+export async function logMealFood(input: LogMealInput): Promise<LogMealResult> {
   const user = auth.currentUser;
   if (!user) throw new Error("Sign in to log meals.");
 
@@ -127,9 +189,18 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
       : null;
   const fromNutritionPlan = input.origin === "nutritionPlan" && planDay != null;
 
-  const photoUri = await resolveMealPhotoUri(input.photoUri);
+  const rawPhoto = input.photoUri?.trim() || "";
+  const deferPhoto = input.deferPhotoUpload !== false;
+  const remoteReady = rawPhoto && isRemotePhotoUri(rawPhoto) ? rawPhoto : undefined;
+  const localPending = rawPhoto && !isRemotePhotoUri(rawPhoto) ? rawPhoto : undefined;
 
-  await addDoc(collection(db, "users", user.uid, "mealLogs"), {
+  // Wait for photo only when caller opts out of deferred upload.
+  let photoUri: string | undefined = remoteReady;
+  if (localPending && !deferPhoto) {
+    photoUri = await uploadMealPhoto(localPending);
+  }
+
+  const mealRef = await addDoc(collection(db, "users", user.uid, "mealLogs"), {
     title,
     calories,
     source: input.source,
@@ -149,7 +220,9 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
     logDate: Timestamp.fromDate(day),
   });
 
-  await setDoc(
+  const historyPhoto = photoUri || localPending;
+
+  const statsPromise = setDoc(
     doc(db, "users", user.uid, "dailyStats", dayKey),
     {
       consumedKcal: increment(calories),
@@ -158,35 +231,56 @@ export async function logMealFood(input: LogMealInput): Promise<void> {
     { merge: true }
   );
 
-  if (fromNutritionPlan) {
-    try {
-      const userRef = doc(db, "users", user.uid);
-      const uSnap = await getDoc(userRef);
-      const prevLcd = Number((uSnap.data() as any)?.activeNutritionPlanLastCompletedDay);
-      const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
-      const repeatDay1AfterProgress = planDay === 1 && prevOk;
-      if (!repeatDay1AfterProgress) {
-        await updateDoc(userRef, {
-          activeNutritionPlanLastCompletedDay: planDay,
-          activeNutritionPlanLastCompletedAt: serverTimestamp(),
-        } as any);
-      }
-    } catch (e) {
-      console.log("Failed to advance nutrition plan day:", e);
-    }
-  }
+  const planPromise = fromNutritionPlan
+    ? (async () => {
+        try {
+          const userRef = doc(db, "users", user.uid);
+          const uSnap = await getDoc(userRef);
+          const prevLcd = Number((uSnap.data() as any)?.activeNutritionPlanLastCompletedDay);
+          const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
+          const repeatDay1AfterProgress = planDay === 1 && prevOk;
+          if (!repeatDay1AfterProgress) {
+            await updateDoc(userRef, {
+              activeNutritionPlanLastCompletedDay: planDay,
+              activeNutritionPlanLastCompletedAt: serverTimestamp(),
+            } as any);
+          }
+        } catch (e) {
+          console.log("Failed to advance nutrition plan day:", e);
+        }
+      })()
+    : Promise.resolve();
 
-  if (input.saveToHistory !== false) {
-    await upsertMealHistory(user.uid, {
+  const historyPromise =
+    input.saveToHistory !== false
+      ? upsertMealHistory(user.uid, {
+          title,
+          calories,
+          proteinG: input.proteinG,
+          carbsG: input.carbsG,
+          fatG: input.fatG,
+          mealType: isManualMealType(input.category) ? input.category : undefined,
+          description,
+          descriptionSections,
+          photoUri: historyPhoto,
+        })
+      : Promise.resolve(null as MealHistoryEntry[] | null);
+
+  const [, , history] = await Promise.all([statsPromise, planPromise, historyPromise]);
+
+  if (localPending && deferPhoto && !photoUri) {
+    attachPhotoInBackground(
+      mealRef,
+      user.uid,
+      localPending,
       title,
       calories,
-      proteinG: input.proteinG,
-      carbsG: input.carbsG,
-      fatG: input.fatG,
-      mealType: isManualMealType(input.category) ? input.category : undefined,
+      { proteinG: input.proteinG, carbsG: input.carbsG, fatG: input.fatG },
+      input.category,
       description,
-      descriptionSections,
-      photoUri,
-    });
+      descriptionSections
+    );
   }
+
+  return { history };
 }
