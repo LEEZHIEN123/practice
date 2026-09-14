@@ -183,36 +183,6 @@ export default function ProfileDetails() {
     }
   };
 
-  const GenderButton = ({
-    value,
-    label,
-    icon,
-  }: {
-    value: Gender;
-    label: string;
-    icon: "male" | "female";
-  }) => {
-    const active = gender === value;
-
-    return (
-      <View className="items-center">
-        <Pressable
-          onPress={() => setGender(value)}
-          className="w-20 h-20 rounded-full items-center justify-center"
-          style={{ backgroundColor: active ? theme.accent : theme.accentSoft }}
-        >
-          <Ionicons name={icon} size={34} color={active ? "white" : theme.accent} />
-        </Pressable>
-        <ThemedText
-          variant={active ? "accent" : "muted"}
-          className="mt-2 font-semibold"
-        >
-          {label}
-        </ThemedText>
-      </View>
-    );
-  };
-
   return (
     <ThemedScreen>
       <KeyboardAvoidingView className="flex-1" behavior="padding">
@@ -241,8 +211,8 @@ export default function ProfileDetails() {
           This helps us personalize your fitness{"\n"}journey and track progress accurately.
         </ThemedText>
 
-        <View className="items-center mt-6">
-          <ThemedCard className="w-52 h-56 items-center justify-center shadow-sm">
+        <View className="items-center mt-6" pointerEvents="none">
+          <ThemedCard className="w-52 h-56 items-center justify-center overflow-hidden shadow-sm">
             <Image
               source={
                 gender === "female"
@@ -255,9 +225,48 @@ export default function ProfileDetails() {
           </ThemedCard>
         </View>
 
-        <View className="flex-row justify-center gap-10 mt-7">
-          <GenderButton value="male" label="Male" icon="male" />
-          <GenderButton value="female" label="Female" icon="female" />
+        <View
+          className="flex-row justify-center mt-7"
+          style={{ zIndex: 10, elevation: 10 }}
+        >
+          {([
+            { value: "male" as const, label: "Male", icon: "male" as const },
+            { value: "female" as const, label: "Female", icon: "female" as const },
+          ]).map((option) => {
+            const active = gender === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => setGender(option.value)}
+                accessibilityRole="button"
+                accessibilityLabel={option.label}
+                hitSlop={12}
+                className="items-center mx-5"
+                style={{ minWidth: 88 }}
+              >
+                <View
+                  className="items-center justify-center rounded-full"
+                  style={{
+                    width: 80,
+                    height: 80,
+                    backgroundColor: active ? theme.accent : theme.accentSoft,
+                  }}
+                >
+                  <Ionicons
+                    name={option.icon}
+                    size={34}
+                    color={active ? "white" : theme.accent}
+                  />
+                </View>
+                <ThemedText
+                  variant={active ? "accent" : "muted"}
+                  className="mt-2 font-semibold"
+                >
+                  {option.label}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
         </View>
 
         <View className="mt-6">

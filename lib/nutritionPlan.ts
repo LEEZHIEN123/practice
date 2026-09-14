@@ -114,7 +114,7 @@ export function normalizeNutritionDietary(
 
 /**
  * Map dataset / profile goal labels onto app GoalKey.
- * Dataset "Muscle Gain" = app "Gain Weight" / gain
+ * Dataset "Muscle Gain" = app "Gain Weight / Gain Muscle" / gain
  * Dataset "Maintenance" = app "Maintain Weight" / maintain
  * Dataset "Weight Loss" = app "Lose Weight" / lose
  */
@@ -154,7 +154,7 @@ export function normalizeNutritionGoal(value: string | null | undefined): GoalKe
 }
 
 export function nutritionGoalLabel(goal: GoalKey | null | undefined): string {
-  if (goal === "gain") return "Gain Weight";
+  if (goal === "gain") return "Gain Weight / Gain Muscle";
   if (goal === "lose") return "Lose Weight";
   if (goal === "maintain") return "Maintain Weight";
   return "—";

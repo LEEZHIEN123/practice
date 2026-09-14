@@ -1,5 +1,5 @@
 import { auth } from "@/firebaseConfig";
-import { subscribeChats, subscribeNotifications } from "@/lib/communityService";
+import { subscribeChats, subscribeNotifications, isChatHiddenForUser } from "@/lib/communityService";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
 
@@ -26,7 +26,10 @@ export function useCommunityUnread() {
 
     const unsubChats = subscribeChats((chats) => {
       setChatCount(
-        chats.reduce((sum, chat) => sum + (chat.unreadCount[uid] ?? 0), 0)
+        chats.reduce((sum, chat) => {
+          if (isChatHiddenForUser(chat, uid)) return sum;
+          return sum + (chat.unreadCount[uid] ?? 0);
+        }, 0)
       );
     });
 

@@ -22,7 +22,7 @@ export type CoachUserContext = {
 };
 
 function goalLabel(goal: string | undefined): string | undefined {
-  if (goal === "gain") return "Gain weight";
+  if (goal === "gain") return "Gain weight / gain muscle";
   if (goal === "maintain") return "Maintain weight";
   if (goal === "lose") return "Lose weight";
   return undefined;

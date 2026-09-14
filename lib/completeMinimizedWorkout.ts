@@ -124,21 +124,14 @@ export async function completeMinimizedWorkout(
           dur === "week" || dur === "biweekly" || dur === "monthly" ? durationDays(dur) : 0;
         const dayNum = Math.floor(args.day);
         const finishingKnownPlanDay = Boolean(totalPlanDays > 0 && dayNum <= totalPlanDays);
-        if (finishingKnownPlanDay) {
+        const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
+        const prevOk = Number.isFinite(prevLcd) ? prevLcd : 0;
+        const repeatDay1AfterProgress = dayNum === 1 && prevOk >= 2;
+        if (finishingKnownPlanDay || !repeatDay1AfterProgress) {
           await updateDoc(userRef, {
-            activePlanLastCompletedDay: Math.max(1, dayNum),
+            activePlanLastCompletedDay: Math.max(1, dayNum, prevOk),
             activePlanLastCompletedAt: serverTimestamp(),
           } as any);
-        } else {
-          const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
-          const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
-          const repeatDay1AfterProgress = dayNum === 1 && prevOk;
-          if (!repeatDay1AfterProgress) {
-            await updateDoc(userRef, {
-              activePlanLastCompletedDay: Math.max(1, dayNum),
-              activePlanLastCompletedAt: serverTimestamp(),
-            } as any);
-          }
         }
       } catch {
         /* ignore plan progress errors */

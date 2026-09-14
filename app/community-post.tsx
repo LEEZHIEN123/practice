@@ -26,12 +26,22 @@ import {
   adminBlockComment,
   deleteComment,
   deletePost,
+  ACCOUNT_UNAVAILABLE_MESSAGE,
+  acceptFriendRequest,
+  chatIdForUsers,
+  ensureDirectChat,
+  ensureSupportChatWithAdmin,
+  getPendingIncomingFriendRequest,
   getPostsByAuthor,
   getPublicUserProfile,
   isCommunityAdminUserId,
+  loadFriendRelations,
   loadLikerProfiles,
+  rejectFriendRequest,
   requestBlockedPostReReview,
   resolveAdminUid,
+  resolveFriendRequestNotificationByRequestId,
+  sendFriendRequest,
   setPostAuthorHidden,
   submitReport,
   subscribeChats,
@@ -41,9 +51,11 @@ import {
   subscribePendingCommunityPostIds,
   subscribePostById,
   subscribePosts,
+  SUPPORT_ADMIN_NAME,
   threadedComments,
   togglePostLike,
   updatePost,
+  userAccountExists,
   type LikerProfile,
 } from "@/lib/communityService";
 import type {
@@ -51,6 +63,7 @@ import type {
   CommunityComment,
   CommunityPost,
   FriendListEntry,
+  FriendRelation,
 } from "@/lib/communityTypes";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
@@ -122,9 +135,11 @@ export default function CommunityPostScreen() {
 
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileFriendBusy, setProfileFriendBusy] = useState(false);
   const [profileData, setProfileData] = useState<Awaited<ReturnType<typeof getPublicUserProfile>> | null>(
     null
   );
+  const [friendRelations, setFriendRelations] = useState<Record<string, FriendRelation>>({});
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
 
   const displayComments = useMemo(() => threadedComments(comments), [comments]);
@@ -285,8 +300,17 @@ export default function CommunityPostScreen() {
     setProfileLoading(true);
     setProfileData(null);
     try {
+      if (!(await userAccountExists(userId))) {
+        Alert.alert("Unavailable", ACCOUNT_UNAVAILABLE_MESSAGE);
+        setProfileUserId(null);
+        return;
+      }
       const profile = await getPublicUserProfile(userId);
       setProfileData(profile);
+      if (userId !== currentUserId) {
+        const relation = await loadFriendRelations([userId]);
+        setFriendRelations((prev) => ({ ...prev, ...relation }));
+      }
     } catch (e: unknown) {
       Alert.alert(
         "Error",
@@ -295,6 +319,116 @@ export default function CommunityPostScreen() {
       setProfileUserId(null);
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const closeUserProfile = () => {
+    setProfileUserId(null);
+    setProfileData(null);
+  };
+
+  const handleOpenSupportChat = () => {
+    if (!currentUserId || !adminUid) {
+      Alert.alert("Chat unavailable", "Support chat is not available right now. Please try again later.");
+      return;
+    }
+    const supportImage = authorAvatarById[adminUid] ?? profileData?.profileImage ?? "";
+    closeUserProfile();
+    const chatId = chatIdForUsers(currentUserId, adminUid);
+    void ensureSupportChatWithAdmin().catch(() => {});
+    router.push({
+      pathname: "/community-chat" as any,
+      params: {
+        chatId,
+        name: SUPPORT_ADMIN_NAME,
+        image: supportImage,
+        isSupport: "1",
+        otherUserId: adminUid,
+      },
+    });
+  };
+
+  const handleChatFromProfile = async () => {
+    if (!profileUserId || profileUserId === currentUserId) return;
+    if (!(await userAccountExists(profileUserId))) {
+      Alert.alert("Unavailable", ACCOUNT_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    const relation = friendRelations[profileUserId] ?? "none";
+    if (relation !== "friends") {
+      Alert.alert("Add friend first", "You can chat after becoming friends.");
+      return;
+    }
+    try {
+      const chatId = await ensureDirectChat(profileUserId);
+      const name = profileData?.name ?? "Friend";
+      const image = profileData?.profileImage ?? "";
+      closeUserProfile();
+      router.push({
+        pathname: "/community-chat" as any,
+        params: {
+          chatId,
+          name,
+          image,
+          isSupport: "0",
+          otherUserId: profileUserId,
+        },
+      });
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not open chat.");
+    }
+  };
+
+  const handleFriendRequest = async (authorId: string) => {
+    if (authorId === adminUid) return;
+    try {
+      await sendFriendRequest(authorId);
+      setFriendRelations((prev) => ({ ...prev, [authorId]: "pending_outgoing" }));
+      Alert.alert("Friend request sent", "They will be notified.");
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not send request.");
+    }
+  };
+
+  const handleAcceptFriendFromProfile = async () => {
+    if (!profileUserId) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(profileUserId);
+      if (!request || request.status !== "pending") {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        const relation = await loadFriendRelations([profileUserId]);
+        setFriendRelations((prev) => ({ ...prev, ...relation }));
+        return;
+      }
+      await acceptFriendRequest(request);
+      await resolveFriendRequestNotificationByRequestId(request.id, "accepted");
+      setFriendRelations((prev) => ({ ...prev, [profileUserId]: "friends" }));
+      Alert.alert("Friend added", `You are now friends with ${profileData?.name ?? "this user"}.`);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not accept request.");
+    } finally {
+      setProfileFriendBusy(false);
+    }
+  };
+
+  const handleDeclineFriendFromProfile = async () => {
+    if (!profileUserId) return;
+    try {
+      setProfileFriendBusy(true);
+      const request = await getPendingIncomingFriendRequest(profileUserId);
+      if (!request) {
+        Alert.alert("Unavailable", "This friend request is no longer pending.");
+        return;
+      }
+      await rejectFriendRequest(request.id);
+      await resolveFriendRequestNotificationByRequestId(request.id, "rejected");
+      setFriendRelations((prev) => ({ ...prev, [profileUserId]: "none" }));
+      closeUserProfile();
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not decline request.");
+    } finally {
+      setProfileFriendBusy(false);
     }
   };
 
@@ -619,9 +753,9 @@ export default function CommunityPostScreen() {
                 </Text>
               ) : null}
 
-              <PostAchievementChips achievementIds={post.achievementIds ?? []} />
-
               <PostImagesGallery imageUrls={post.imageUrls} maxHeight={260} />
+
+              <PostAchievementChips achievementIds={post.achievementIds ?? []} />
 
               {post.tags.length > 0 ? (
                 <View className="flex-row flex-wrap gap-2 mt-3">
@@ -886,20 +1020,34 @@ export default function CommunityPostScreen() {
         visible={profileUserId !== null}
         profile={profileData}
         posts={profilePosts}
-        relation="none"
+        relation={
+          profileUserId && profileUserId !== currentUserId
+            ? friendRelations[profileUserId] ?? "none"
+            : "none"
+        }
         loading={profileLoading}
         isSelf={profileUserId === currentUserId}
         isSupportAdmin={profileUserId === adminUid}
-        canAddFriend={false}
+        canAddFriend={profileUserId !== adminUid && profileUserId !== currentUserId}
         pendingReviewPostIds={pendingReviewPostIds}
-        onClose={() => {
-          setProfileUserId(null);
-          setProfileData(null);
+        onClose={closeUserProfile}
+        onAddFriend={() => {
+          if (profileUserId) void handleFriendRequest(profileUserId);
         }}
-        onAddFriend={() => {}}
+        onAcceptFriend={() => void handleAcceptFriendFromProfile()}
+        onDeclineFriend={() => void handleDeclineFriendFromProfile()}
+        friendActionBusy={profileFriendBusy}
+        onChat={
+          profileUserId === adminUid
+            ? () => void handleOpenSupportChat()
+            : profileUserId &&
+                profileUserId !== currentUserId &&
+                friendRelations[profileUserId] === "friends"
+              ? () => void handleChatFromProfile()
+              : undefined
+        }
         onOpenPost={(openedPostId) => {
-          setProfileUserId(null);
-          setProfileData(null);
+          closeUserProfile();
           if (openedPostId === postId) return;
           router.push({
             pathname: "/community-post" as any,

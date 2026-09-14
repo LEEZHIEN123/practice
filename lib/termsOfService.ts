@@ -27,7 +27,7 @@ export const DEFAULT_TERMS_SECTIONS: TermsSection[] = [
   {
     title: "1. Acceptance of Terms",
     body:
-      "By accessing or using Personalised Workout and Nutrition Guidance System, you agree to be bound by these Terms of Service.",
+      "By accessing or using Personalised Workout and Nutrition Guidance Application, you agree to be bound by these Terms of Service.",
   },
   {
     title: "2. Privacy Policy",
@@ -37,7 +37,7 @@ export const DEFAULT_TERMS_SECTIONS: TermsSection[] = [
   {
     title: "3. Health and Medical Disclaimer",
     body:
-      "Personalised Workout and Nutrition Guidance System is for general wellness and informational purposes only. It is not medical advice, diagnosis, or treatment. Always consult a qualified professional before changing diet, exercise, or health plans.",
+      "Personalised Workout and Nutrition Guidance Application is for general wellness and informational purposes only. It is not medical advice, diagnosis, or treatment. Always consult a qualified professional before changing diet, exercise, or health plans.",
   },
   {
     title: "4. User Accounts",
@@ -56,9 +56,16 @@ export const DEFAULT_TERMS_SECTIONS: TermsSection[] = [
   {
     title: "6. Limitation of Liability",
     body:
-      "To the fullest extent permitted by law, Personalised Workout and Nutrition Guidance System and its team are not liable for indirect, incidental, or consequential damages arising from your use of the app. Some jurisdictions do not allow certain limitations; in those cases, our liability is limited to the maximum permitted by law.",
+      "To the fullest extent permitted by law, Personalised Workout and Nutrition Guidance Application and its team are not liable for indirect, incidental, or consequential damages arising from your use of the app. Some jurisdictions do not allow certain limitations; in those cases, our liability is limited to the maximum permitted by law.",
   },
 ];
+
+function withApplicationName(text: string): string {
+  return text.replaceAll(
+    "Personalised Workout and Nutrition Guidance System",
+    "Personalised Workout and Nutrition Guidance Application"
+  );
+}
 
 function parseSections(raw: unknown): TermsSection[] | null {
   if (!Array.isArray(raw)) return null;
@@ -66,11 +73,13 @@ function parseSections(raw: unknown): TermsSection[] | null {
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
-    const title = typeof row.title === "string" ? row.title.trim() : "";
-    const body = typeof row.body === "string" ? row.body.trim() : "";
+    const title = typeof row.title === "string" ? withApplicationName(row.title.trim()) : "";
+    const body = typeof row.body === "string" ? withApplicationName(row.body.trim()) : "";
     if (!title || !body) continue;
     const bullets = Array.isArray(row.bullets)
-      ? row.bullets.filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+      ? row.bullets
+          .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+          .map((b) => withApplicationName(b.trim()))
       : undefined;
     sections.push({ title, body, bullets: bullets?.length ? bullets : undefined });
   }

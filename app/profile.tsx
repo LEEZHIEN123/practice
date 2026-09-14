@@ -52,7 +52,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../firebaseConfig";
 
-type GoalLabel = "Gain Weight" | "Maintain Weight" | "Lose Weight";
+type GoalLabel = "Gain Weight / Gain Muscle" | "Maintain Weight" | "Lose Weight";
 type Gender = "male" | "female";
 
 export default function ProfileScreen() {
@@ -109,7 +109,7 @@ export default function ProfileScreen() {
         if (typeof data?.email === "string") setUserEmail(data.email);
         if (data?.gender === "male" || data?.gender === "female") setGender(data.gender);
 
-        if (data?.recommendedPlan === "gain") setGoal("Gain Weight");
+        if (data?.recommendedPlan === "gain") setGoal("Gain Weight / Gain Muscle");
         else if (data?.recommendedPlan === "maintain") setGoal("Maintain Weight");
         else if (data?.recommendedPlan === "lose") setGoal("Lose Weight");
 
@@ -119,7 +119,7 @@ export default function ProfileScreen() {
             : calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
         if (typeof bmi === "number" && Number.isFinite(bmi)) {
           setBmiValue(bmi);
-          if (bmi < 18.5) setRecommendedGoalLabel("Gain Weight");
+          if (bmi < 18.5) setRecommendedGoalLabel("Gain Weight / Gain Muscle");
           else if (bmi <= 24.9) setRecommendedGoalLabel("Maintain Weight");
           else setRecommendedGoalLabel("Lose Weight");
         } else {
@@ -155,7 +155,7 @@ export default function ProfileScreen() {
   }, []);
 
   const goalLabelToKey = (g: GoalLabel): "gain" | "maintain" | "lose" => {
-    if (g === "Gain Weight") return "gain";
+    if (g === "Gain Weight / Gain Muscle") return "gain";
     if (g === "Maintain Weight") return "maintain";
     return "lose";
   };
@@ -725,13 +725,13 @@ export default function ProfileScreen() {
                 [
                   { label: "Maintain Weight" as const, desc: "Target = TDEE" },
                   { label: "Lose Weight" as const, desc: "Target = TDEE - 500" },
-                  { label: "Gain Weight" as const, desc: "Target = TDEE + 300" },
+                  { label: "Gain Weight / Gain Muscle" as const, desc: "Target = TDEE + 300" },
                 ] as const
               )
                 .filter((o) => {
                   if (typeof bmiValue === "number") {
                     if (bmiValue < 18.5 && o.label === "Lose Weight") return false;
-                    if (bmiValue > 24.9 && o.label === "Gain Weight") return false;
+                    if (bmiValue > 24.9 && o.label === "Gain Weight / Gain Muscle") return false;
                   }
                   return true;
                 })

@@ -395,7 +395,7 @@ export default function Register() {
             >
               Terms of Service
             </Text>{" "}
-            of the Personalised Workout and Nutrition Guidance System.
+            of the Personalised Workout and Nutrition Guidance Application.
           </Text>
         </View>
         {!!policyError && (

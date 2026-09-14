@@ -15,13 +15,16 @@ import {
     buildWorkoutPlanArchiveEntry,
     calcBmi,
     canRestoreWorkoutPlan,
-    durationDays,
-    generateActiveWorkoutPlan,
     pickOrGenerateWorkoutPlanForBand,
     workoutPlansByBmiGoalField,
     type ActiveWorkoutPlan,
     type PlanDuration,
 } from "@/lib/workoutPlan";
+import {
+    parseLastCompletedPlanDay,
+    parsePlanCompletedAt,
+    rolloverCompletedWorkoutPlanIfNeeded,
+} from "@/lib/workoutPlanRollover";
 import { useRouter } from "expo-router";
 import {
     collection,
@@ -217,11 +220,9 @@ export default function WorkoutPlanScreen() {
         setPlansByDuration(byDur);
         const cur = data?.planDuration;
         if (cur === "week" || cur === "biweekly" || cur === "monthly") setPendingDuration(cur);
-        const lcd = Number(data?.activePlanLastCompletedDay);
-        setLastCompletedDay(Number.isFinite(lcd) && lcd > 0 ? Math.floor(lcd) : null);
-        const lca =
-          data?.activePlanLastCompletedAt?.toDate?.() instanceof Date ? data.activePlanLastCompletedAt.toDate() : null;
-        setLastCompletedAt(lca);
+        const lcd = parseLastCompletedPlanDay(data?.activePlanLastCompletedDay);
+        setLastCompletedDay(lcd);
+        setLastCompletedAt(parsePlanCompletedAt(data?.activePlanLastCompletedAt));
       },
       () => setPlan(null)
     );
@@ -230,40 +231,22 @@ export default function WorkoutPlanScreen() {
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user || !plan || !lastCompletedAt || lastCompletedDay == null) return;
+    if (!user || !plan || lastCompletedDay == null || lastCompletedAt == null) return;
     if (rolloverInFlightRef.current) return;
-
-    const totalPlanDays = durationDays(plan.duration);
-    const completedLastDay = Math.floor(lastCompletedDay) >= totalPlanDays;
-    if (!completedLastDay) return;
-
-    const todayStart = startOfCalendarDay(new Date());
-    const completedDayStart = startOfCalendarDay(lastCompletedAt);
-    const isNextCalendarDay = todayStart.getTime() > completedDayStart.getTime();
-    if (!isNextCalendarDay) return;
-
-    const resolvedGoal =
-      plan.goal === "gain" || plan.goal === "maintain" || plan.goal === "lose"
-        ? plan.goal
-        : goal;
-    if (userBmi == null || !resolvedGoal) return;
 
     rolloverInFlightRef.current = true;
     (async () => {
       try {
-        const next = generateActiveWorkoutPlan({ duration: plan.duration, bmi: userBmi, goal: resolvedGoal });
-        const band = bmiBandKey(userBmi);
-        await updateDoc(doc(db, "users", user.uid), {
-          activeWorkoutPlan: next,
-          [workoutPlansByBmiGoalField(band, resolvedGoal, plan.duration)]: buildWorkoutPlanArchiveEntry(
-            next,
-            null,
-            null
-          ),
-          activePlanLastCompletedDay: null,
-          activePlanLastCompletedAt: null,
-        } as any);
-        Alert.alert("Plan complete", "Great job finishing your plan. A new plan is now ready for this cycle.");
+        const snapData = userDataRef.current ?? {};
+        const rolled = await rolloverCompletedWorkoutPlanIfNeeded(user.uid, {
+          ...snapData,
+          activeWorkoutPlan: plan,
+          activePlanLastCompletedDay: lastCompletedDay,
+          activePlanLastCompletedAt: lastCompletedAt,
+        });
+        if (rolled) {
+          Alert.alert("Plan complete", "Great job finishing your plan. A new plan is now ready for this cycle.");
+        }
       } catch (e) {
         console.log("Failed to roll over completed plan:", e);
       } finally {
@@ -275,7 +258,7 @@ export default function WorkoutPlanScreen() {
   const metaLine = useMemo(() => {
     const bmiLine = userBmi != null ? `BMI: ${Math.round(userBmi * 10) / 10}` : "";
     const goalLine = goal
-      ? `Goal: ${goal === "gain" ? "Gain Weight" : goal === "lose" ? "Lose Weight" : "Maintain Weight"}`
+      ? `Goal: ${goal === "gain" ? "Gain Weight / Gain Muscle" : goal === "lose" ? "Lose Weight" : "Maintain Weight"}`
       : "";
     return { bmiLine, goalLine };
   }, [goal, userBmi]);

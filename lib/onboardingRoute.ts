@@ -35,13 +35,18 @@ export function resolvePostAuthRouteFromData(
     profile.planDuration === "week" ||
     profile.planDuration === "biweekly" ||
     profile.planDuration === "monthly";
-  const onboardingDone = profile.onboardingComplete === true || hasPlanDuration;
+  const bmiAnalysisDone = profile.bmiAnalysisComplete === true;
+  const bmiAnalysisPending = profile.bmiAnalysisComplete === false;
 
-  if (onboardingDone) return "/home";
   if (!hasGender) return "/profiledetails";
   if (!hasActivity) return "/activitylevel";
   if (!hasDietary) return "/dietary-preference";
-  return "/schedule-plan";
+  if (!hasPlanDuration) return "/schedule-plan";
+  if (bmiAnalysisDone) return "/home";
+  if (bmiAnalysisPending) return "/BMIanalysis";
+  // Older accounts finished onboarding before the BMI step existed.
+  if (profile.onboardingComplete === true) return "/home";
+  return "/BMIanalysis";
 }
 
 export async function resolvePostAuthRoute(uid: string): Promise<string> {

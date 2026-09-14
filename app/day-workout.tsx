@@ -23,7 +23,7 @@ import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
 import { durationDays } from "@/lib/workoutPlan";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import {
@@ -41,7 +41,7 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
     Modal,
@@ -258,11 +258,24 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     return "#ffffff";
   };
   const { modalCardStyle, inputStyle, rowBorderStyle, placeholderColor } = useProfileCardStyles();
-  const { minimizeFromSnapshot, claimForScreen, dismiss, session: floatingSession, minimized } =
-    useWorkoutSession();
+  const {
+    minimizeFromSnapshot,
+    claimForScreen,
+    dismiss,
+    session: floatingSession,
+    minimized,
+    getLiveSnapshot,
+  } = useWorkoutSession();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
   const canStartThisDay = dayNum <= unlockedMaxDay;
+  const otherDayMiniSession =
+    minimized &&
+    floatingSession?.kind === "day" &&
+    typeof floatingSession.day === "number" &&
+    floatingSession.day !== dayNum
+      ? floatingSession
+      : null;
 
   const [plan, setPlan] = useState<ActiveWorkoutPlan | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -289,6 +302,8 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const baseElapsedRef = useRef(0);
   const tickIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hydratedFromFloatingRef = useRef(false);
+  const leavingForMiniRef = useRef(false);
+  const startInFlightRef = useRef(false);
   const countdownIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Ignore Firestore snapshots that arrive after we switched day/workout (listener not yet torn down). */
@@ -466,14 +481,12 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   }, []);
 
   useEffect(() => {
-    return () => {
-      hydratedFromFloatingRef.current = false;
-    };
-  }, []);
+    hydratedFromFloatingRef.current = false;
+  }, [dayNum]);
 
-  useEffect(() => {
+  const tryClaimFloatingSession = () => {
+    if (leavingForMiniRef.current) return;
     if (hydratedFromFloatingRef.current) return;
-    if (minimized) return;
     if (!floatingSession || floatingSession.kind !== "day" || floatingSession.day !== dayNum) return;
     hydratedFromFloatingRef.current = true;
     const snap = claimForScreen();
@@ -501,7 +514,20 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
       setElapsed(Math.max(0, nextElapsed));
     }
     if (snap.running) startTicker();
-  }, [floatingSession, minimized, dayNum, claimForScreen]);
+  };
+
+  const tryClaimFloatingSessionRef = useRef(tryClaimFloatingSession);
+  tryClaimFloatingSessionRef.current = tryClaimFloatingSession;
+
+  useFocusEffect(
+    useCallback(() => {
+      leavingForMiniRef.current = false;
+      tryClaimFloatingSessionRef.current();
+      return () => {
+        hydratedFromFloatingRef.current = false;
+      };
+    }, [dayNum])
+  );
 
   const skipCountdownAndStart = () => {
     if (countdown == null && countdownIdRef.current == null) return;
@@ -513,41 +539,75 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     const user = auth.currentUser;
     if (!user || !row) return;
     if (!canStartThisDay) return;
-
-    if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
-
-    // Create a new session doc once.
-    if (!sessionId) {
-      const startedAtClient = new Date(sessionStartedAtMsRef.current);
-      const ref = await addDoc(collection(db, "users", user.uid, "workoutSessions"), {
-        day: row.day,
-        type: row.type,
-        workout: row.workout,
-        duration: plan?.duration ?? null,
-        goal: plan?.goal ?? null,
-        planCreatedAt: plan?.createdAt ?? null,
-        startedAt: Timestamp.fromDate(startedAtClient),
-        startedAtClientMs: sessionStartedAtMsRef.current,
-        elapsedSeconds: 0,
-        status: "running",
-        updatedAt: serverTimestamp(),
-      });
-      setSessionId(ref.id);
-    } else {
-      await updateDoc(doc(db, "users", user.uid, "workoutSessions", sessionId), {
-        status: "running",
-        updatedAt: serverTimestamp(),
-      });
+    if (otherDayMiniSession) {
+      Alert.alert(
+        "Workout in progress",
+        `Day ${otherDayMiniSession.day} is still running in the mini window. Finish or close it before starting this day.`
+      );
+      return;
     }
+    if (startInFlightRef.current) return;
+    startInFlightRef.current = true;
 
-    startedAtRef.current = Date.now();
-    setRunning(true);
-    startTicker();
+    try {
+      if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
+
+      let nextSessionId = sessionId;
+      // Create a new session doc once.
+      if (!nextSessionId) {
+        const startedAtClient = new Date(sessionStartedAtMsRef.current);
+        const ref = await addDoc(collection(db, "users", user.uid, "workoutSessions"), {
+          day: row.day,
+          type: row.type,
+          workout: row.workout,
+          duration: plan?.duration ?? null,
+          goal: plan?.goal ?? null,
+          planCreatedAt: plan?.createdAt ?? null,
+          startedAt: Timestamp.fromDate(startedAtClient),
+          startedAtClientMs: sessionStartedAtMsRef.current,
+          elapsedSeconds: 0,
+          status: "running",
+          updatedAt: serverTimestamp(),
+        });
+        nextSessionId = ref.id;
+      } else {
+        await updateDoc(doc(db, "users", user.uid, "workoutSessions", nextSessionId), {
+          status: "running",
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (leavingForMiniRef.current) {
+        const live = getLiveSnapshot();
+        if (live) {
+          minimizeFromSnapshot({
+            ...live,
+            sessionId: nextSessionId,
+            sessionStartedAtMs: sessionStartedAtMsRef.current,
+          });
+        }
+        return;
+      }
+
+      if (nextSessionId !== sessionId) setSessionId(nextSessionId);
+      startedAtRef.current = Date.now();
+      setRunning(true);
+      startTicker();
+    } finally {
+      startInFlightRef.current = false;
+    }
   };
 
   const beginStart = () => {
     if (running) return;
     if (!canStartThisDay) return;
+    if (otherDayMiniSession) {
+      Alert.alert(
+        "Workout in progress",
+        `Day ${otherDayMiniSession.day} is still running in the mini window. Finish or close it before starting this day.`
+      );
+      return;
+    }
     // if timer already started, treat as start
     setStartChoiceVisible(true);
   };
@@ -845,29 +905,22 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
     setSessionId(null);
     setContentTab("record");
 
-    // Mark completion progress; final plan rollover happens on the next calendar day in workout-plan.
+    // Mark completion progress; a new plan is generated the next calendar day after the last day.
     try {
       const userRef = doc(db, "users", user.uid);
       const dur = plan?.duration;
       const totalPlanDays =
         dur === "week" || dur === "biweekly" || dur === "monthly" ? durationDays(dur) : 0;
+      const uSnap = await getDoc(userRef);
+      const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
+      const prevOk = Number.isFinite(prevLcd) ? prevLcd : 0;
       const finishingKnownPlanDay = Boolean(totalPlanDays > 0 && dayNum <= totalPlanDays);
-      if (finishingKnownPlanDay) {
+      const repeatDay1AfterProgress = Math.floor(dayNum) === 1 && prevOk >= 2;
+      if (finishingKnownPlanDay || !repeatDay1AfterProgress) {
         await updateDoc(userRef, {
-          activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
+          activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum), prevOk),
           activePlanLastCompletedAt: serverTimestamp(),
         } as any);
-      } else {
-        const uSnap = await getDoc(userRef);
-        const prevLcd = Number((uSnap.data() as any)?.activePlanLastCompletedDay);
-        const prevOk = Number.isFinite(prevLcd) && prevLcd >= 2;
-        const repeatDay1AfterProgress = Math.floor(dayNum) === 1 && prevOk;
-        if (!repeatDay1AfterProgress) {
-          await updateDoc(userRef, {
-            activePlanLastCompletedDay: Math.max(1, Math.floor(dayNum)),
-            activePlanLastCompletedAt: serverTimestamp(),
-          } as any);
-        }
       }
     } catch (e) {
       console.log("Failed to advance plan day:", e);
@@ -891,10 +944,18 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
   const accent = row ? typeColor(row.type) : "#1e3a8a";
 
   const requestBack = () => {
-    // Block leaving during the 3–2–1 countdown.
-    if (countdown != null) return;
-    if (running || elapsed > 0 || baseElapsedRef.current > 0) {
+    if (running || elapsed > 0 || baseElapsedRef.current > 0 || countdown != null || sessionStartedAtMsRef.current != null) {
+      const stillCountingIn = countdown != null;
+      if (stillCountingIn) {
+        clearCountdown();
+        setStartChoiceVisible(false);
+        setTimerPickerVisible(false);
+        if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
+        if (!startedAtRef.current) startedAtRef.current = Date.now();
+      }
+      leavingForMiniRef.current = true;
       stopTicker();
+      const nowRunning = running || stillCountingIn || sessionStartedAtMsRef.current != null;
       minimizeFromSnapshot({
         kind: "day",
         href: `/day-workout?day=${dayNum}&unlockedMaxDay=${unlockedMaxDay}`,
@@ -905,16 +966,24 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
         mode: modeRef.current,
         targetSeconds: targetSecondsRef.current,
         baseElapsedSeconds: baseElapsedRef.current,
-        startedAtMs: running ? startedAtRef.current : null,
-        running,
+        startedAtMs: nowRunning ? startedAtRef.current ?? Date.now() : null,
+        running: nowRunning,
         sessionStartedAtMs: sessionStartedAtMsRef.current,
         day: dayNum,
         unlockedMaxDay,
       });
+      if (stillCountingIn && !startInFlightRef.current) {
+        void startWorkoutInternal();
+      }
       router.back();
       return;
     }
-    dismiss();
+    // Leaving a different day's page must not close the minimized workout.
+    const keepMiniWindow =
+      minimized &&
+      floatingSession != null &&
+      (floatingSession.kind !== "day" || floatingSession.day !== dayNum);
+    if (!keepMiniWindow) dismiss();
     router.back();
   };
 
@@ -1056,6 +1125,13 @@ function DayWorkoutBody({ dayNum, unlockedMaxDay }: { dayNum: number; unlockedMa
           disabled={!canStartThisDay && !running && !canResume}
             onPress={() => {
             if (!canStartThisDay && !running && !canResume) return;
+            if (otherDayMiniSession && !running) {
+              Alert.alert(
+                "Workout in progress",
+                `Day ${otherDayMiniSession.day} is still running in the mini window. Finish or close it before starting this day.`
+              );
+              return;
+            }
               if (!running) {
                 if (canResume) {
                   startedAtRef.current = Date.now();

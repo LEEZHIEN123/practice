@@ -17,6 +17,7 @@ import {
   buildChatListWithSupportAdmin,
   checkIsAdmin,
   deletePost,
+  isChatHiddenForUser,
   getPublicUserProfile,
   requestBlockedPostReReview,
   resolveAdminUid,
@@ -103,8 +104,8 @@ export default function CommunityMyPostsScreen() {
 
   const displayChats = useMemo(() => {
     if (!uid) return chats;
-    if (isAdminUser) return chats;
-    return buildChatListWithSupportAdmin(chats, uid, adminUid, null);
+    const list = isAdminUser ? chats : buildChatListWithSupportAdmin(chats, uid, adminUid, null);
+    return list.filter((chat) => !isChatHiddenForUser(chat, uid));
   }, [adminUid, chats, isAdminUser, uid]);
 
   useEffect(() => {
@@ -538,8 +539,8 @@ export default function CommunityMyPostsScreen() {
                       {post.content}
                     </Text>
                   ) : null}
-                  <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
                   <PostImagesGallery imageUrls={post.imageUrls} maxHeight={160} />
+                  <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
                   {post.tags.length > 0 ? (
                     <View className="flex-row flex-wrap gap-1.5 mt-2">
                       {post.tags.map((tag) => (

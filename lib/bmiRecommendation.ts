@@ -42,7 +42,7 @@ export function getBmiRecommendation(bmi: number): BmiRecommendation {
       planKey: "gain",
       titleTop: "Your BMI is",
       status: "Underweight",
-      recommendationTitle: "Gain Weight",
+      recommendationTitle: "Gain Weight / Gain Muscle",
       recommendationSubtitle: "Reach a healthier BMI range",
       description:
         "A BMI of {BMI} is below the ideal range.\n" +

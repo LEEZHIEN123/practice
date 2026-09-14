@@ -80,7 +80,7 @@ export async function saveInitialUserPlans(params: {
     nutritionPlanDuration: duration,
     nutritionPlanDurationChosenAt: serverTimestamp(),
     homePlanSchedulePrompted: true,
-    onboardingComplete: true,
+    onboardingComplete: false,
     bmiAnalysisComplete: false,
     bmi: Number(bmi.toFixed(2)),
     recommendedPlan,

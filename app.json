@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "We use your photo library for profile pictures, meal photos, and community post images.",
+        "NSPhotoLibraryUsageDescription": "We use your photo library for profile pictures, meal photos, community post images, and scanning product barcodes.",
         "NSCameraUsageDescription": "We use the camera for profile pictures, barcode scanning, meal photos, and community post images.",
         "NSMotionUsageDescription": "We use motion data to track your steps.",
         "NSLocationWhenInUseUsageDescription": "We use your location to fetch local weather and suggest daily water intake."

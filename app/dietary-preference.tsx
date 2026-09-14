@@ -28,8 +28,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 export default function DietaryPreferenceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { account, profile, activity, reset, setDietary, setOnboardingInProgress } =
-    useRegistration();
+  const { account, profile, activity, setDietary } = useRegistration();
   const { theme, cardStyle } = useThemedScreen();
 
   const [selected, setSelected] = useState<DietaryPreference | null>(null);
@@ -177,7 +176,7 @@ export default function DietaryPreferenceScreen() {
           activityLevel: resolved.activityLevel,
           activityMultiplier: resolved.activityMultiplier,
           dietaryPreference: picked.key,
-          onboardingComplete: true,
+          onboardingComplete: false,
         },
         { merge: true }
       );
@@ -187,8 +186,6 @@ export default function DietaryPreferenceScreen() {
       // Support Admin welcome chat (non-blocking).
       void ensureSupportChatWithAdmin();
 
-      setOnboardingInProgress(false);
-      reset();
       router.replace("/schedule-plan");
     } catch (error: any) {
       if (error?.code === "permission-denied") {

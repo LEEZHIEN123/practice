@@ -34,6 +34,8 @@ import {
   reopenReport,
   restoreReportedPost,
   restoreReportedComment,
+  deleteChatForUser,
+  isChatHiddenForUser,
   ensureDirectChat,
   fetchPostById,
   fetchPostIdsCommentedByUser,
@@ -645,8 +647,15 @@ export function AdminCommunityHub() {
     () =>
       chats.reduce((sum, chat) => {
         if (!currentUserId) return sum;
+        if (isChatHiddenForUser(chat, currentUserId)) return sum;
         return sum + (chat.unreadCount[currentUserId] ?? 0);
       }, 0),
+    [chats, currentUserId]
+  );
+
+  const displayChats = useMemo(
+    () =>
+      currentUserId ? chats.filter((chat) => !isChatHiddenForUser(chat, currentUserId)) : chats,
     [chats, currentUserId]
   );
 
@@ -845,6 +854,32 @@ export function AdminCommunityHub() {
     } finally {
       setProfileLoading(false);
     }
+  };
+
+  const confirmDeleteChat = (chat: ChatConversation) => {
+    if (!currentUserId) return;
+    const name = chatDisplayName(chat, currentUserId, null);
+    Alert.alert(
+      "Delete chat",
+      `Remove ${name} from your chat list? This will also delete the chat history.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await deleteChatForUser(chat.id);
+                if (highlightChatId === chat.id) setHighlightChatId(null);
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete chat.");
+              }
+            })();
+          },
+        },
+      ]
+    );
   };
 
   const openChatWithUserId = async (
@@ -1837,8 +1872,8 @@ export function AdminCommunityHub() {
                     <Text className="text-sm mt-3 leading-6" style={textSecondary}>
                       {post.content}
                     </Text>
-                    <PostAchievementChips achievementIds={post.achievementIds ?? []} />
                     <PostImagesGallery imageUrls={post.imageUrls} maxHeight={180} />
+                    <PostAchievementChips achievementIds={post.achievementIds ?? []} />
                   </Pressable>
                   {post.tags.length > 0 ? (
                     <View className="flex-row flex-wrap gap-2 mt-3">
@@ -1895,14 +1930,14 @@ export function AdminCommunityHub() {
           </View>
         ) : (
           <View className="px-3 gap-0 pb-4">
-            {chats.length === 0 ? (
-              <View className="px-4 py-8 items-center rounded-2xl" style={surfaceStyle}>
-                <Text className="text-sm text-center" style={textMuted}>
-                  No user chats yet.
-                </Text>
-              </View>
-            ) : null}
-            {chats.map((chat) => {
+            {displayChats.length === 0 ? (
+                <View className="px-4 py-8 items-center rounded-2xl" style={surfaceStyle}>
+                  <Text className="text-sm text-center" style={textMuted}>
+                    No user chats yet.
+                  </Text>
+                </View>
+              ) : null}
+            {displayChats.map((chat) => {
               const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
               const name = chatDisplayName(chat, currentUserId ?? "", null);
               const image = chat.participantImages[otherUid] ?? null;
@@ -1922,6 +1957,8 @@ export function AdminCommunityHub() {
                       },
                     })
                   }
+                  onLongPress={() => confirmDeleteChat(chat)}
+                  delayLongPress={280}
                   className="flex-row items-center rounded-2xl px-4 py-4 mb-2"
                   style={[
                     surfaceStyle,
@@ -3200,7 +3237,7 @@ export function AdminCommunityHub() {
       <SharePostToChatModal
         visible={sharePost !== null}
         post={sharePost}
-        chats={chats}
+        chats={displayChats}
         currentUserId={currentUserId}
         adminUid={currentUserId}
         onClose={() => setSharePost(null)}

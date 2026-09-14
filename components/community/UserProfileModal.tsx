@@ -282,8 +282,8 @@ export function UserProfileModal({
                     <ThemedText variant="secondary" className="text-sm leading-6">
                       {post.content}
                     </ThemedText>
-                    <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
                     <PostImagesGallery imageUrls={post.imageUrls} maxHeight={160} />
+                    <PostAchievementChips achievementIds={post.achievementIds ?? []} compact />
                     {post.tags.length > 0 ? (
                       <View className="flex-row flex-wrap gap-1.5 mt-2">
                         {post.tags.map((tag) => (

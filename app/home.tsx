@@ -6,7 +6,7 @@ import { useThemedScreen } from "@/lib/useThemedScreen";
 import { imageCardTintOverlay } from "@/lib/appearance";
 import { CaloriesDonut } from "@/components/CaloriesDonut";
 import { bumpWorkoutPlanDay, syncDailyLoginStreak } from "@/lib/achievements";
-import { formatCalendarDayKey } from "@/lib/calendarDay";
+import { formatCalendarDayKey, getDeviceIanaTimezone } from "@/lib/calendarDay";
 import { migrateExtraActiveActivityLevel } from "@/lib/migrateActivityLevel";
 import { runRemoveZeroKcalWorkoutLogsOnce } from "@/lib/migrations/removeZeroKcalWorkoutLogs";
 import { useUserCalendarTimezone } from "@/lib/useUserCalendarTimezone";
@@ -21,11 +21,13 @@ import {
   type ActiveWorkoutPlan,
   type PlanDuration,
 } from "@/lib/workoutPlan";
+import { rolloverCompletedWorkoutPlanIfNeeded } from "@/lib/workoutPlanRollover";
 import {
   expandNutritionPlanText,
   type ActiveNutritionPlan,
 } from "@/lib/nutritionPlan";
 import { peekNutritionPlanCache, writeNutritionPlanCache } from "@/lib/nutritionPlanCache";
+import { resolvePostAuthRouteFromData } from "@/lib/onboardingRoute";
 import {
   getHomeUserCacheSync,
   loadHomeUserCache,
@@ -238,6 +240,11 @@ export default function HomeScreen() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;
+        const onboardingNext = resolvePostAuthRouteFromData(data);
+        if (onboardingNext === "/schedule-plan" || onboardingNext === "/BMIanalysis") {
+          router.replace(onboardingNext as any);
+          return;
+        }
 
         if (typeof data?.name === "string") {
           setUserName(data.name);
@@ -298,35 +305,54 @@ export default function HomeScreen() {
 
         const rawPlan = data?.activeWorkoutPlan as ActiveWorkoutPlan | undefined;
         if (rawPlan) {
-          const bmiLive = calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
-          const goalLive =
-            data?.recommendedPlan === "gain" ||
-            data?.recommendedPlan === "maintain" ||
-            data?.recommendedPlan === "lose"
-              ? data.recommendedPlan
-              : null;
-          const durOk =
-            rawPlan.duration === "week" ||
-            rawPlan.duration === "biweekly" ||
-            rawPlan.duration === "monthly";
-
-          if (bmiLive != null && goalLive && durOk && activeWorkoutPlanOutOfSync(rawPlan, bmiLive, goalLive)) {
-            const next = pickOrGenerateWorkoutPlanForBand(data, bmiLive, goalLive, rawPlan.duration).plan;
-            const band = bmiBandKey(bmiLive);
-            void updateDoc(doc(db, "users", user.uid), {
-              activeWorkoutPlan: next,
-              [workoutPlansByBmiGoalField(band, goalLive, rawPlan.duration)]: buildWorkoutPlanArchiveEntry(
-                next,
-                null,
-                null
-              ),
-            } as any);
-          } else {
-            const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
-            if (fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
-              void updateDoc(doc(db, "users", user.uid), { activeWorkoutPlan: fixedPlan } as any);
+          const tz =
+            typeof data?.timezone === "string" && data.timezone
+              ? data.timezone
+              : getDeviceIanaTimezone();
+          void (async () => {
+            try {
+              const rolled = await rolloverCompletedWorkoutPlanIfNeeded(user.uid, data, tz);
+              if (rolled) {
+                Alert.alert(
+                  "Plan complete",
+                  "Great job finishing your plan. A new workout plan is ready for the same schedule length."
+                );
+                return;
+              }
+            } catch (e) {
+              console.log("Failed to roll over completed workout plan:", e);
             }
-          }
+
+            const bmiLive = calcBmi(Number(data?.weight ?? 0), Number(data?.height ?? 0));
+            const goalLive =
+              data?.recommendedPlan === "gain" ||
+              data?.recommendedPlan === "maintain" ||
+              data?.recommendedPlan === "lose"
+                ? data.recommendedPlan
+                : null;
+            const durOk =
+              rawPlan.duration === "week" ||
+              rawPlan.duration === "biweekly" ||
+              rawPlan.duration === "monthly";
+
+            if (bmiLive != null && goalLive && durOk && activeWorkoutPlanOutOfSync(rawPlan, bmiLive, goalLive)) {
+              const next = pickOrGenerateWorkoutPlanForBand(data, bmiLive, goalLive, rawPlan.duration).plan;
+              const band = bmiBandKey(bmiLive);
+              void updateDoc(doc(db, "users", user.uid), {
+                activeWorkoutPlan: next,
+                [workoutPlansByBmiGoalField(band, goalLive, rawPlan.duration)]: buildWorkoutPlanArchiveEntry(
+                  next,
+                  null,
+                  null
+                ),
+              } as any);
+            } else {
+              const fixedPlan = sanitizeActiveWorkoutPlan(rawPlan as any) as ActiveWorkoutPlan | null;
+              if (fixedPlan && !plansEqual(rawPlan as any, fixedPlan)) {
+                void updateDoc(doc(db, "users", user.uid), { activeWorkoutPlan: fixedPlan } as any);
+              }
+            }
+          })();
         }
       },
       (error) => {

@@ -129,6 +129,8 @@ export type ChatConversation = {
   lastMessageAt: number;
   unreadCount: Record<string, number>;
   clearedAt: Record<string, number>;
+  /** When set for a user, the chat is hidden from their list until a newer message arrives. */
+  hiddenAt: Record<string, number>;
   isSupportChat?: boolean;
 };
 

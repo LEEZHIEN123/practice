@@ -2,9 +2,12 @@ import { Pressable } from "@/components/Pressable";
 import { ThemedCard, ThemedText } from "@/components/themed/ThemedUi";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, scanFromURLAsync, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { useRef, useState } from "react";
-import { View } from "react-native";
+import { ActivityIndicator, Alert, View } from "react-native";
+
+const BARCODE_TYPES = ["ean13", "ean8", "upc_a", "upc_e", "code128"] as const;
 
 type BarcodeCameraScannerProps = {
   onScanned: (data: string) => void;
@@ -15,14 +18,59 @@ export function BarcodeCameraScanner({ onScanned, disabled }: BarcodeCameraScann
   const { theme } = useThemedScreen();
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [galleryLoading, setGalleryLoading] = useState(false);
   const scannedRef = useRef(false);
 
+  const completeScan = (data: string) => {
+    if (disabled || scannedRef.current || !data.trim()) return;
+    scannedRef.current = true;
+    onScanned(data.trim());
+    setCameraOpen(false);
+    setTimeout(() => {
+      scannedRef.current = false;
+    }, 2500);
+  };
+
   const openCamera = async () => {
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) return;
-    }
     setCameraOpen(true);
+    if (!permission?.granted) {
+      await requestPermission();
+    }
+  };
+
+  const pickFromGallery = async () => {
+    if (disabled || galleryLoading) return;
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permission needed", "Allow photo access to scan a barcode from your gallery.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 1,
+    });
+    if (result.canceled || !result.assets[0]?.uri) return;
+
+    try {
+      setGalleryLoading(true);
+      const codes = await scanFromURLAsync(result.assets[0].uri, [...BARCODE_TYPES]);
+      const data = codes.find((code) => code.data?.trim())?.data;
+      if (!data) {
+        Alert.alert(
+          "No barcode found",
+          "Could not read a barcode from this photo. Try a closer, clearer picture of the barcode."
+        );
+        return;
+      }
+      completeScan(data);
+    } catch {
+      Alert.alert(
+        "Scan failed",
+        "Could not read a barcode from this photo. Try another picture or use the camera."
+      );
+    } finally {
+      setGalleryLoading(false);
+    }
   };
 
   if (!cameraOpen) {
@@ -47,9 +95,32 @@ export function BarcodeCameraScanner({ onScanned, disabled }: BarcodeCameraScann
     );
   }
 
+  const galleryButton = (
+    <Pressable
+      onPress={() => void pickFromGallery()}
+      disabled={disabled || galleryLoading}
+      className="flex-row items-center justify-center py-3 px-3"
+      style={{
+        backgroundColor: theme.rowBg,
+        opacity: disabled || galleryLoading ? 0.6 : 1,
+      }}
+    >
+      {galleryLoading ? (
+        <ActivityIndicator color={theme.accentText} />
+      ) : (
+        <>
+          <Ionicons name="images-outline" size={18} color={theme.accentText} />
+          <ThemedText className="text-sm font-extrabold ml-2" style={{ color: theme.accentText }}>
+            Scan from gallery
+          </ThemedText>
+        </>
+      )}
+    </Pressable>
+  );
+
   if (!permission?.granted) {
     return (
-      <ThemedCard className="p-4 mb-4 items-center">
+      <ThemedCard className="p-4 mb-4 items-center overflow-hidden">
         <Ionicons name="camera-outline" size={40} color={theme.iconMuted} />
         <ThemedText variant="muted" className="text-sm text-center mt-2 leading-5">
           Camera access is needed to scan barcodes.
@@ -63,7 +134,8 @@ export function BarcodeCameraScanner({ onScanned, disabled }: BarcodeCameraScann
             Allow Camera
           </ThemedText>
         </Pressable>
-        <Pressable onPress={() => setCameraOpen(false)} className="mt-3 py-2">
+        <View className="w-full mt-3">{galleryButton}</View>
+        <Pressable onPress={() => setCameraOpen(false)} className="mt-2 py-2">
           <ThemedText variant="muted" className="text-sm font-bold">
             Cancel
           </ThemedText>
@@ -79,16 +151,11 @@ export function BarcodeCameraScanner({ onScanned, disabled }: BarcodeCameraScann
           style={{ height: 220 }}
           facing="back"
           barcodeScannerSettings={{
-            barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"],
+            barcodeTypes: [...BARCODE_TYPES],
           }}
           onBarcodeScanned={({ data }) => {
-            if (disabled || scannedRef.current) return;
-            scannedRef.current = true;
-            onScanned(data);
-            setCameraOpen(false);
-            setTimeout(() => {
-              scannedRef.current = false;
-            }, 2500);
+            if (galleryLoading) return;
+            completeScan(data);
           }}
         />
         <Pressable
@@ -105,6 +172,7 @@ export function BarcodeCameraScanner({ onScanned, disabled }: BarcodeCameraScann
           Point camera at barcode
         </ThemedText>
       </View>
+      {galleryButton}
     </View>
   );
 }

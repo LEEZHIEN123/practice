@@ -141,6 +141,21 @@ export function WorkoutMiniPlayer() {
     return insets.bottom + tabBarReserve;
   }, [pathname, insets.bottom]);
 
+  const dockedPos = useMemo(
+    () =>
+      snapToSide(
+        screenW - COLLAPSED_W - CARD_PAD,
+        insets.top + 120,
+        COLLAPSED_W,
+        COLLAPSED_H,
+        screenW,
+        screenH,
+        insets.top,
+        bottomInset
+      ),
+    [screenW, screenH, insets.top, bottomInset]
+  );
+
   useEffect(() => {
     posRef.current = pos;
   }, [pos]);
@@ -389,22 +404,17 @@ export function WorkoutMiniPlayer() {
 
   if (!session || !minimized) return null;
 
-  const onWorkoutScreen =
-    pathname === "/day-workout" ||
-    pathname === "/free-workout" ||
-    (typeof pathname === "string" &&
-      (pathname.endsWith("day-workout") || pathname.endsWith("free-workout")));
-  if (onWorkoutScreen) return null;
-
   const iconName = typeIcon(session.workoutType) as any;
+  const left = posReadyRef.current ? pos.x : dockedPos.x;
+  const top = posReadyRef.current ? pos.y : dockedPos.y;
 
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFillObject, styles.overlay]}>
       <View
         style={{
           position: "absolute",
-          left: pos.x,
-          top: pos.y,
+          left,
+          top,
           width: expanded ? cardW : COLLAPSED_W,
         }}
       >

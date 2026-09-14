@@ -540,8 +540,23 @@ function mapChat(id: string, data: Record<string, unknown>): ChatConversation {
             ])
           )
         : {},
+    hiddenAt:
+      data.hiddenAt && typeof data.hiddenAt === "object"
+        ? Object.fromEntries(
+            Object.entries(data.hiddenAt as Record<string, unknown>).map(([key, value]) => [
+              key,
+              Number(value ?? 0),
+            ])
+          )
+        : {},
     isSupportChat: data.isSupportChat === true,
   };
+}
+
+export function isChatHiddenForUser(chat: ChatConversation, userId: string): boolean {
+  const hiddenAt = chat.hiddenAt[userId] ?? 0;
+  if (hiddenAt <= 0) return false;
+  return chat.lastMessageAt <= hiddenAt;
 }
 
 export function chatPreviewForUser(chat: ChatConversation, userId: string): string {
@@ -1921,7 +1936,7 @@ export async function getPublicUserProfile(userId: string): Promise<PublicUserPr
   const goalKey = data?.goal ?? data?.recommendedPlan;
   const goalLabel =
     goalKey === "gain"
-      ? "Gain Weight"
+      ? "Gain Weight / Gain Muscle"
       : goalKey === "maintain"
         ? "Maintain Weight"
         : goalKey === "lose"
@@ -2393,6 +2408,7 @@ async function ensureChat(uidA: string, uidB: string, options?: { isSupportChat?
     lastMessageAt: Date.now(),
     unreadCount: { [uidA]: 0, [uidB]: 0 },
     clearedAt: {},
+    hiddenAt: {},
     isSupportChat: options?.isSupportChat === true,
     createdAt: Date.now(),
   }).catch((e: unknown) => {
@@ -2474,7 +2490,12 @@ export async function ensureDirectChat(otherUserId: string): Promise<string> {
   if (!(await userAccountExists(otherUserId))) {
     throw new Error(ACCOUNT_UNAVAILABLE_MESSAGE);
   }
-  return ensureChat(user.uid, otherUserId);
+  return ensureChat(user.uid, otherUserId).then(async (chatId) => {
+    await updateDoc(doc(db, "communityChats", chatId), {
+      [`hiddenAt.${user.uid}`]: 0,
+    }).catch(() => {});
+    return chatId;
+  });
 }
 
 export async function acceptFriendRequest(request: FriendRequest): Promise<void> {
@@ -2924,6 +2945,7 @@ export async function sendChatMessage(
     lastMessage: preview,
     lastMessageAt: Date.now(),
     [`unreadCount.${otherUid}`]: increment(1),
+    [`hiddenAt.${user.uid}`]: 0,
   });
   await batch.commit();
 
@@ -3124,6 +3146,33 @@ export async function clearChatHistory(chatId: string): Promise<void> {
 
   await updateDoc(chatRef, {
     [`clearedAt.${user.uid}`]: Date.now(),
+    [`unreadCount.${user.uid}`]: 0,
+  });
+}
+
+/** Hide the chat from this user's list and clear history for them only. */
+export async function deleteChatForUser(chatId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+
+  let targetChatId = chatId;
+  if (isSupportAdminPlaceholder(chatId)) {
+    const realId = await ensureSupportChatWithAdmin();
+    if (!realId) throw new Error("Chat not found");
+    targetChatId = realId;
+  }
+
+  const chatRef = doc(db, "communityChats", targetChatId);
+  const chatSnap = await getDoc(chatRef);
+  if (!chatSnap.exists()) throw new Error("Chat not found");
+
+  const chat = mapChat(targetChatId, chatSnap.data() as Record<string, unknown>);
+  if (!chat.participants.includes(user.uid)) throw new Error("Not allowed");
+
+  const now = Date.now();
+  await updateDoc(chatRef, {
+    [`hiddenAt.${user.uid}`]: now,
+    [`clearedAt.${user.uid}`]: now,
     [`unreadCount.${user.uid}`]: 0,
   });
 }
@@ -4226,6 +4275,7 @@ export function buildChatListWithSupportAdmin(
           lastMessageAt: Date.now(),
           unreadCount: {},
           clearedAt: {},
+          hiddenAt: {},
           isSupportChat: true,
         } satisfies ChatConversation,
         ...chats,

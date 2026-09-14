@@ -1,6 +1,7 @@
 import { Pressable } from "@/components/Pressable";
 import { ThemedScreen, ThemedText } from "@/components/themed/ThemedUi";
 import { getBmiRecommendation } from "@/lib/bmiRecommendation";
+import { setOnboardingGate } from "@/lib/onboardingGate";
 import { useThemedScreen } from "@/lib/useThemedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useRegistration } from "../context/registrationContext";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
 
@@ -23,6 +25,7 @@ export default function BmiAnalysis() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark, cardStyle } = useThemedScreen();
+  const { reset } = useRegistration();
 
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +41,15 @@ export default function BmiAnalysis() {
         const snap = await getDoc(doc(db, "users", user.uid));
         const data = snap.exists() ? snap.data() : {};
 
+        const hasPlanDuration =
+          data.planDuration === "week" ||
+          data.planDuration === "biweekly" ||
+          data.planDuration === "monthly";
+        if (!hasPlanDuration) {
+          router.replace("/schedule-plan");
+          return;
+        }
+
         const h = typeof data.height === "number" ? data.height : 0;
         const w = typeof data.weight === "number" ? data.weight : 0;
 
@@ -49,7 +61,7 @@ export default function BmiAnalysis() {
     };
 
     load();
-  }, []);
+  }, [router]);
 
   const bmi = useMemo(() => {
     if (!heightCm || !weightKg) return 0;
@@ -115,8 +127,11 @@ export default function BmiAnalysis() {
       if (user) {
         await updateDoc(doc(db, "users", user.uid), {
           bmiAnalysisComplete: true,
+          onboardingComplete: true,
         });
       }
+      setOnboardingGate(false);
+      reset();
       router.replace("/home");
     } finally {
       setSaving(false);

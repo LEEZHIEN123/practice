@@ -90,7 +90,9 @@ export default function SchedulePlanScreen() {
             ? data.planDuration
             : null;
         if (savedDuration) {
-          if (data.bmiAnalysisComplete === false) {
+          if (data.bmiAnalysisComplete === true) {
+            router.replace("/home");
+          } else if (data.bmiAnalysisComplete === false || data.onboardingComplete !== true) {
             router.replace("/BMIanalysis");
           } else {
             router.replace("/home");

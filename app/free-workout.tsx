@@ -22,7 +22,7 @@ import {
 import { getWorkoutInstructionImage } from "@/lib/workoutInstructionImages";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import {
@@ -40,7 +40,7 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
     Modal,
@@ -211,8 +211,14 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
     return "#ffffff";
   };
   const { modalCardStyle, inputStyle, rowBorderStyle, placeholderColor } = useProfileCardStyles();
-  const { minimizeFromSnapshot, claimForScreen, dismiss, session: floatingSession, minimized } =
-    useWorkoutSession();
+  const {
+    minimizeFromSnapshot,
+    claimForScreen,
+    dismiss,
+    session: floatingSession,
+    minimized,
+    getLiveSnapshot,
+  } = useWorkoutSession();
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -239,6 +245,8 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
   const baseElapsedRef = useRef(0);
   const tickIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hydratedFromFloatingRef = useRef(false);
+  const leavingForMiniRef = useRef(false);
+  const startInFlightRef = useRef(false);
   const countdownIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Ignore Firestore snapshots that arrive after we switched day/workout (listener not yet torn down). */
@@ -389,14 +397,12 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
   }, []);
 
   useEffect(() => {
-    return () => {
-      hydratedFromFloatingRef.current = false;
-    };
-  }, []);
+    hydratedFromFloatingRef.current = false;
+  }, [workoutName, workoutType]);
 
-  useEffect(() => {
+  const tryClaimFloatingSession = () => {
+    if (leavingForMiniRef.current) return;
     if (hydratedFromFloatingRef.current) return;
-    if (minimized) return;
     if (
       !floatingSession ||
       floatingSession.kind !== "free" ||
@@ -431,7 +437,20 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
       setElapsed(Math.max(0, nextElapsed));
     }
     if (snap.running) startTicker();
-  }, [floatingSession, minimized, workoutName, workoutType, claimForScreen]);
+  };
+
+  const tryClaimFloatingSessionRef = useRef(tryClaimFloatingSession);
+  tryClaimFloatingSessionRef.current = tryClaimFloatingSession;
+
+  useFocusEffect(
+    useCallback(() => {
+      leavingForMiniRef.current = false;
+      tryClaimFloatingSessionRef.current();
+      return () => {
+        hydratedFromFloatingRef.current = false;
+      };
+    }, [workoutName, workoutType])
+  );
 
   const skipCountdownAndStart = () => {
     if (countdown == null && countdownIdRef.current == null) return;
@@ -442,33 +461,53 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
   const startWorkoutInternal = async () => {
     const user = auth.currentUser;
     if (!user || !row) return;
+    if (startInFlightRef.current) return;
+    startInFlightRef.current = true;
 
-    if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
+    try {
+      if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
 
-    // Create a new session doc once.
-    if (!sessionId) {
-      const startedAtClient = new Date(sessionStartedAtMsRef.current);
-      const ref = await addDoc(collection(db, "users", user.uid, "workoutSessions"), {
-        type: row.type,
-        workout: row.workout,
-        origin: "discover",
-        startedAt: Timestamp.fromDate(startedAtClient),
-        startedAtClientMs: sessionStartedAtMsRef.current,
-        elapsedSeconds: 0,
-        status: "running",
-        updatedAt: serverTimestamp(),
-      });
-      setSessionId(ref.id);
-    } else {
-      await updateDoc(doc(db, "users", user.uid, "workoutSessions", sessionId), {
-        status: "running",
-        updatedAt: serverTimestamp(),
-      });
+      let nextSessionId = sessionId;
+      // Create a new session doc once.
+      if (!nextSessionId) {
+        const startedAtClient = new Date(sessionStartedAtMsRef.current);
+        const ref = await addDoc(collection(db, "users", user.uid, "workoutSessions"), {
+          type: row.type,
+          workout: row.workout,
+          origin: "discover",
+          startedAt: Timestamp.fromDate(startedAtClient),
+          startedAtClientMs: sessionStartedAtMsRef.current,
+          elapsedSeconds: 0,
+          status: "running",
+          updatedAt: serverTimestamp(),
+        });
+        nextSessionId = ref.id;
+      } else {
+        await updateDoc(doc(db, "users", user.uid, "workoutSessions", nextSessionId), {
+          status: "running",
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (leavingForMiniRef.current) {
+        const live = getLiveSnapshot();
+        if (live) {
+          minimizeFromSnapshot({
+            ...live,
+            sessionId: nextSessionId,
+            sessionStartedAtMs: sessionStartedAtMsRef.current,
+          });
+        }
+        return;
+      }
+
+      if (nextSessionId !== sessionId) setSessionId(nextSessionId);
+      startedAtRef.current = Date.now();
+      setRunning(true);
+      startTicker();
+    } finally {
+      startInFlightRef.current = false;
     }
-
-    startedAtRef.current = Date.now();
-    setRunning(true);
-    startTicker();
   };
 
   const beginStart = () => {
@@ -789,10 +828,18 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
   const accent = row ? typeColor(row.type) : "#1e3a8a";
 
   const requestBack = () => {
-    // Block leaving during the 3–2–1 countdown.
-    if (countdown != null) return;
-    if (running || elapsed > 0 || baseElapsedRef.current > 0) {
+    if (running || elapsed > 0 || baseElapsedRef.current > 0 || countdown != null || sessionStartedAtMsRef.current != null) {
+      const stillCountingIn = countdown != null;
+      if (stillCountingIn) {
+        clearCountdown();
+        setStartChoiceVisible(false);
+        setTimerPickerVisible(false);
+        if (!sessionStartedAtMsRef.current) sessionStartedAtMsRef.current = Date.now();
+        if (!startedAtRef.current) startedAtRef.current = Date.now();
+      }
+      leavingForMiniRef.current = true;
       stopTicker();
+      const nowRunning = running || stillCountingIn || sessionStartedAtMsRef.current != null;
       minimizeFromSnapshot({
         kind: "free",
         href: `/free-workout?type=${encodeURIComponent(workoutType)}&name=${encodeURIComponent(workoutName)}`,
@@ -803,14 +850,25 @@ function FreeWorkoutBody({ workoutType, workoutName }: { workoutType: WorkoutTyp
         mode: modeRef.current,
         targetSeconds: targetSecondsRef.current,
         baseElapsedSeconds: baseElapsedRef.current,
-        startedAtMs: running ? startedAtRef.current : null,
-        running,
+        startedAtMs: nowRunning ? startedAtRef.current ?? Date.now() : null,
+        running: nowRunning,
         sessionStartedAtMs: sessionStartedAtMsRef.current,
       });
+      if (stillCountingIn && !startInFlightRef.current) {
+        void startWorkoutInternal();
+      }
       router.back();
       return;
     }
-    dismiss();
+    const keepMiniWindow =
+      minimized &&
+      floatingSession != null &&
+      !(
+        floatingSession.kind === "free" &&
+        floatingSession.workoutName === workoutName &&
+        floatingSession.workoutType === workoutType
+      );
+    if (!keepMiniWindow) dismiss();
     router.back();
   };
 

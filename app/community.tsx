@@ -81,6 +81,8 @@ import {
     getPostsByAuthor,
     getPublicUserProfile,
     isSupportAdminPlaceholder,
+    isChatHiddenForUser,
+    deleteChatForUser,
     loadFriendRelations,
     rejectFriendRequest,
     resolveFriendRequestNotificationByRequestId,
@@ -354,6 +356,7 @@ export default function CommunityScreen() {
       : chats;
     return list.filter((chat) => {
       if (!currentUserId) return true;
+      if (isChatHiddenForUser(chat, currentUserId)) return false;
       const otherUid = chat.participants.find((p) => p !== currentUserId) ?? "";
       if (!otherUid) return false;
       if (adminUid && otherUid === adminUid) return true;
@@ -425,6 +428,7 @@ export default function CommunityScreen() {
     () =>
       chats.reduce((sum, chat) => {
         if (!currentUserId) return sum;
+        if (isChatHiddenForUser(chat, currentUserId)) return sum;
         return sum + (chat.unreadCount[currentUserId] ?? 0);
       }, 0),
     [chats, currentUserId]
@@ -728,6 +732,31 @@ export default function CommunityScreen() {
         otherUserId: otherUid,
       },
     });
+  };
+
+  const confirmDeleteChat = (chat: ChatConversation) => {
+    if (!currentUserId) return;
+    const name = chatDisplayName(chat, currentUserId, adminUid, authorNameById);
+    Alert.alert(
+      "Delete chat",
+      `Remove ${name} from your chat list? This will also delete the chat history.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await deleteChatForUser(chat.id);
+              } catch (e: unknown) {
+                Alert.alert("Error", e instanceof Error ? e.message : "Could not delete chat.");
+              }
+            })();
+          },
+        },
+      ]
+    );
   };
 
   const handleCreateOrUpdatePost = async (values: {
@@ -1413,9 +1442,9 @@ export default function CommunityScreen() {
                         <Text className="text-base mt-3 leading-7" style={textSecondary}>{post.content}</Text>
                       ) : null}
 
-                      <PostAchievementChips achievementIds={post.achievementIds ?? []} />
-
                       <PostImagesGallery imageUrls={post.imageUrls} />
+
+                      <PostAchievementChips achievementIds={post.achievementIds ?? []} />
                       </Pressable>
 
                       {post.tags.length > 0 ? (
@@ -1543,11 +1572,17 @@ export default function CommunityScreen() {
                     className="flex-row items-center px-4 py-4 rounded-2xl mb-2"
                     style={surfaceStyle}
                   >
-                    <Pressable onPress={() => void openUserProfile(otherUid)}>
+                    <Pressable
+                      onPress={() => void openUserProfile(otherUid)}
+                      onLongPress={() => confirmDeleteChat(chat)}
+                      delayLongPress={280}
+                    >
                       <ProfileAvatar uri={image} />
                     </Pressable>
                     <Pressable
                       onPress={() => openChat(chat)}
+                      onLongPress={() => confirmDeleteChat(chat)}
+                      delayLongPress={280}
                       className="flex-1 ml-3 flex-row items-center"
                     >
                     <View className="flex-1">

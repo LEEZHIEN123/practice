@@ -105,8 +105,6 @@ export function SharedPostMessageCard({ data, onPress }: SharedPostMessageCardPr
           </Text>
         ) : null}
 
-        <PostAchievementChips achievementIds={data.achievementIds ?? []} compact />
-
         {data.imageUrl ? (
           <Image
             source={{ uri: data.imageUrl }}
@@ -114,6 +112,8 @@ export function SharedPostMessageCard({ data, onPress }: SharedPostMessageCardPr
             contentFit="cover"
           />
         ) : null}
+
+        <PostAchievementChips achievementIds={data.achievementIds ?? []} compact />
 
         {data.tags.length > 0 ? (
           <View className="flex-row flex-wrap gap-2 mt-3">
