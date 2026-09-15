@@ -14,6 +14,7 @@ import {
     loadActiveChat,
     loadArchivedChats,
     makeChatSessionId,
+    peekActiveChat,
     saveActiveChat,
     upsertHistorySession,
     type ArchivedChatSession,
@@ -167,15 +168,19 @@ function MessageBubble({
 }
 
 export default function AICoachScreen() {
+  const bootUid = auth.currentUser?.uid ?? null;
+  const bootActive = bootUid ? peekActiveChat(bootUid) : null;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const calendarTz = useUserCalendarTimezone();
   const { screenStyle, cardStyle, iconButtonStyle, textSecondary, theme } = useThemedScreen();
   const { inputStyle, modalCardStyle, placeholderColor, rowBorderStyle } = useProfileCardStyles();
   const scrollRef = useRef<ScrollView>(null);
-  const [uid, setUid] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(defaultWelcomeMessages());
+  const [uid, setUid] = useState<string | null>(bootUid);
+  const [hydrated, setHydrated] = useState(Boolean(bootActive));
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    bootActive?.messages?.length ? bootActive.messages : defaultWelcomeMessages()
+  );
   const [archivedSessions, setArchivedSessions] = useState<ArchivedChatSession[]>([]);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [input, setInput] = useState("");
@@ -185,13 +190,23 @@ export default function AICoachScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [windowHeight, setWindowHeight] = useState(() => Dimensions.get("window").height);
   const coachContextRef = useRef<Awaited<ReturnType<typeof fetchCoachUserContext>> | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(bootActive?.sessionId ?? null);
   const messagesRef = useRef<ChatMessage[]>(messages);
-  const hydratedRef = useRef(false);
-  const uidRef = useRef<string | null>(null);
+  const hydratedRef = useRef(hydrated);
+  const uidRef = useRef<string | null>(uid);
+  const sendingRef = useRef(false);
   messagesRef.current = messages;
   uidRef.current = uid;
   hydratedRef.current = hydrated;
+  sendingRef.current = sending;
+
+  const applyActiveChat = useCallback((active: { sessionId: string | null; messages: StoredChatMessage[] }) => {
+    if (sendingRef.current) return;
+    sessionIdRef.current = active.sessionId;
+    messagesRef.current = active.messages;
+    setMessages(active.messages);
+    setHydrated(true);
+  }, []);
 
   const persistActive = useCallback(async (nextUid?: string | null) => {
     const id = nextUid ?? uidRef.current;
@@ -232,9 +247,7 @@ export default function AICoachScreen() {
 
         sessionIdRef.current = sessionId;
         setArchivedSessions(archives);
-        setMessages(nextMessages);
-        messagesRef.current = nextMessages;
-        setHydrated(true);
+        applyActiveChat({ sessionId, messages: nextMessages });
       })();
     });
     return unsub;
@@ -246,20 +259,26 @@ export default function AICoachScreen() {
     void saveActiveChat(uid, sessionIdRef.current, withoutPending(messages));
   }, [messages, hydrated, uid]);
 
-  // Persist the exact on-screen chat when leaving (back / blur / unmount).
+  // Persist the exact on-screen chat when leaving, and restore it when returning.
   useFocusEffect(
     useCallback(() => {
+      const id = auth.currentUser?.uid ?? uidRef.current;
+      if (id) {
+        void loadActiveChat(id).then((active) => {
+          applyActiveChat(active);
+        });
+      }
       return () => {
-        const id = uidRef.current;
-        if (!id || !hydratedRef.current) return;
+        const persistId = uidRef.current;
+        if (!persistId || !hydratedRef.current) return;
         const current = withoutPending(messagesRef.current);
         const sessionId = sessionIdRef.current;
-        void saveActiveChat(id, sessionId, current);
+        void saveActiveChat(persistId, sessionId, current);
         if (sessionId && hasUserMessages(current)) {
-          void upsertHistorySession(id, sessionId, current);
+          void upsertHistorySession(persistId, sessionId, current);
         }
       };
-    }, [])
+    }, [applyActiveChat])
   );
 
   const scrollToBottom = useCallback(() => {
@@ -600,7 +619,8 @@ export default function AICoachScreen() {
           <ProfileScreenHeader
             title="AI Chatbot"
             onBack={() => {
-              void persistActive().finally(() => router.back());
+              void persistActive();
+              router.back();
             }}
             rightSlot={
               <View className="flex-row items-center">

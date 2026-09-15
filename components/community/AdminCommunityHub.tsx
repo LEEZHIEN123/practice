@@ -794,8 +794,13 @@ export function AdminCommunityHub() {
   }, [uniqueReviewedReports, reviewedReportStatusFilter, reviewedReportSearch]);
 
   const displayedPosts = useMemo(() => {
+    const existingAuthorIds = new Set(users.map((user) => user.id));
+    if (currentUserId) existingAuthorIds.add(currentUserId);
+
     let list = filterPostsByTag(
-      posts.filter((post) => !post.authorHidden),
+      posts.filter(
+        (post) => !post.authorHidden && existingAuthorIds.has(post.authorId)
+      ),
       tagFilterView ? activeTagFilter : null
     );
     list = filterPostsByKeyword(list, searchQuery);
@@ -805,15 +810,18 @@ export function AdminCommunityHub() {
       const idSet = new Set(commentedPostIds);
       const byId = new Map(list.map((post) => [post.id, post]));
       for (const post of commentedFilterPosts) {
-        if (!byId.has(post.id)) byId.set(post.id, post);
+        if (!byId.has(post.id) && existingAuthorIds.has(post.authorId) && !post.authorHidden) {
+          byId.set(post.id, post);
+        }
       }
       list = [...byId.values()]
-        .filter((post) => idSet.has(post.id))
+        .filter((post) => idSet.has(post.id) && existingAuthorIds.has(post.authorId))
         .sort((a, b) => b.createdAt - a.createdAt);
     }
     return list;
   }, [
     posts,
+    users,
     activeTagFilter,
     tagFilterView,
     searchQuery,
@@ -1385,7 +1393,7 @@ export function AdminCommunityHub() {
             try {
               await completeWorkoutBeforeLogout();
               await signOut(auth);
-              router.replace("/login");
+              router.replace("/");
             } catch {
               Alert.alert("Error", "Could not log out. Please try again.");
             }

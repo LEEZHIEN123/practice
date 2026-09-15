@@ -56,6 +56,10 @@ export async function loadActiveChatCloud(uid: string): Promise<ActiveChatState 
   return {
     sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
     messages: messages.length > 0 ? messages : defaultWelcomeMessages(),
+    updatedAt:
+      typeof data.updatedAt === "number" && Number.isFinite(data.updatedAt) && data.updatedAt > 0
+        ? data.updatedAt
+        : 0,
   };
 }
 

@@ -26,7 +26,7 @@ export default function AdminScreen() {
 
     const unsub = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        router.replace("/login");
+        router.replace("/");
         return;
       }
 

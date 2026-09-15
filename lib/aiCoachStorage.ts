@@ -27,6 +27,7 @@ export type ArchivedChatSession = {
 export type ActiveChatState = {
   sessionId: string | null;
   messages: StoredChatMessage[];
+  updatedAt: number;
 };
 
 const WELCOME_TEXT =
@@ -95,60 +96,125 @@ export function buildSessionTitle(messages: StoredChatMessage[]): string {
   return truncate(`${question} — ${answer}`, 72);
 }
 
+const memoryActive = new Map<string, ActiveChatState>();
+
+function lastMessageAt(messages: StoredChatMessage[]): number {
+  let latest = 0;
+  for (const message of messages) {
+    if (typeof message.createdAt === "number" && message.createdAt > latest) {
+      latest = message.createdAt;
+    }
+  }
+  return latest;
+}
+
+function activeUpdatedAt(state: ActiveChatState): number {
+  if (typeof state.updatedAt === "number" && Number.isFinite(state.updatedAt) && state.updatedAt > 0) {
+    return state.updatedAt;
+  }
+  // Don't treat a freshly generated welcome bubble as "newer" than a real chat.
+  if (!hasUserMessages(state.messages)) return 0;
+  return lastMessageAt(state.messages);
+}
+
+function withUpdatedAt(state: Omit<ActiveChatState, "updatedAt"> & { updatedAt?: number }): ActiveChatState {
+  return {
+    sessionId: state.sessionId,
+    messages: normalizeStoredMessages(state.messages),
+    updatedAt: activeUpdatedAt({
+      sessionId: state.sessionId,
+      messages: state.messages,
+      updatedAt: state.updatedAt ?? 0,
+    }),
+  };
+}
+
+function pickLatestActiveChat(
+  ...candidates: Array<ActiveChatState | null | undefined>
+): ActiveChatState {
+  let best: ActiveChatState | null = null;
+  let bestAt = -1;
+  let bestUsers = -1;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const at = activeUpdatedAt(candidate);
+    const users = candidate.messages.filter((message) => message.role === "user").length;
+    if (!best || at > bestAt || (at === bestAt && users > bestUsers)) {
+      best = candidate;
+      bestAt = at;
+      bestUsers = users;
+    }
+  }
+  return best ?? withUpdatedAt({ sessionId: null, messages: defaultWelcomeMessages() });
+}
+
+export function peekActiveChat(uid: string): ActiveChatState | null {
+  return memoryActive.get(uid) ?? null;
+}
+
 export async function loadActiveChat(uid: string): Promise<ActiveChatState> {
+  const memory = memoryActive.get(uid) ?? null;
   const local = await loadActiveChatLocal(uid);
 
+  let cloud: ActiveChatState | null = null;
   if (uid !== "guest") {
     try {
-      const cloud = await loadActiveChatCloud(uid);
-      if (cloud) {
-        await saveActiveChatLocal(uid, cloud.sessionId, cloud.messages);
-        return cloud;
-      }
-      if (hasUserMessages(local.messages) || local.sessionId) {
-        await saveActiveChatCloud(uid, local.sessionId, local.messages).catch(() => {});
-      }
+      cloud = await loadActiveChatCloud(uid);
     } catch {
       // Fall back to device cache when offline or rules not deployed.
     }
   }
 
-  return local;
+  const best = pickLatestActiveChat(memory, local, cloud);
+  memoryActive.set(uid, best);
+  await saveActiveChatLocal(uid, best.sessionId, best.messages, best.updatedAt);
+
+  if (uid !== "guest" && (hasUserMessages(best.messages) || best.sessionId || best.updatedAt > 0)) {
+    if (!cloud || activeUpdatedAt(cloud) < best.updatedAt) {
+      await saveActiveChatCloud(uid, best.sessionId, best.messages).catch(() => {});
+    }
+  }
+
+  return best;
 }
 
 async function loadActiveChatLocal(uid: string): Promise<ActiveChatState> {
   try {
     const raw = await AsyncStorage.getItem(activeKey(uid));
-    if (!raw) return { sessionId: null, messages: defaultWelcomeMessages() };
+    if (!raw) return withUpdatedAt({ sessionId: null, messages: defaultWelcomeMessages() });
 
     const parsed = JSON.parse(raw) as ActiveChatState | StoredChatMessage[];
     if (Array.isArray(parsed)) {
-      if (parsed.length === 0) return { sessionId: null, messages: defaultWelcomeMessages() };
-      return { sessionId: null, messages: normalizeStoredMessages(parsed) };
+      if (parsed.length === 0) return withUpdatedAt({ sessionId: null, messages: defaultWelcomeMessages() });
+      return withUpdatedAt({ sessionId: null, messages: normalizeStoredMessages(parsed) });
     }
 
     if (parsed?.messages && Array.isArray(parsed.messages)) {
-      if (parsed.messages.length === 0) {
-        return { sessionId: parsed.sessionId ?? null, messages: defaultWelcomeMessages() };
-      }
-      return {
+      const messages =
+        parsed.messages.length === 0
+          ? defaultWelcomeMessages()
+          : normalizeStoredMessages(parsed.messages);
+      return withUpdatedAt({
         sessionId: parsed.sessionId ?? null,
-        messages: normalizeStoredMessages(parsed.messages),
-      };
+        messages,
+        updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : undefined,
+      });
     }
 
-    return { sessionId: null, messages: defaultWelcomeMessages() };
+    return withUpdatedAt({ sessionId: null, messages: defaultWelcomeMessages() });
   } catch {
-    return { sessionId: null, messages: defaultWelcomeMessages() };
+    return withUpdatedAt({ sessionId: null, messages: defaultWelcomeMessages() });
   }
 }
 
 async function saveActiveChatLocal(
   uid: string,
   sessionId: string | null,
-  messages: StoredChatMessage[]
+  messages: StoredChatMessage[],
+  updatedAt = Date.now()
 ): Promise<void> {
-  const payload: ActiveChatState = { sessionId, messages };
+  const payload: ActiveChatState = withUpdatedAt({ sessionId, messages, updatedAt });
+  memoryActive.set(uid, payload);
   await AsyncStorage.setItem(activeKey(uid), JSON.stringify(payload));
 }
 
@@ -157,7 +223,8 @@ export async function saveActiveChat(
   sessionId: string | null,
   messages: StoredChatMessage[]
 ): Promise<void> {
-  await saveActiveChatLocal(uid, sessionId, messages);
+  const updatedAt = Date.now();
+  await saveActiveChatLocal(uid, sessionId, messages, updatedAt);
   if (uid !== "guest") {
     await saveActiveChatCloud(uid, sessionId, messages).catch(() => {});
   }

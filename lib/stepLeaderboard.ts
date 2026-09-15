@@ -22,6 +22,39 @@ export type DailyStepRankingEntry = {
   steps: number;
 };
 
+const userExistsCache = new Map<string, { exists: boolean; checkedAt: number }>();
+const EXISTS_CACHE_MS = 60_000;
+const MISSING_CACHE_MS = 10 * 60_000;
+
+async function userAccountStillExists(uid: string): Promise<boolean> {
+  if (!uid) return false;
+  const cached = userExistsCache.get(uid);
+  const now = Date.now();
+  if (cached) {
+    const maxAge = cached.exists ? EXISTS_CACHE_MS : MISSING_CACHE_MS;
+    if (now - cached.checkedAt < maxAge) return cached.exists;
+  }
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    const exists = snap.exists();
+    userExistsCache.set(uid, { exists, checkedAt: now });
+    return exists;
+  } catch {
+    return cached?.exists ?? false;
+  }
+}
+
+async function existingRankingUserIds(uids: string[]): Promise<Set<string>> {
+  const unique = [...new Set(uids.filter(Boolean))];
+  const existing = new Set<string>();
+  await Promise.all(
+    unique.map(async (uid) => {
+      if (await userAccountStillExists(uid)) existing.add(uid);
+    })
+  );
+  return existing;
+}
+
 export async function publishDailyStepRanking(dayKey: string, steps: number): Promise<void> {
   const user = auth.currentUser;
   if (!user) return;
@@ -34,6 +67,12 @@ export async function publishDailyStepRanking(dayKey: string, steps: number): Pr
   }
 
   const userSnap = await getDoc(doc(db, "users", user.uid));
+  if (!userSnap.exists()) {
+    userExistsCache.set(user.uid, { exists: false, checkedAt: Date.now() });
+    await deleteDoc(rankingRef).catch(() => {});
+    return;
+  }
+  userExistsCache.set(user.uid, { exists: true, checkedAt: Date.now() });
   const profile = userSnap.data() as
     | { name?: unknown; profileImage?: unknown }
     | undefined;
@@ -69,31 +108,42 @@ export function subscribeDailyStepRanking(
     limit(100)
   );
 
+  let requestId = 0;
   return onSnapshot(
     rankingQuery,
     (snapshot) => {
-      onData(
-        snapshot.docs
-          .map((rankingDoc) => {
-            const data = rankingDoc.data() as Record<string, unknown>;
-            return {
-              uid: rankingDoc.id,
-              name:
-                typeof data.name === "string" && data.name.trim()
-                  ? data.name
-                  : "User",
-              profileImage:
-                typeof data.profileImage === "string" && data.profileImage
-                  ? data.profileImage
-                  : null,
-              steps:
-                typeof data.steps === "number" && Number.isFinite(data.steps)
-                  ? Math.max(0, Math.round(data.steps))
-                  : 0,
-            };
-          })
-          .filter((entry) => entry.steps > 0)
-      );
+      const mapped = snapshot.docs
+        .map((rankingDoc) => {
+          const data = rankingDoc.data() as Record<string, unknown>;
+          return {
+            uid: rankingDoc.id,
+            name:
+              typeof data.name === "string" && data.name.trim()
+                ? data.name
+                : "User",
+            profileImage:
+              typeof data.profileImage === "string" && data.profileImage
+                ? data.profileImage
+                : null,
+            steps:
+              typeof data.steps === "number" && Number.isFinite(data.steps)
+                ? Math.max(0, Math.round(data.steps))
+                : 0,
+          };
+        })
+        .filter((entry) => entry.steps > 0);
+
+      const currentRequest = ++requestId;
+      void existingRankingUserIds(mapped.map((entry) => entry.uid))
+        .then((existingIds) => {
+          if (currentRequest !== requestId) return;
+          onData(mapped.filter((entry) => existingIds.has(entry.uid)));
+        })
+        .catch(() => {
+          if (currentRequest !== requestId) return;
+          const uid = auth.currentUser?.uid;
+          onData(uid ? mapped.filter((entry) => entry.uid === uid) : []);
+        });
     },
     (error) => onError?.(error)
   );

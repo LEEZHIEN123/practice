@@ -441,5 +441,13 @@ service cloud.firestore {
         isAdmin() || resource.data.senderId == request.auth.uid
       );
     }
+
+    match /{path=**}/entries/{entryId} {
+      allow read, delete: if isSignedIn() && (
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.auth.uid == entryId
+      );
+    }
   }
 }

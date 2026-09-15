@@ -4,12 +4,14 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   updateDoc,
   where,
   writeBatch,
   type CollectionReference,
+  type DocumentReference,
   type Query,
 } from "firebase/firestore";
 import {
@@ -19,6 +21,7 @@ import {
   type User,
 } from "firebase/auth";
 import { removeAccountEmail } from "@/lib/accountEmailRegistry";
+import { addDaysToYmd, formatCalendarDayKey, getDeviceIanaTimezone } from "@/lib/calendarDay";
 import { db } from "../firebaseConfig";
 
 const USER_SUBCOLLECTIONS = [
@@ -194,32 +197,69 @@ async function deleteUserCommunityData(uid: string): Promise<void> {
   });
 }
 
+async function commitDeletes(refs: DocumentReference[]): Promise<void> {
+  let batch = writeBatch(db);
+  let n = 0;
+  for (const ref of refs) {
+    batch.delete(ref);
+    n++;
+    if (n >= 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      n = 0;
+    }
+  }
+  if (n > 0) await batch.commit();
+}
+
+/** Remove this user from daily step ranking before dailyStats is deleted. */
+async function deleteUserStepRankingEntries(uid: string): Promise<void> {
+  const dayKeys = new Set<string>();
+
+  await safe(async () => {
+    const statsSnap = await getDocs(collection(db, "users", uid, "dailyStats"));
+    for (const statsDoc of statsSnap.docs) {
+      if (statsDoc.id) dayKeys.add(statsDoc.id);
+    }
+  });
+
+  await safe(async () => {
+    const userSnap = await getDoc(doc(db, "users", uid));
+    const data = userSnap.data() as { timezone?: unknown } | undefined;
+    const tz =
+      typeof data?.timezone === "string" && data.timezone.trim()
+        ? data.timezone.trim()
+        : getDeviceIanaTimezone();
+    const today = formatCalendarDayKey(new Date(), tz);
+    dayKeys.add(today);
+    dayKeys.add(addDaysToYmd(today, -1));
+    dayKeys.add(formatCalendarDayKey(new Date(), "UTC"));
+  });
+
+  await safe(async () => {
+    await commitDeletes(
+      [...dayKeys].map((dayKey) => doc(db, "dailyStepRankings", dayKey, "entries", uid))
+    );
+  });
+}
+
 async function deleteUserRankingEntries(uid: string): Promise<void> {
+  await deleteUserStepRankingEntries(uid);
   await safe(() => deleteDoc(doc(db, "achievementRankings", uid)));
   await safe(async () => {
     const snap = await getDocs(
       query(collectionGroup(db, "entries"), where("uid", "==", uid))
     );
-    let batch = writeBatch(db);
-    let n = 0;
-    for (const d of snap.docs) {
-      batch.delete(d.ref);
-      n++;
-      if (n >= 400) {
-        await batch.commit();
-        batch = writeBatch(db);
-        n = 0;
-      }
-    }
-    if (n > 0) await batch.commit();
+    await commitDeletes(snap.docs.map((d) => d.ref));
   });
 }
 
 /** Deletes Firestore profile + community data for a user (posts, chats, friends, etc.). */
 export async function deleteUserFirestoreProfile(uid: string): Promise<void> {
+  // Rankings first: step entries are keyed by dailyStats day ids.
+  await deleteUserRankingEntries(uid);
   await deleteUserSubcollections(uid);
   await deleteUserCommunityData(uid);
-  await deleteUserRankingEntries(uid);
   await deleteDoc(doc(db, "users", uid));
 }
 
