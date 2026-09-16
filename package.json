@@ -13,7 +13,9 @@
     "cleanup:zero-kcal-workouts": "node scripts/deleteZeroKcalWorkoutLogs.cjs",
     "setup:community-admin": "node scripts/setupCommunityAdmin.cjs",
     "deploy:firestore": "npx firebase-tools deploy --only firestore",
-    "deploy:storage": "npx firebase-tools deploy --only storage"
+    "deploy:storage": "npx firebase-tools deploy --only storage",
+    "eas:login": "node --use-system-ca ./node_modules/eas-cli/bin/run login",
+    "eas:build:apk": "node --use-system-ca ./node_modules/eas-cli/bin/run build -p android --profile preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -72,6 +74,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eas-cli": "^24.5.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "firebase-admin": "^13.8.0",
