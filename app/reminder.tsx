@@ -12,7 +12,7 @@ import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
@@ -231,7 +231,7 @@ const normalizeReminderTime = (
       hour: maybeNew.hour,
       minute: maybeNew.minute,
       period: maybeNew.period,
-      enabled: typeof maybeNew.enabled === "boolean" ? maybeNew.enabled : true,
+      enabled: typeof maybeNew.enabled === "boolean" ? maybeNew.enabled : false,
     };
   }
 
@@ -245,7 +245,7 @@ const normalizeReminderTime = (
       hour: parsed.hour,
       minute: parsed.minute,
       period: parsed.period,
-      enabled: typeof maybeOld.enabled === "boolean" ? maybeOld.enabled : true,
+      enabled: typeof maybeOld.enabled === "boolean" ? maybeOld.enabled : false,
     };
   }
 
@@ -255,7 +255,7 @@ const normalizeReminderTime = (
     hour: 9,
     minute: 0,
     period: "AM",
-    enabled: typeof maybeOld.enabled === "boolean" ? maybeOld.enabled : true,
+    enabled: typeof maybeOld.enabled === "boolean" ? maybeOld.enabled : false,
   };
 };
 
@@ -301,6 +301,53 @@ const sanitizeReminderDataForFirestore = (data: ReminderData) => ({
   water: sanitizeReminderSectionForFirestore(data.water),
 });
 
+type ReminderSettingsCache = {
+  uid: string;
+  reminders: ReminderData;
+  days: boolean[];
+};
+
+/** Survives Back/reopen so a slow notification reschedule cannot restore stale toggle state. */
+let reminderSettingsCache: ReminderSettingsCache | null = null;
+let reminderSettingsWriteTail = Promise.resolve();
+let reminderScheduleTail = Promise.resolve();
+
+function cacheReminderSettings(uid: string, reminders: ReminderData, days: boolean[]) {
+  reminderSettingsCache = { uid, reminders, days };
+}
+
+function enqueueReminderSettingsWrite() {
+  reminderSettingsWriteTail = reminderSettingsWriteTail
+    .then(async () => {
+      const snapshot = reminderSettingsCache;
+      const user = auth.currentUser;
+      if (!snapshot || !user || user.uid !== snapshot.uid) return;
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          remindersInitialized: true,
+          reminders: sanitizeReminderDataForFirestore(snapshot.reminders),
+          reminderRepeatDays: snapshot.days,
+        },
+        { merge: true }
+      );
+    })
+    .catch((error) => {
+      console.log("Persist reminder settings failed:", error);
+    });
+
+  return reminderSettingsWriteTail;
+}
+
+function enqueueReminderSchedule(job: () => Promise<void>) {
+  reminderScheduleTail = reminderScheduleTail
+    .then(job)
+    .catch((error) => {
+      console.log("Reminder schedule failed:", error);
+    });
+}
+
 const convertTo24Hour = (hour12: number, period: "AM" | "PM") => {
   let hour24 = hour12;
   if (period === "AM") {
@@ -330,12 +377,18 @@ export default function RemindersScreen() {
   const { inputStyle, placeholderColor } = useProfileCardStyles();
   const [reminders, setReminders] = useState<ReminderData>(defaultReminderData);
   const [repeatDays, setRepeatDays] = useState<boolean[]>(DEFAULT_REPEAT);
-  const [loading, setLoading] = useState(false);
   const [editor, setEditor] = useState<EditingState>(null);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const persistTailRef = useRef(Promise.resolve());
+  const mountedRef = useRef(true);
   const expoGoWarnedRef = useRef(false);
   const notifyWarnedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -345,6 +398,13 @@ export default function RemindersScreen() {
       if (!user) return;
 
       try {
+        if (reminderSettingsCache?.uid === user.uid) {
+          setReminders(reminderSettingsCache.reminders);
+          setRepeatDays(reminderSettingsCache.days);
+          enqueueReminderSchedule(() => runRescheduleNotifications());
+          return;
+        }
+
         const snap = await getDoc(doc(db, "users", user.uid));
         if (!snap.exists()) return;
 
@@ -389,23 +449,37 @@ export default function RemindersScreen() {
             water: forceOff(loaded.water),
           };
 
+          cacheReminderSettings(user.uid, forced, days);
           await setDoc(
             doc(db, "users", user.uid),
             {
               remindersInitialized: true,
               reminders: sanitizeReminderDataForFirestore(forced),
+              reminderRepeatDays: days,
             },
             { merge: true }
           );
 
+          if (!mountedRef.current) return;
           setReminders(forced);
           setRepeatDays(days);
-        } else {
-          setReminders(loaded);
-          setRepeatDays(days);
-          // Refresh rolling exact schedules whenever Reminders opens.
-          enqueuePersist(loaded, days, loaded);
+          return;
         }
+
+        // A toggle may have written to cache while this getDoc was in flight.
+        if (reminderSettingsCache?.uid === user.uid) {
+          if (!mountedRef.current) return;
+          setReminders(reminderSettingsCache.reminders);
+          setRepeatDays(reminderSettingsCache.days);
+          enqueueReminderSchedule(() => runRescheduleNotifications());
+          return;
+        }
+
+        cacheReminderSettings(user.uid, loaded, days);
+        if (!mountedRef.current) return;
+        setReminders(loaded);
+        setRepeatDays(days);
+        enqueueReminderSchedule(() => runRescheduleNotifications());
       } catch (error) {
         console.log("Failed to load reminders:", error);
       }
@@ -534,61 +608,64 @@ export default function RemindersScreen() {
     }
   };
 
-  const runPersistReminders = async (
-    next: ReminderData,
-    days: boolean[],
-    prev: ReminderData
-  ) => {
+  const runRescheduleNotifications = async () => {
     const user = auth.currentUser;
-    if (!user) return;
+    const snapshot = reminderSettingsCache;
+    if (!user || !snapshot || snapshot.uid !== user.uid) return;
 
     try {
-      setLoading(true);
       const canNotify = await ensureNotificationPermission();
+      if (reminderSettingsCache !== snapshot) return;
 
       let workoutIds: string[] = [];
       let mealIds: string[] = [];
       let waterIds: string[] = [];
 
       if (canNotify) {
-        await cancelScheduledFor(prev);
-        workoutIds = await scheduleSectionNotifications("workout", next.workout, days);
-        mealIds = await scheduleSectionNotifications("meal", next.meal, days);
-        waterIds = await scheduleSectionNotifications("water", next.water, days);
+        await cancelScheduledFor(snapshot.reminders);
+        if (reminderSettingsCache !== snapshot) return;
+
+        const latest = reminderSettingsCache;
+        workoutIds = await scheduleSectionNotifications("workout", latest.reminders.workout, latest.days);
+        mealIds = await scheduleSectionNotifications("meal", latest.reminders.meal, latest.days);
+        waterIds = await scheduleSectionNotifications("water", latest.reminders.water, latest.days);
       }
 
-      const payload: ReminderData = {
-        workout: { ...next.workout, scheduledIds: workoutIds },
-        meal: { ...next.meal, scheduledIds: mealIds },
-        water: { ...next.water, scheduledIds: waterIds },
-      };
+      if (reminderSettingsCache !== snapshot) return;
 
-      const firestorePayload = sanitizeReminderDataForFirestore(payload);
+      await updateDoc(doc(db, "users", user.uid), {
+        "reminders.workout.scheduledIds": workoutIds,
+        "reminders.meal.scheduledIds": mealIds,
+        "reminders.water.scheduledIds": waterIds,
+      });
 
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          remindersInitialized: true,
-          reminders: firestorePayload,
-          reminderRepeatDays: days,
-        },
-        { merge: true }
-      );
+      if (reminderSettingsCache === snapshot) {
+        cacheReminderSettings(snapshot.uid, {
+          workout: { ...snapshot.reminders.workout, scheduledIds: workoutIds },
+          meal: { ...snapshot.reminders.meal, scheduledIds: mealIds },
+          water: { ...snapshot.reminders.water, scheduledIds: waterIds },
+        }, snapshot.days);
+      }
 
-      setReminders(payload);
-      setRepeatDays(days);
+      if (!mountedRef.current) return;
+      setReminders((prevState) => ({
+        workout: { ...prevState.workout, scheduledIds: workoutIds },
+        meal: { ...prevState.meal, scheduledIds: mealIds },
+        water: { ...prevState.water, scheduledIds: waterIds },
+      }));
     } catch (error) {
       console.log("Persist reminders failed:", error);
-      Alert.alert("Error", "Could not update reminders. Please try again.");
-    } finally {
-      setLoading(false);
     }
   };
 
-  const enqueuePersist = (next: ReminderData, days: boolean[], prev: ReminderData) => {
-    persistTailRef.current = persistTailRef.current
-      .then(() => runPersistReminders(next, days, prev))
-      .catch(() => {});
+  const persistReminderChange = (next: ReminderData, days: boolean[]) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    cacheReminderSettings(user.uid, next, days);
+    void enqueueReminderSettingsWrite().then(() => {
+      enqueueReminderSchedule(() => runRescheduleNotifications());
+    });
   };
 
   const toggleEnabled = (section: ReminderKey, id: string) => {
@@ -602,7 +679,7 @@ export default function RemindersScreen() {
           ),
         },
       };
-      enqueuePersist(next, repeatDays, prev);
+      persistReminderChange(next, repeatDays);
       return next;
     });
   };
@@ -616,7 +693,7 @@ export default function RemindersScreen() {
           times: prev[section].times.filter((t) => t.id !== id),
         },
       };
-      enqueuePersist(next, repeatDays, prev);
+      persistReminderChange(next, repeatDays);
       return next;
     });
   };
@@ -665,7 +742,7 @@ export default function RemindersScreen() {
           times: updatedTimes,
         },
       };
-      enqueuePersist(next, nextRepeat, prev);
+      persistReminderChange(next, nextRepeat);
       return next;
     });
 
@@ -754,11 +831,13 @@ export default function RemindersScreen() {
           <ProfileScreenHeader
             title="Reminders"
             onBack={() => {
-              try {
-                router.back();
-              } catch {
-                router.replace("/profile");
-              }
+              void reminderSettingsWriteTail.finally(() => {
+                try {
+                  router.back();
+                } catch {
+                  router.replace("/profile");
+                }
+              });
             }}
             titleClassName="text-xl"
           />
